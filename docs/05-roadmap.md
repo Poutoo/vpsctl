@@ -11,10 +11,10 @@
 
 ## Initialisation
 
-- [ ] Créer le projet avec `create-tauri-app` (Tauri 2, Vue, TypeScript)
-- [ ] Configurer ESLint et Prettier côté Vue, rustfmt et clippy côté Rust
-- [ ] Mettre en place `ts-rs`
-- [ ] CI GitHub Actions : build Windows et Linux via `tauri-action`
+- [x] Créer le projet avec `create-tauri-app` (Tauri 2, Vue, TypeScript)
+- [x] Configurer ESLint et Prettier côté Vue, rustfmt et clippy côté Rust
+- [x] Mettre en place `ts-rs`
+- [x] CI GitHub Actions : build Windows et Linux via `tauri-action`
 - [ ] Lancer le squelette sur les deux machines
 
 ## Jalons de développement
