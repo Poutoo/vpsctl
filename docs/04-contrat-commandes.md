@@ -1,85 +1,154 @@
-# Architecture
+# Contrat des commandes Tauri
 
-Statut : backend défini, frontend à définir.
+Statut : validé.
 
-## Vue d'ensemble
+## Conventions
 
-```
-Frontend Vue
-   │  invoke() et Channel
-commands/            adaptateurs Tauri, très fins
-   │
-Modules métier       sftp, docker, systemd, scripts (sans dépendance à Tauri)
-   │
-ssh                  connexion unique, canaux multiplexés
-secrets, config      keyring, profils et scripts en JSON local
-   │
-VPS (SSH, port 22)
-```
+- Commandes et arguments en `snake_case` côté Rust ; arguments en `camelCase` côté `invoke()` (conversion par défaut de Tauri). Exemple : `rename(from_path, to_path)` s'appelle `invoke('rename', { fromPath, toPath })`.
+- Les types TypeScript sont générés depuis Rust avec `ts-rs`.
+- Les conteneurs Docker sont identifiés par leur ID.
 
-## Arborescence Rust
+## Erreurs
 
-```
-src-tauri/src/
-├── lib.rs            point d'entrée Tauri 2 : enregistrement des commandes et de l'état
-├── error.rs          enum AppError unique (thiserror), sérialisable vers le frontend
-├── state.rs          AppState : connexion active + registre des flux en cours
-├── ssh/
-│   ├── mod.rs        connect, exec, open_stream
-│   └── host_key.rs   vérification de l'empreinte de la clé hôte
-├── sftp.rs
-├── docker.rs
-├── systemd.rs
-├── scripts.rs
-├── config.rs
-├── secrets.rs
-└── commands/
-    ├── connection.rs
-    ├── files.rs
-    ├── docker.rs
-    ├── systemd.rs
-    └── scripts.rs
+```ts
+type AppError =
+  | { kind: "NotConnected" }
+  | { kind: "UnknownHostKey"; fingerprint: string }
+  | { kind: "HostKeyMismatch"; expected: string; received: string }
+  | { kind: "PassphraseRequired" }
+  | { kind: "AuthFailed" }
+  | { kind: "Network"; message: string }
+  | { kind: "InvalidInput"; message: string }
+  | { kind: "Remote"; exitCode: number; stderr: string }
+  | { kind: "Io"; message: string }
 ```
 
-## Responsabilités
+`HostKeyMismatch` est présenté comme une alerte de sécurité, pas comme une erreur ordinaire.
 
-**ssh** : ouvre et maintient une seule connexion SSH. Les autres modules ouvrent des canaux dessus. Expose deux primitives : exécuter une commande et récupérer sa sortie, ouvrir un canal en streaming. Implémente la vérification de la clé hôte.
+## Connexion et profils
 
-**sftp** : ouvre le sous-système SFTP sur un canal (`russh-sftp`) et réalise toutes les opérations sur les fichiers. Aucune commande shell.
+```ts
+list_profiles(): Profile[]
+save_profile(profile: Profile): Profile
+delete_profile(id: string): void
+set_key_passphrase(profileId: string, passphrase: string): void
+trust_host_key(profileId: string, fingerprint: string): void
+connect(profileId: string): ConnectionInfo
+disconnect(): void
+connection_status(): ConnectionInfo | null
+```
 
-**docker** : exécute `docker ps -a --format '{{json .}}'` et désérialise chaque ligne avec `serde`. Gère start, stop, restart, rm et le flux `docker logs -f`.
+## Fichiers
 
-**systemd** : `systemctl --user` en sortie JSON, actions sur les services, flux `journalctl --user -f`. Génère et supprime les fichiers d'unité dans `~/.config/systemd/user/`, suivis de `systemctl --user daemon-reload`.
+```ts
+list_dir(path: string): FileEntry[]
+create_file(path: string): void
+create_dir(path: string): void
+rename(fromPath: string, toPath: string): void
+delete_path(path: string, recursive: boolean): void
+upload(localPath: string, remotePath: string, onProgress: Channel<Progress>): void
+download(remotePath: string, localPath: string, onProgress: Channel<Progress>): void
+```
 
-**scripts** : charge les scripts depuis `config` et les exécute via `ssh` avec sortie en streaming.
+Les chemins locaux sont choisis côté Vue avec `tauri-plugin-dialog`.
 
-**config** : lit et écrit les profils de connexion et les scripts en JSON dans le dossier de configuration de l'application.
+## Docker
 
-**secrets** : surcouche de la crate `keyring` pour la passphrase de la clé SSH (Credential Manager sous Windows, Secret Service sous Linux).
+```ts
+docker_list(): Container[]
+docker_action(id: string, action: "start" | "stop" | "restart"): void
+docker_remove(id: string): void
+```
 
-**commands** : fonctions `#[tauri::command]` sans logique propre. Streaming via `tauri::ipc::Channel`.
+## Systemd
 
-## Points critiques
+```ts
+services_list(): Service[]
+service_action(unit: string, action: "start" | "stop" | "restart"): void
+service_create(def: ServiceDef): Service
+service_delete(unit: string): void
+```
 
-### Injection de commandes
+## Logs (Docker et systemd)
 
-Toute valeur saisie dans l'interface et insérée dans une commande shell est validée par une expression stricte, puis échappée. Exemple de risque : un service nommé `bot; rm -rf ~` exécuterait les deux commandes.
+```ts
+type LogSource = { docker: string } | { systemd: string }
+logs_start(source: LogSource, tail: number, onEvent: Channel<LogEvent>): string  // streamId
+logs_stop(streamId: string): void
+```
 
-### Arrêt des flux
+## Scripts
 
-Chaque flux (logs, exécution de script) reçoit un identifiant et est enregistré dans `state.rs`. Une commande d'arrêt ferme le canal correspondant, ce qui termine le processus distant. Sans cela, les canaux s'accumulent.
+```ts
+scripts_list(): Script[]
+scripts_save(script: Script): Script
+scripts_delete(id: string): void
+script_run(id: string, onEvent: Channel<LogEvent>): string  // runId
+script_stop(runId: string): void
+```
 
-### Vérification de la clé hôte en deux temps
+`script_run` réutilise `LogEvent` : un seul composant de console côté frontend pour les logs et les scripts.
 
-1. Première connexion : l'empreinte est inconnue, `connect` renvoie `UnknownHostKey` avec l'empreinte reçue.
-2. L'interface l'affiche, l'utilisateur la compare à celle notée sur le VPS.
-3. Après validation, `trust_host_key` l'enregistre dans le profil.
-4. Connexions suivantes : toute différence renvoie `HostKeyMismatch` et bloque la connexion.
+## Structures
 
-### Fichiers d'unité systemd
+```ts
+interface Profile {
+  id: string
+  name: string
+  host: string
+  port: number
+  user: string
+  keyPath: string
+  hostKeyFingerprint: string | null
+}
 
-Les champs saisis dans le formulaire de création (`execStart`, `description`, etc.) sont écrits sans retour à la ligne, pour empêcher l'insertion de directives supplémentaires dans le fichier d'unité.
+interface FileEntry {
+  name: string
+  path: string
+  kind: "file" | "dir" | "symlink"
+  size: number
+  modified: number
+  permissions: string
+}
 
-## Frontend
+interface Container {
+  id: string
+  name: string
+  image: string
+  state: string
+  status: string
+}
 
-À définir : stores Pinia, routes, organisation des composants, librairie de composants ou design maison.
+interface Service {
+  unit: string
+  load: string
+  active: string
+  sub: string
+  description: string
+}
+
+interface ServiceDef {
+  name: string
+  description: string
+  execStart: string
+  workingDir: string
+  restart: "no" | "on-failure" | "always"
+  env: Record<string, string>
+}
+
+interface Script {
+  id: string
+  name: string
+  command: string
+  requireConfirmation: boolean
+}
+
+type LogEvent =
+  | { type: "line"; text: string }
+  | { type: "ended"; exitCode: number | null }
+  | { type: "error"; message: string }
+
+type Progress = { transferred: number; total: number }
+```
+
+`ConnectionInfo` reste à préciser lors du jalon 1.
