@@ -1,0 +1,70 @@
+/*
+ * Design tokens — PROVISOIRES.
+ *
+ * Valeurs neutres posées uniquement pour que le squelette s'affiche
+ * correctement en clair et en sombre. Aucune décision d'identité visuelle
+ * n'est prise ici : palette, échelles et typographie seront redéfinies
+ * avec les maquettes (voir docs/05-roadmap.md).
+ *
+ * Règle : les composants n'utilisent que ces variables, jamais de valeur en dur.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* Couleurs — thème clair (gris neutres, placeholders) */
+  --color-bg: #ffffff;
+  --color-surface: #f4f4f5;
+  --color-border: #d4d4d8;
+  --color-text: #18181b;
+  --color-text-muted: #71717a;
+
+  /* Couleurs sémantiques — placeholders, à définir */
+  --color-accent: #52525b;
+  --color-danger: #b91c1c;
+  --color-success: #15803d;
+  --color-warning: #a16207;
+
+  /* Espacements (échelle de 4 px, provisoire) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Rayons */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+
+  /* Bordures */
+  --border-width: 1px;
+
+  /* Typographie (polices système, provisoire) */
+  --font-sans: system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.25rem;
+  --font-size-xl: 1.5rem;
+  --font-weight-normal: 400;
+  --font-weight-bold: 600;
+  --line-height: 1.5;
+}
+
+/* Couleurs — thème sombre (gris neutres, placeholders) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #18181b;
+    --color-surface: #27272a;
+    --color-border: #3f3f46;
+    --color-text: #f4f4f5;
+    --color-text-muted: #a1a1aa;
+
+    --color-accent: #a1a1aa;
+    --color-danger: #f87171;
+    --color-success: #4ade80;
+    --color-warning: #facc15;
+  }
+}
