@@ -15,5 +15,7 @@ async function simulateConnection() {
 <template>
   <h1>ConnectView</h1>
   <!-- TODO(jalon 1) : bouton temporaire pour naviguer sans connexion SSH. -->
-  <button type="button" @click="simulateConnection">Simuler une connexion</button>
+  <button type="button" @click="simulateConnection">
+    Simuler une connexion
+  </button>
 </template>
