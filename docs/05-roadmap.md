@@ -6,15 +6,16 @@
 - [x] Préparer le VPS
 - [x] Découper les modules Rust
 - [x] Écrire le contrat des commandes Tauri
-- [x] Structurer le frontend Vue (stores, routes, composants, librairie UI)
+- [x] Structurer le frontend Vue (stores, routes, composants, approche UI)
 - [ ] Maquetter les écrans : connexion, tableau de bord des services, logs, explorateur, scripts
 
 ## Initialisation
 
-- [x] Créer le projet avec `create-tauri-app` (Tauri 2, Vue, TypeScript)
-- [x] Configurer ESLint et Prettier côté Vue, rustfmt et clippy côté Rust
-- [x] Mettre en place `ts-rs`
-- [x] CI GitHub Actions : build Windows et Linux via `tauri-action`
+- [ ] Créer le projet avec `create-tauri-app` (Tauri 2, Vue, TypeScript)
+- [ ] Configurer ESLint et Prettier côté Vue, rustfmt et clippy côté Rust
+- [ ] Mettre en place `ts-rs`
+- [ ] Installer Reka UI et @tanstack/vue-virtual
+- [ ] CI GitHub Actions : build Windows et Linux via `tauri-action`
 - [ ] Lancer le squelette sur les deux machines
 
 ## Jalons de développement
@@ -32,6 +33,9 @@ Chaque jalon doit produire quelque chose d'utilisable.
 ## v2
 
 - Gestion `docker compose` (up/down sur un dossier de projet)
+- Activer / désactiver un service au démarrage
+- Filtre de recherche dans les listes
+- Détection des conteneurs tués par manque de mémoire (`OOMKilled`)
 - Édition de fichiers texte
 - Terminal intégré
 - Monitoring

@@ -46,9 +46,12 @@ create_file(path: string): void
 create_dir(path: string): void
 rename(fromPath: string, toPath: string): void
 delete_path(path: string, recursive: boolean): void
-upload(localPath: string, remotePath: string, onProgress: Channel<Progress>): void
-download(remotePath: string, localPath: string, onProgress: Channel<Progress>): void
+upload(localPath: string, remotePath: string, onProgress: Channel<Progress>): string    // transferId
+download(remotePath: string, localPath: string, onProgress: Channel<Progress>): string  // transferId
+transfer_cancel(transferId: string): void
 ```
+
+Une annulation ferme le canal SFTP ; un envoi annulé laisse un fichier partiel sur le serveur, qui doit être supprimé.
 
 Les chemins locaux sont choisis côté Vue avec `tauri-plugin-dialog`.
 
@@ -144,11 +147,21 @@ interface Script {
 }
 
 type LogEvent =
-  | { type: "line"; text: string }
+  | {
+      type: "line"
+      text: string
+      timestamp: string | null          // ISO 8601
+      origin: "stdout" | "stderr" | "journal"
+      priority: number | null           // priorité syslog 0-7, uniquement pour origin = "journal"
+    }
   | { type: "ended"; exitCode: number | null }
   | { type: "error"; message: string }
 
-type Progress = { transferred: number; total: number }
+type Progress =
+  | { type: "progress"; transferred: number; total: number }
+  | { type: "done" }
+  | { type: "cancelled" }
+  | { type: "error"; message: string }
 ```
 
 `ConnectionInfo` reste à préciser lors du jalon 1.

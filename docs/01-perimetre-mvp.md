@@ -45,3 +45,5 @@ Il s'agit de services utilisateur (`systemctl --user`), pas de services système
 - Monitoring CPU, RAM, disque
 - Interface multi-VPS (le modèle de données supporte déjà plusieurs profils, seule l'interface est limitée à un)
 - Services lancés autrement que par Docker ou systemd (screen, tmux, pm2)
+- Activer ou désactiver un service au démarrage (`systemctl --user enable/disable`) : v2
+- Filtre de recherche dans les listes : v2

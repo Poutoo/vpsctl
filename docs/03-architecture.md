@@ -49,6 +49,19 @@ src-tauri/src/
 
 **docker** : exécute `docker ps -a --format '{{json .}}'` et désérialise chaque ligne avec `serde`. Gère start, stop, restart, rm et le flux `docker logs -f`.
 
+Correspondance des états Docker vers les états de l'interface :
+
+| État Docker | État affiché |
+|---|---|
+| `running` | Nominal |
+| `exited` avec code 0, 137 ou 143 | Arrêté (code affiché) |
+| `exited` avec tout autre code | En échec |
+| `created`, `paused` | Arrêté |
+| `restarting`, `removing` | En transition |
+| `dead` | En échec |
+
+Limite connue : un conteneur tué par manque de mémoire sort aussi avec le code 137 et apparaîtra « Arrêté ». Le détecter demanderait `docker inspect` (champ `OOMKilled`) : envisageable en v2.
+
 **systemd** : `systemctl --user` en sortie JSON, actions sur les services, flux `journalctl --user -f`. Génère et supprime les fichiers d'unité dans `~/.config/systemd/user/`, suivis de `systemctl --user daemon-reload`.
 
 **scripts** : charge les scripts depuis `config` et les exécute via `ssh` avec sortie en streaming.
@@ -64,6 +77,12 @@ src-tauri/src/
 ### Injection de commandes
 
 Toute valeur saisie dans l'interface et insérée dans une commande shell est validée par une expression stricte, puis échappée. Exemple de risque : un service nommé `bot; rm -rf ~` exécuterait les deux commandes.
+
+### Origine des lignes de logs
+
+- `docker logs` et les scripts : SSH transmet séparément la sortie standard et la sortie d'erreur, on conserve donc l'origine `stdout` / `stderr`. Exception : un conteneur lancé avec un TTY mélange les deux flux.
+- `journalctl` : le journal ne conserve pas, par défaut, de quel flux vient une ligne. On récupère à la place la priorité syslog de chaque message (`journalctl --user -o json`, champ `PRIORITY`). L'interface affiche `ERR` pour une priorité inférieure ou égale à 3 (err, crit, alert, emerg).
+- Horodatages : `docker logs --timestamps` et le champ `__REALTIME_TIMESTAMP` du JSON de `journalctl`.
 
 ### Arrêt des flux
 
@@ -111,6 +130,7 @@ src/
 
 - **Aucun `invoke()` en dehors de `api/`.** Stores et composants appellent des fonctions typées (`docker.list()`, etc.).
 - **`useLogStream(source)`** gère tout le cycle de vie d'un flux : démarrage, mémoire tampon limitée (5 000 lignes par défaut, les plus anciennes sont supprimées), appel automatique de `logs_stop` au démontage du composant. Aucun flux ne doit rester ouvert après un changement d'écran. Utilisé aussi pour l'exécution des scripts.
+- **Transferts** : file d'attente gérée dans le store `transfers`, un seul transfert actif à la fois. Chaque transfert a un identifiant et peut être annulé. « Afficher » ouvre le dossier local du fichier téléchargé via le plugin officiel opener de Tauri.
 - **Rafraîchissement des services** : toutes les 5 secondes uniquement quand le tableau de bord est visible, plus un bouton d'actualisation manuelle.
 - **Erreurs** : chaque `kind` de `AppError` est traduit en message clair. `HostKeyMismatch` redirige vers un écran d'alerte dédié, jamais une simple notification.
 

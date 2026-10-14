@@ -26,7 +26,8 @@ Lire le document concerné avant de travailler sur une partie :
 
 - Ne jamais désactiver ni contourner la vérification de la clé hôte SSH. Ne jamais écrire un `check_server_key` qui renvoie `true` sans comparer l'empreinte.
 - Toute valeur venant de l'interface qui finit dans une commande shell doit être validée strictement puis échappée. Pas d'exception.
-  - Noms de services systemd : `^[a-zA-Z0-9@._-]+\.service$`
+  - Noms de services systemd existants (affichage, actions) : `^[a-zA-Z0-9@._-]+\.service$`
+  - Noms de services créés depuis l'appli (formulaire de création) : `^[a-z0-9][a-z0-9-]*\.service$`
   - IDs de conteneurs Docker : hexadécimal uniquement. On manipule les conteneurs par ID, jamais par nom.
 - Les opérations sur les fichiers passent par SFTP, jamais par des commandes shell (`rm`, `mv`, etc.).
 - Les secrets (passphrase de clé) vont dans le keyring système via la crate `keyring`, jamais dans un fichier.
