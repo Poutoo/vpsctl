@@ -1,9 +1,11 @@
 import { onBeforeUnmount, onMounted } from "vue";
+import { watchWindowVisibility } from "../api/window";
 
 /**
  * Exécute `task` au montage, puis `intervalMs` après la fin de chaque
- * exécution, tant que le composant est monté et la fenêtre visible. Au retour
- * de la fenêtre, la tâche est relancée immédiatement.
+ * exécution, tant que le composant est monté et la fenêtre visible (ni
+ * masquée ni réduite, voir `watchWindowVisibility`). Au retour de la fenêtre,
+ * la tâche est relancée immédiatement.
  *
  * Le délai part de la fin de la tâche (pas de `setInterval`) : une tâche
  * lente ne s'empile jamais. `task` doit elle-même ignorer un appel pendant
@@ -18,10 +20,9 @@ export function useVisiblePolling(
 ) {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let mounted = false;
-
-  function visible() {
-    return document.visibilityState === "visible";
-  }
+  /** Supposée visible au montage, en attendant l'état réel de la fenêtre. */
+  let visible = true;
+  let stopWatching: (() => void) | null = null;
 
   function clear() {
     if (timer !== null) clearTimeout(timer);
@@ -30,7 +31,7 @@ export function useVisiblePolling(
 
   function schedule() {
     clear();
-    if (mounted && visible()) timer = setTimeout(trigger, intervalMs);
+    if (mounted && visible) timer = setTimeout(trigger, intervalMs);
   }
 
   async function trigger() {
@@ -43,21 +44,30 @@ export function useVisiblePolling(
     schedule();
   }
 
-  function onVisibilityChange() {
-    if (visible()) void trigger();
+  function onVisibilityChange(next: boolean) {
+    visible = next;
+    if (visible) void trigger();
     else clear();
   }
 
   onMounted(() => {
     mounted = true;
-    document.addEventListener("visibilitychange", onVisibilityChange);
     void trigger();
+    void watchWindowVisibility(onVisibilityChange).then((watch) => {
+      if (!mounted) {
+        watch.stop();
+        return;
+      }
+      stopWatching = watch.stop;
+      if (!watch.visible) onVisibilityChange(false);
+    });
   });
 
   onBeforeUnmount(() => {
     mounted = false;
     clear();
-    document.removeEventListener("visibilitychange", onVisibilityChange);
+    stopWatching?.();
+    stopWatching = null;
   });
 
   return { trigger };
