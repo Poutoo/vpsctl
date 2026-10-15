@@ -106,6 +106,28 @@ Chaque flux (logs, exécution de script) reçoit un identifiant et est enregistr
 
 ### Fichiers d'unité systemd
 
+Gabarit généré :
+
+```ini
+[Unit]
+Description=<description>
+
+[Service]
+Type=simple
+WorkingDirectory=<dossier>
+ExecStart=<commande>
+Restart=<no|on-failure|always>
+RestartSec=5
+Environment="CLE=valeur"
+
+[Install]
+WantedBy=default.target
+```
+
+- Pas de `After=network-online.target` : cette cible appartient au gestionnaire système, elle n'a pas d'effet dans un service utilisateur.
+- Dossier de travail : `~` seul est accepté tel quel ; `~/chemin` est converti en `%h/chemin` (systemd n'accepte pas `~/` dans `WorkingDirectory`).
+- Chaque variable d'environnement est écrite entre guillemets, avec les guillemets et barres obliques inverses échappés.
+
 Les champs saisis dans le formulaire de création (`execStart`, `description`, etc.) sont écrits sans retour à la ligne, pour empêcher l'insertion de directives supplémentaires dans le fichier d'unité.
 
 ## Frontend
