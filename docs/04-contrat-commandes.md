@@ -29,7 +29,7 @@ type AppError =
 
 ```ts
 list_profiles(): Profile[]
-save_profile(profile: Profile): Profile
+save_profile(profile: Profile): Profile   // si l'hôte ou le port change, l'empreinte mémorisée est effacée ; un seul profil par défaut
 delete_profile(id: string): void
 set_key_passphrase(profileId: string, passphrase: string): void
 trust_host_key(profileId: string, fingerprint: string): void
@@ -131,6 +131,7 @@ interface Profile {
   user: string
   keyPath: string
   hostKeyFingerprint: string | null
+  isDefault: boolean
 }
 
 interface ServerInfo {
@@ -176,8 +177,10 @@ interface ServiceDef {
 interface Script {
   id: string
   name: string
+  description: string
   command: string
   requireConfirmation: boolean
+  lastRun: { at: number; exitCode: number | null } | null   // mis à jour par le backend à la fin de chaque exécution
 }
 
 type LogEvent =
