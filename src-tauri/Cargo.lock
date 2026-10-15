@@ -5347,6 +5347,7 @@ dependencies = [
  "tauri-build",
  "thiserror 2.0.21",
  "ts-rs",
+ "uuid",
 ]
 
 [[package]]
