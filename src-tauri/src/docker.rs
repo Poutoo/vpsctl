@@ -195,14 +195,12 @@ pub fn duration(status: &str) -> Option<String> {
         // Suffixe éventuel : « (healthy) », « (health: starting) », « (Paused) ».
         let text = rest.split_once(" (").map_or(rest, |(text, _)| text);
         ("depuis", text)
-    } else if let Some(rest) = status
-        .strip_prefix("Exited (")
-        .or_else(|| status.strip_prefix("Restarting ("))
-    {
+    } else {
+        let rest = status
+            .strip_prefix("Exited (")
+            .or_else(|| status.strip_prefix("Restarting ("))?;
         let text = rest.split_once(") ")?.1.strip_suffix(" ago")?;
         ("il y a", text)
-    } else {
-        return None;
     };
     Some(match human_duration_fr(text) {
         Some(french) => format!("{prefix} {french}"),
