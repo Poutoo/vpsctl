@@ -1,0 +1,7 @@
+# Version de Rust figée : la même en local et en CI (rustfmt et clippy compris).
+# Pour monter de version : changer `channel`, lancer `rustup toolchain install`,
+# puis corriger ce que le nouveau clippy signale avant de commiter.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

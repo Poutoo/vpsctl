@@ -31,9 +31,9 @@ jobs:
           node-version: 24
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      # Installe la version figée dans rust-toolchain.toml (avec rustfmt et clippy).
+      - name: Toolchain Rust
+        run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2.9.2
         with:
@@ -96,7 +96,9 @@ jobs:
           node-version: 24
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Installe la version figée dans rust-toolchain.toml (avec rustfmt et clippy).
+      - name: Toolchain Rust
+        run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2.9.2
         with:
