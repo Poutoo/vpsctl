@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed } from "vue";
+import { useConfirm } from "../../composables/useConfirm";
+import AppButton from "../ui/AppButton.vue";
+import PanelCard from "../ui/PanelCard.vue";
+import StatusIcon from "../ui/StatusIcon.vue";
 import FingerprintGroups from "./FingerprintGroups.vue";
 
 const props = defineProps<{
@@ -15,90 +19,126 @@ const emit = defineEmits<{
   replace: [];
 }>();
 
-const replacing = ref(false);
-const verified = ref(false);
+const { confirm } = useConfirm();
 
-const identicalGroups = computed(() => {
-  const groups = (fp: string) =>
-    fp.replace(/^SHA256:/, "").match(/.{1,4}/g) ?? [];
+function groups(fingerprint: string): string[] {
+  return fingerprint.replace(/^SHA256:/, "").match(/.{1,4}/g) ?? [];
+}
+
+const comparison = computed(() => {
   const expected = groups(props.expected);
-  return groups(props.received).filter((g, i) => g === expected[i]).length;
+  const received = groups(props.received);
+  const identical = received.filter((g, i) => g === expected[i]).length;
+  return { identical, total: received.length };
 });
+
+/** Remplacement : GO / NO GO, GO actif seulement une fois la vérification cochée. */
+async function askReplace() {
+  const confirmed = await confirm({
+    title: "Remplacer la clé mémorisée ?",
+    subject: props.profileName,
+    consequences: [
+      "La clé mémorisée dans le profil sera remplacée par la clé reçue.",
+      "Une nouvelle liaison démarrera aussitôt avec cette clé.",
+      "Si la clé reçue vient d'une interception, la liaison passera par elle.",
+    ],
+    confirmLabel: "Remplacer",
+    danger: true,
+    acknowledge: "J'ai vérifié l'empreinte reçue sur la console de l'hébergeur",
+  });
+  if (confirmed) emit("replace");
+}
 </script>
 
 <template>
   <section class="alert" role="alert" aria-labelledby="mismatch-title">
-    <p class="banner">
-      Alerte de sécurité · liaison interrompue · {{ profileName }} ·
-      {{ endpoint }}
-    </p>
+    <header class="banner">
+      <span class="caps kicker">
+        <StatusIcon class="shape" name="triangle" />
+        Alerte de sécurité · liaison interrompue
+      </span>
+      <span class="target">{{ profileName }} · {{ endpoint }}</span>
+    </header>
 
-    <h1 id="mismatch-title">L'empreinte du serveur a changé.</h1>
-    <p>
-      La clé présentée par l'hôte ne correspond pas à celle mémorisée dans le
-      profil. Il peut s'agir d'une réinstallation du serveur, ou d'une
-      interception. La liaison a été coupée avant l'authentification : aucun
-      identifiant n'a été envoyé.
-    </p>
+    <div class="content">
+      <div class="main">
+        <h1 id="mismatch-title" class="title">
+          L'empreinte du serveur a changé.
+        </h1>
+        <p class="lead">
+          La clé présentée par l'hôte ne correspond pas à celle mémorisée dans
+          le profil. Il peut s'agir d'une réinstallation du serveur, ou d'une
+          interception. La liaison a été coupée avant l'authentification : aucun
+          identifiant n'a été envoyé.
+        </p>
 
-    <div class="compare">
-      <h2>Mémorisée</h2>
-      <FingerprintGroups :fingerprint="expected" show-full />
-      <h2>Reçue</h2>
-      <FingerprintGroups
-        :fingerprint="received"
-        :compare-to="expected"
-        show-full
-      />
-      <p class="muted">
-        SHA256 · groupes différents soulignés · {{ identicalGroups }} groupe(s)
-        identique(s) sur 11
-      </p>
+        <div class="compare">
+          <div class="row">
+            <p class="caps row-label">Mémorisée</p>
+            <FingerprintGroups :fingerprint="expected" layout="inline" />
+          </div>
+          <div class="row received">
+            <p class="caps row-label">
+              Reçue
+              <span class="when">à l'instant</span>
+            </p>
+            <FingerprintGroups
+              :fingerprint="received"
+              :compare-to="expected"
+              layout="inline"
+            />
+          </div>
+          <p class="caps legend">
+            <span>SHA256 · groupes différents soulignés</span>
+            <span class="count">
+              {{ comparison.identical }}
+              {{
+                comparison.identical > 1
+                  ? "groupes identiques"
+                  : "groupe identique"
+              }}
+              sur {{ comparison.total }}
+            </span>
+          </p>
+        </div>
+      </div>
+
+      <PanelCard class="procedure">
+        <template #kicker>Procédure</template>
+        <ol class="steps">
+          <li>
+            <span class="number">1</span>
+            <span>
+              Ouvrez la console de l'hébergeur et lisez l'empreinte :
+              <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>
+            </span>
+          </li>
+          <li>
+            <span class="number">2</span>
+            <span>
+              Elle correspond à la clé reçue et le serveur a été réinstallé :
+              remplacez la clé mémorisée.
+            </span>
+          </li>
+          <li>
+            <span class="number">3</span>
+            <span>
+              Elle ne correspond pas : n'établissez pas la liaison depuis ce
+              réseau et vérifiez-le.
+            </span>
+          </li>
+        </ol>
+      </PanelCard>
     </div>
 
-    <ol class="procedure">
-      <li>
-        Ouvrez la console de l'hébergeur et lisez l'empreinte :
-        <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>
-      </li>
-      <li>
-        Elle correspond à la clé reçue et le serveur a été réinstallé :
-        remplacez la clé mémorisée.
-      </li>
-      <li>
-        Elle ne correspond pas : n'établissez pas la liaison depuis ce réseau et
-        vérifiez-le.
-      </li>
-    </ol>
-
-    <div class="actions">
-      <button type="button" class="primary" @click="emit('back')">
+    <footer class="actions">
+      <AppButton variant="primary" @click="emit('back')">
         Revenir aux profils
-      </button>
-      <button
-        v-if="!replacing"
-        type="button"
-        class="danger"
-        @click="replacing = true"
-      >
+      </AppButton>
+      <AppButton variant="danger" :disabled="busy" @click="askReplace">
         Remplacer la clé mémorisée…
-      </button>
-    </div>
-
-    <div v-if="replacing" class="replace">
-      <label>
-        <input v-model="verified" type="checkbox" />
-        J'ai vérifié l'empreinte sur la console de l'hébergeur
-      </label>
-      <button
-        type="button"
-        class="danger"
-        :disabled="!verified || busy"
-        @click="emit('replace')"
-      >
-        Remplacer par la clé reçue et se connecter
-      </button>
-    </div>
+      </AppButton>
+    </footer>
   </section>
 </template>
 
@@ -106,63 +146,153 @@ const identicalGroups = computed(() => {
 .alert {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
+  min-height: 100%;
+  background: var(--color-bg);
 }
 
 .banner {
-  margin: 0;
-  padding: var(--sp-2) var(--sp-3);
-  border: var(--border-width) solid var(--color-danger);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-6);
+  background: var(--color-danger-tint);
+  border-bottom: var(--border-width) solid var(--color-danger);
+}
+
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
   color: var(--color-danger-text);
-  font-size: var(--fs-md);
-  text-transform: uppercase;
 }
 
-h1 {
-  margin: 0;
+.shape {
+  color: var(--color-danger);
 }
 
-h2 {
-  margin: var(--sp-3) 0 var(--sp-2);
+.target {
   color: var(--color-text-muted);
-  font-size: var(--fs-md);
-  text-transform: uppercase;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--sp-6);
+  padding: var(--sp-7) var(--sp-6) var(--sp-5);
+}
+
+.main {
+  display: flex;
+  flex: 2 1 calc(8 * var(--sp-8));
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--fs-3xl);
+}
+
+.lead {
+  max-width: 70ch;
+  color: var(--color-text-muted);
 }
 
 .compare {
-  padding: var(--sp-4);
-  border: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border-strong);
 }
 
-.muted {
-  margin: var(--sp-3) 0 0;
+.row {
+  display: grid;
+  grid-template-columns: calc(2 * var(--sp-8)) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.row-label {
+  display: flex;
+  flex-direction: column;
   color: var(--color-text-muted);
-  font-size: var(--fs-md);
+}
+
+.received .row-label {
+  color: var(--color-danger-text);
+}
+
+.when {
+  color: var(--color-text-muted);
+  font-family: var(--font-ui);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+}
+
+.count {
+  color: var(--color-danger-text);
 }
 
 .procedure {
-  margin: 0;
-  padding-left: var(--sp-5);
+  flex: 1 1 calc(4 * var(--sp-8));
 }
 
-.procedure li + li {
-  margin-top: var(--sp-2);
+.steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.steps li {
+  display: flex;
+  gap: var(--sp-4);
+  padding: var(--sp-3) 0;
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.steps li:first-child {
+  padding-top: 0;
+}
+
+.steps li:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.number {
+  color: var(--color-action);
+  font-family: var(--font-mono);
 }
 
 code {
+  display: block;
+  margin-top: var(--sp-2);
+  color: var(--color-text-muted);
   font-family: var(--font-mono);
   word-break: break-all;
 }
 
-.actions,
-.replace {
+.actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: var(--sp-3);
-}
-
-.danger {
-  color: var(--color-danger-text);
+  padding: var(--sp-5) var(--sp-6) var(--sp-6);
 }
 </style>

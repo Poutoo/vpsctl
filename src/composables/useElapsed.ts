@@ -30,7 +30,7 @@ export function formatClock(ms: number): string {
  * nul. Le minuteur s'arrête au démontage.
  */
 export function useElapsed(
-  since: Ref<number | null>,
+  since: Readonly<Ref<number | null>>,
   {
     clock = () => performance.now(),
     tickMs = TICK_MS,

@@ -1,7 +1,13 @@
 <script setup lang="ts">
+/**
+ * Télémétrie de liaison : étapes réelles de la connexion, horodatées depuis
+ * le début de la tentative, et bannière LOS en cas d'échec.
+ */
 import { computed } from "vue";
 import type { ConnectStep } from "../../bindings/ConnectStep";
+import { formatElapsed, useElapsed } from "../../composables/useElapsed";
 import type { ConnectPhase, TimedStep } from "../../stores/connection";
+import AppIcon from "../ui/AppIcon.vue";
 import StatusIcon from "../ui/StatusIcon.vue";
 
 const props = defineProps<{
@@ -9,6 +15,9 @@ const props = defineProps<{
   phase: ConnectPhase;
   /** `hôte:port` visé, pour l'étape TCP. */
   endpoint: string;
+  profileName: string | null;
+  /** Début de la tentative en cours (`performance.now()`), pour le chrono. */
+  startedAt: number | null;
 }>();
 
 type Mark = "ok" | "pending" | "error";
@@ -29,7 +38,7 @@ const MARK_LABEL: Record<Mark, string> = {
 };
 
 function seconds(ms: number): string {
-  return `T+${(ms / 1000).toFixed(3)}`;
+  return formatElapsed(ms, "ms");
 }
 
 function describe(step: ConnectStep): Omit<Row, "at"> {
@@ -116,47 +125,116 @@ const rows = computed<Row[]>(() =>
 const closedBeforeAuth = computed(
   () => props.phase === "hostKeyUnknown" || props.phase === "hostKeyMismatch",
 );
+
+const connecting = computed(() => props.phase === "connecting");
+const live = useElapsed(
+  computed(() => (connecting.value ? props.startedAt : null)),
+);
+
+/** Chrono de l'en-tête : en direct pendant la connexion, figé ensuite. */
+const chrono = computed(() => {
+  if (live.value !== null) return seconds(live.value);
+  const last = props.steps[props.steps.length - 1];
+  return seconds(last?.atMs ?? 0);
+});
 </script>
 
 <template>
-  <section class="telemetry" aria-live="polite">
-    <p v-if="rows.length === 0 && phase !== 'connecting'" class="empty">
-      Aucune séquence en cours.
-    </p>
-    <ol v-else class="rows">
-      <li v-for="(row, index) in rows" :key="index" :class="row.mark">
-        <span class="at">{{ row.at }}</span>
-        <span class="mark" role="img" :aria-label="MARK_LABEL[row.mark]">
-          <StatusIcon v-if="row.mark === 'ok'" name="check" />
-          <StatusIcon v-else-if="row.mark === 'error'" name="cross" />
-          <template v-else>?</template>
-        </span>
-        <span class="label">{{ row.label }}</span>
-        <span class="text">{{ row.text }}</span>
-        <span v-if="row.detail" class="detail">{{ row.detail }}</span>
-      </li>
-      <li v-if="phase === 'connecting'" class="pending">
-        <span class="at" />
-        <span class="mark">…</span>
-        <span class="text">en cours</span>
-      </li>
-      <li v-if="closedBeforeAuth" class="pending">
-        <span class="at" />
-        <span class="mark" role="img" aria-label="fermée">
-          <StatusIcon name="circle" />
-        </span>
-        <span class="label">LIAISON</span>
-        <span class="text">fermée avant authentification</span>
-        <span class="detail">aucune donnée d'authentification envoyée</span>
-      </li>
-    </ol>
+  <section class="console" aria-labelledby="telemetry-title">
+    <header class="header">
+      <h2 id="telemetry-title" class="caps title">Télémétrie de liaison</h2>
+      <span v-if="profileName" class="profile">{{ profileName }}</span>
+      <span class="command">ssh -v</span>
+      <span class="chrono">{{ chrono }}</span>
+    </header>
+
+    <div class="output" aria-live="polite">
+      <p v-if="rows.length === 0 && !connecting" class="empty">
+        — aucune séquence en cours —
+      </p>
+      <ol v-else class="rows">
+        <li v-for="(row, index) in rows" :key="index" :class="row.mark">
+          <span class="at">{{ row.at }}</span>
+          <span class="mark" role="img" :aria-label="MARK_LABEL[row.mark]">
+            <StatusIcon v-if="row.mark === 'ok'" name="check" />
+            <StatusIcon v-else-if="row.mark === 'error'" name="cross" />
+            <template v-else>?</template>
+          </span>
+          <span class="label">{{ row.label }}</span>
+          <span class="text">{{ row.text }}</span>
+          <span v-if="row.detail" class="detail" :title="row.detail">{{
+            row.detail
+          }}</span>
+        </li>
+        <li v-if="connecting" class="pending">
+          <span class="at" />
+          <span class="mark" aria-hidden="true">…</span>
+          <span class="label" />
+          <span class="text">en cours</span>
+        </li>
+        <li v-if="closedBeforeAuth" class="closed">
+          <span class="at" />
+          <span class="mark" role="img" aria-label="fermée">
+            <StatusIcon name="circle" />
+          </span>
+          <span class="label">LIAISON</span>
+          <span class="text">fermée avant authentification</span>
+          <span class="detail">aucune donnée envoyée</span>
+        </li>
+      </ol>
+
+      <Transition name="los">
+        <p v-if="phase === 'failed'" class="los" role="status">
+          <AppIcon name="signal-lost" />
+          <span class="caps">LOS · échec de liaison · {{ chrono }}</span>
+        </p>
+      </Transition>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.telemetry {
+.console {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-field);
+  border: var(--border-width) solid var(--color-border);
   font-family: var(--font-mono);
-  font-size: var(--fs-md);
+  font-size: var(--fs-data);
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--color-surface-raised);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.title {
+  color: var(--color-text-muted);
+}
+
+.profile {
+  font-weight: 600;
+}
+
+.command {
+  color: var(--color-text-muted);
+}
+
+.chrono {
+  margin-left: auto;
+  color: var(--color-text-muted);
+}
+
+.output {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-3) var(--sp-4);
 }
 
 .empty {
@@ -170,25 +248,31 @@ const closedBeforeAuth = computed(
 }
 
 .rows li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-3);
-  padding: var(--sp-1) 0;
+  display: grid;
+  grid-template-columns: 9ch 2ch 8ch minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-2);
 }
 
 .at {
-  min-width: 9ch;
   color: var(--color-text-muted);
 }
 
-.label {
-  min-width: 7ch;
+.text {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail {
-  margin-left: auto;
+  max-width: 32ch;
+  overflow: hidden;
   color: var(--color-text-muted);
-  word-break: break-all;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ok .mark {
@@ -199,12 +283,49 @@ const closedBeforeAuth = computed(
   color: var(--color-warning);
 }
 
+.closed .mark {
+  color: var(--color-text-muted);
+}
+
 /* Le symbole est une forme : --color-danger ; le texte : --color-danger-text. */
+.error {
+  background: var(--color-danger-tint);
+}
+
 .error .mark {
   color: var(--color-danger);
 }
 
+.error .text,
 .error .detail {
   color: var(--color-danger-text);
+}
+
+/* Bannière LOS : filets de part et d'autre, fondu en --dur-fast. */
+.los {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  color: var(--color-danger-text);
+}
+
+.los::before,
+.los::after {
+  content: "";
+  flex: 1;
+  border-top: var(--border-width) solid var(--color-danger);
+}
+
+.los :deep(.icon) {
+  color: var(--color-danger);
+}
+
+.los-enter-active {
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.los-enter-from {
+  opacity: 0;
 }
 </style>

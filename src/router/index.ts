@@ -4,6 +4,8 @@ import { useConnectionStore } from "../stores/connection";
 declare module "vue-router" {
   interface RouteMeta {
     requiresConnection?: boolean;
+    /** La vue gère ses propres marges (écran plein cadre). */
+    fullBleed?: boolean;
   }
 }
 
@@ -15,6 +17,7 @@ export const router = createRouter({
       path: "/connect",
       name: "connect",
       component: () => import("../views/ConnectView.vue"),
+      meta: { fullBleed: true },
     },
     {
       path: "/dashboard",

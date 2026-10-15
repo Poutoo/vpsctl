@@ -35,7 +35,7 @@ watch(
       <TitleBar />
       <div class="workspace">
         <AppNav v-if="connection.isConnected" />
-        <main class="main">
+        <main class="main" :class="{ bleed: route.meta.fullBleed }">
           <RouterView />
         </main>
       </div>
@@ -64,5 +64,9 @@ watch(
   min-width: 0;
   overflow: auto;
   padding: var(--sp-6);
+}
+
+.main.bleed {
+  padding: 0;
 }
 </style>

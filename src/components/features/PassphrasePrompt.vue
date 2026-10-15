@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from "vue";
+import AppButton from "../ui/AppButton.vue";
+import PanelCard from "../ui/PanelCard.vue";
+import StatusIcon from "../ui/StatusIcon.vue";
 
 const props = defineProps<{
   keyPath: string;
@@ -38,99 +41,144 @@ function submit() {
 </script>
 
 <template>
-  <form
-    class="panel"
+  <PanelCard
+    tag="form"
+    tone="warning"
     aria-labelledby="passphrase-title"
     @submit.prevent="submit"
   >
-    <p class="kicker">Passphrase requise · clé chiffrée · {{ endpoint }}</p>
-    <h2 id="passphrase-title">Déverrouiller la clé privée</h2>
-    <p class="path">{{ keyPath }}</p>
+    <template #kicker>
+      <StatusIcon name="half" />
+      Passphrase requise · clé chiffrée
+    </template>
+    <template #aside>{{ endpoint }}</template>
 
-    <label class="field">
-      Passphrase
-      <input
-        ref="input"
-        v-model="passphrase"
-        type="password"
-        autocomplete="off"
-        spellcheck="false"
-        :aria-invalid="rejected"
-        aria-describedby="passphrase-error"
-      />
-    </label>
-    <p v-if="rejected" id="passphrase-error" class="error" role="alert">
-      Passphrase incorrecte. Réessayez.
-    </p>
+    <div class="columns">
+      <div class="form">
+        <h2 id="passphrase-title">Déverrouiller la clé privée</h2>
+        <p class="path">{{ keyPath }}</p>
 
-    <label class="check">
-      <input v-model="remember" type="checkbox" />
-      Mémoriser dans le trousseau du système
-    </label>
+        <label class="field">
+          <span class="label">Passphrase</span>
+          <input
+            ref="input"
+            v-model="passphrase"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            :aria-invalid="rejected"
+            aria-describedby="passphrase-error"
+          />
+        </label>
+        <p v-if="rejected" id="passphrase-error" class="error" role="alert">
+          <StatusIcon class="shape" name="triangle" />
+          Passphrase incorrecte. Réessayez.
+        </p>
 
-    <p class="muted">
-      La passphrase déverrouille la clé sur cet ordinateur. Elle n'est jamais
-      envoyée au serveur. Mémorisée dans le trousseau, elle sera utilisée
-      automatiquement aux prochaines liaisons.
-    </p>
+        <label class="check">
+          <input v-model="remember" type="checkbox" />
+          Mémoriser dans le trousseau du système
+        </label>
+      </div>
 
-    <div class="actions">
-      <button type="button" @click="emit('cancel')">Annuler</button>
-      <button type="submit" :disabled="!passphrase || busy">
-        Déverrouiller
-      </button>
+      <aside class="local">
+        <p class="caps local-title">Traitement local</p>
+        <p>
+          La passphrase déverrouille la clé sur cet ordinateur. Elle n'est
+          jamais envoyée au serveur.
+        </p>
+        <p>
+          Mémorisée dans le trousseau, elle sera utilisée automatiquement aux
+          prochaines liaisons.
+        </p>
+      </aside>
     </div>
-  </form>
+
+    <template #footer>
+      <p class="caps note">Entrée = déverrouiller</p>
+      <AppButton @click="emit('cancel')">Annuler</AppButton>
+      <AppButton
+        variant="primary"
+        type="submit"
+        :disabled="!passphrase || busy"
+      >
+        Déverrouiller
+      </AppButton>
+    </template>
+  </PanelCard>
 </template>
 
 <style scoped>
-.panel {
+.columns {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-5);
+}
+
+.form {
+  display: flex;
+  flex: 1 1 calc(4 * var(--sp-8));
   flex-direction: column;
   gap: var(--sp-3);
-  padding: var(--sp-4);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--r-2);
-}
-
-.kicker,
-.muted {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--fs-md);
-}
-
-h2 {
-  margin: 0;
-  font-size: var(--fs-xl);
 }
 
 .path {
-  margin: 0;
+  color: var(--color-action);
   font-family: var(--font-mono);
   font-size: var(--fs-md);
+  word-break: break-all;
 }
 
 .field {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+
+.label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--color-danger-text);
+  font-size: var(--fs-sm);
+}
+
+.shape {
+  color: var(--color-danger);
 }
 
 .check {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  font-size: var(--fs-md);
+  font-weight: 500;
+  cursor: pointer;
 }
 
-.error {
-  margin: 0;
-  color: var(--color-danger-text);
-}
-
-.actions {
+.local {
   display: flex;
-  justify-content: flex-end;
+  flex: 1 1 calc(3 * var(--sp-8));
+  flex-direction: column;
   gap: var(--sp-3);
+  padding-left: var(--sp-5);
+  border-left: var(--border-width) solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+.local-title {
+  color: var(--color-text-muted);
+}
+
+.note {
+  flex: 1;
+  color: var(--color-text-muted);
 }
 </style>
