@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "vpsctl",
+  "productName": "Atlas",
   "version": "0.1.0",
   "identifier": "dev.poutoo.atlas",
   "build": {
@@ -12,9 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "vpsctl",
-        "width": 800,
-        "height": 600
+        "title": "Atlas",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 680,
+        "decorations": false
       }
     ],
     "security": {

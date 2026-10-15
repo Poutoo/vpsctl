@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import AppNav from "./components/layout/AppNav.vue";
 import BackgroundLayer from "./components/layout/BackgroundLayer.vue";
 import StatusBar from "./components/layout/StatusBar.vue";
+import TitleBar from "./components/layout/TitleBar.vue";
 import ConfirmDialog from "./components/ui/ConfirmDialog.vue";
 import { useConnectionStore } from "./stores/connection";
 import { useProfilesStore } from "./stores/profiles";
@@ -31,6 +32,7 @@ watch(
   <TooltipProvider :delay-duration="400">
     <BackgroundLayer />
     <div class="shell">
+      <TitleBar />
       <div class="workspace">
         <AppNav v-if="connection.isConnected" />
         <main class="main">
@@ -48,7 +50,7 @@ watch(
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100%;
 }
 

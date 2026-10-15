@@ -65,3 +65,43 @@ export async function watchWindowVisibility(
     },
   };
 }
+
+// Boutons de la barre de titre personnalisée (permissions dans
+// src-tauri/capabilities/default.json). Le déplacement et le double-clic
+// passent par `data-tauri-drag-region`, géré par Tauri.
+
+export function minimizeWindow(): Promise<void> {
+  return getCurrentWindow().minimize();
+}
+
+export function toggleMaximizeWindow(): Promise<void> {
+  return getCurrentWindow().toggleMaximize();
+}
+
+export function closeWindow(): Promise<void> {
+  return getCurrentWindow().close();
+}
+
+/**
+ * Suit l'état agrandi de la fenêtre (relu à chaque redimensionnement, ce qui
+ * couvre aussi l'ancrage et le double-clic). Renvoie la fonction d'arrêt.
+ */
+export async function watchMaximized(
+  onChange: (maximized: boolean) => void,
+): Promise<() => void> {
+  const win = getCurrentWindow();
+  let check = 0;
+
+  async function read() {
+    const current = ++check;
+    try {
+      const maximized = await win.isMaximized();
+      if (current === check) onChange(maximized);
+    } catch {
+      // Fenêtre indisponible (fermeture en cours) : état inchangé.
+    }
+  }
+
+  void read();
+  return win.onResized(() => void read());
+}
