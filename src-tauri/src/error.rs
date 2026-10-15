@@ -23,8 +23,14 @@ pub enum AppError {
     #[error("passphrase de la clé SSH requise")]
     PassphraseRequired,
 
+    #[error("passphrase de la clé SSH incorrecte")]
+    PassphraseIncorrect,
+
     #[error("échec de l'authentification SSH")]
     AuthFailed,
+
+    #[error("connexion interrompue")]
+    Cancelled,
 
     #[error("erreur réseau : {message}")]
     Network { message: String },
@@ -39,9 +45,65 @@ pub enum AppError {
     Io { message: String },
 }
 
+impl AppError {
+    pub fn network(message: impl Into<String>) -> Self {
+        Self::Network {
+            message: message.into(),
+        }
+    }
+
+    pub fn invalid_input(message: impl Into<String>) -> Self {
+        Self::InvalidInput {
+            message: message.into(),
+        }
+    }
+
+    pub fn io(message: impl Into<String>) -> Self {
+        Self::Io {
+            message: message.into(),
+        }
+    }
+}
+
+/// Cause d'un échec avant l'établissement de la liaison TCP.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NetworkFailure {
+    HostNotFound,
+    Refused,
+    TimedOut { seconds: u64 },
+    Other(String),
+}
+
+impl NetworkFailure {
+    /// Classe une erreur de `TcpStream::connect`.
+    pub fn from_connect_error(error: &std::io::Error) -> Self {
+        match error.kind() {
+            std::io::ErrorKind::ConnectionRefused => Self::Refused,
+            std::io::ErrorKind::TimedOut => Self::TimedOut { seconds: 0 },
+            _ => Self::Other(error.to_string()),
+        }
+    }
+
+    /// Message compréhensible, porté par `AppError::Network`.
+    pub fn into_error(self, host: &str, port: u16) -> AppError {
+        let message = match self {
+            Self::HostNotFound => format!("Nom d'hôte introuvable : {host}."),
+            Self::Refused => format!(
+                "Connexion refusée par {host}:{port}. Aucun service SSH n'écoute sur ce port."
+            ),
+            Self::TimedOut { seconds: 0 } => format!("Aucune réponse de {host}:{port}."),
+            Self::TimedOut { seconds } => {
+                format!("Aucune réponse de {host}:{port} après {seconds} s.")
+            }
+            Self::Other(detail) => format!("Impossible de joindre {host}:{port} : {detail}."),
+        };
+        AppError::network(message)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::AppError;
+    use super::{AppError, NetworkFailure};
     use serde_json::{json, to_value};
 
     #[test]
@@ -82,5 +144,55 @@ mod tests {
                 "stderr": "command not found",
             })
         );
+    }
+
+    #[test]
+    fn passphrase_and_cancel_variants_serialize_to_kind_only() {
+        assert_eq!(
+            to_value(AppError::PassphraseIncorrect).unwrap(),
+            json!({ "kind": "PassphraseIncorrect" })
+        );
+        assert_eq!(
+            to_value(AppError::Cancelled).unwrap(),
+            json!({ "kind": "Cancelled" })
+        );
+    }
+
+    #[test]
+    fn network_failures_become_readable_network_errors() {
+        let message = |failure: NetworkFailure| match failure.into_error("vps.example", 2222) {
+            AppError::Network { message } => message,
+            other => panic!("attendu Network, reçu {other:?}"),
+        };
+
+        assert_eq!(
+            message(NetworkFailure::HostNotFound),
+            "Nom d'hôte introuvable : vps.example."
+        );
+        assert!(
+            message(NetworkFailure::Refused).starts_with("Connexion refusée par vps.example:2222.")
+        );
+        assert_eq!(
+            message(NetworkFailure::TimedOut { seconds: 10 }),
+            "Aucune réponse de vps.example:2222 après 10 s."
+        );
+    }
+
+    #[test]
+    fn connect_errors_are_classified_by_kind() {
+        use std::io::{Error, ErrorKind};
+
+        assert_eq!(
+            NetworkFailure::from_connect_error(&Error::from(ErrorKind::ConnectionRefused)),
+            NetworkFailure::Refused
+        );
+        assert!(matches!(
+            NetworkFailure::from_connect_error(&Error::from(ErrorKind::TimedOut)),
+            NetworkFailure::TimedOut { .. }
+        ));
+        assert!(matches!(
+            NetworkFailure::from_connect_error(&Error::from(ErrorKind::PermissionDenied)),
+            NetworkFailure::Other(_)
+        ));
     }
 }
