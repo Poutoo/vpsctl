@@ -39,3 +39,4 @@ Chaque jalon doit produire quelque chose d'utilisable.
 - Édition de fichiers texte
 - Terminal intégré
 - Monitoring
+- Détection immédiate d'une perte de liaison (événement émis par le backend au lieu du polling de 30 s)
