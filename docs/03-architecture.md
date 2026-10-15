@@ -79,7 +79,7 @@ Règle de filtrage (fonction pure) :
 - Un fichier `x.service` du dossier retient l'unité `x.service`. S'il n'est pas en mémoire (jamais démarré, désactivé), le service est tout de même affiché : « Arrêté », sans description.
 - Un gabarit `bot@.service` du dossier retient ses instances en mémoire (`bot@1.service`). Le gabarit lui-même n'est pas affiché (il ne peut pas être démarré). Limite : une instance que systemd n'a pas en mémoire (jamais démarrée) n'apparaît pas.
 - Une unité dont le chargement a échoué (`not-found`, `bad-setting`, `error`…) est exclue, sauf si son fichier est dans le dossier : elle est alors affichée « En échec ».
-- Une unité masquée (lien vers `/dev/null` dans le dossier) est affichée « Arrêté » avec la mention « masqué », et n'est pas pilotable.
+- Une unité masquée (`load` = `masked`, ou lien vers `/dev/null` dans le dossier, lu par SFTP) est affichée avec la mention « masqué » et n'est pas pilotable. Son état suit le champ `active` : « Arrêté » en pratique, sauf si elle a été masquée pendant qu'elle tournait.
 - Les sous-dossiers (`default.target.wants/`, `x.service.d/`) sont ignorés. Si le dossier n'existe pas, la liste est vide.
 
 Correspondance des états systemd vers les états de l'interface (champ `active`, calculée dans le backend) :

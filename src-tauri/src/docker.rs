@@ -60,14 +60,10 @@ pub fn interpret_list(output: &ExecOutput) -> Result<Vec<Container>, AppError> {
     if output.success() {
         return parse_ps_output(&output.stdout_text());
     }
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
     match output.exit_code {
         Some(127) => Err(AppError::DockerNotInstalled),
-        _ if is_permission_denied(&stderr) => Err(AppError::DockerPermissionDenied),
-        code => Err(AppError::Remote {
-            exit_code: code.and_then(|c| i32::try_from(c).ok()).unwrap_or(-1),
-            stderr,
-        }),
+        _ if is_permission_denied(&output.stderr_text()) => Err(AppError::DockerPermissionDenied),
+        _ => Err(output.remote_error()),
     }
 }
 

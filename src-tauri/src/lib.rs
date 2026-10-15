@@ -33,6 +33,7 @@ pub fn run() {
             commands::connection::connection_status,
             commands::connection::server_info,
             commands::docker::docker_list,
+            commands::systemd::services_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -305,6 +305,21 @@ impl ExecOutput {
     pub fn stdout_text(&self) -> String {
         String::from_utf8_lossy(&self.stdout).into_owned()
     }
+
+    pub fn stderr_text(&self) -> String {
+        String::from_utf8_lossy(&self.stderr).trim().to_owned()
+    }
+
+    /// Échec de la commande : code de sortie (-1 si absent) et sortie d'erreur.
+    pub fn remote_error(&self) -> AppError {
+        AppError::Remote {
+            exit_code: self
+                .exit_code
+                .and_then(|c| i32::try_from(c).ok())
+                .unwrap_or(-1),
+            stderr: self.stderr_text(),
+        }
+    }
 }
 
 /// Liaison SSH authentifiée. À la destruction, la liaison est fermée
