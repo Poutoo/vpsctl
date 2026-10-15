@@ -37,14 +37,17 @@ export const router = createRouter({
     {
       path: "/settings",
       name: "settings",
+      // Accessible sans connexion : les profils sont des données locales,
+      // nécessaires pour établir la première liaison.
       component: () => import("../views/SettingsView.vue"),
-      meta: { requiresConnection: true },
     },
   ],
 });
 
-router.beforeEach((to) => {
+// La garde s'appuie sur l'état réel de la liaison, lu auprès du backend.
+router.beforeEach(async (to) => {
   const connection = useConnectionStore();
+  await connection.initialize();
   if (to.meta.requiresConnection && !connection.isConnected) {
     return { name: "connect" };
   }
