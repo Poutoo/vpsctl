@@ -62,7 +62,7 @@ Les empreintes sont mémorisées dans le profil de connexion de l'application, j
 interface ConnectionInfo {
   profileId: string
   connectedAt: number        // horodatage
-  latencyMs: number | null   // mesurée en chronométrant une commande vide toutes les 30 secondes
+  latencyMs: number | null   // mesurée toutes les 30 secondes en chronométrant l'ouverture d'un canal de session (sans commande), refermé aussitôt
 }
 ```
 

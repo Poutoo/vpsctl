@@ -34,7 +34,8 @@ pub struct ConnectionInfo {
     /// Horodatage de la connexion, en millisecondes depuis l'epoch Unix.
     #[ts(type = "number")]
     pub connected_at: u64,
-    /// Mesurée en chronométrant une commande vide toutes les 30 secondes.
+    /// Mesurée toutes les 30 secondes en chronométrant l'ouverture d'un canal
+    /// de session (sans commande), refermé aussitôt.
     pub latency_ms: Option<u32>,
 }
 

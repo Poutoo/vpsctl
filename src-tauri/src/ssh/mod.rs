@@ -33,12 +33,10 @@ pub const TCP_TIMEOUT: Duration = Duration::from_secs(10);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 /// Délai maximal pour l'authentification.
 const AUTH_TIMEOUT: Duration = Duration::from_secs(30);
-/// Délai maximal d'une commande courte (latence, informations serveur).
+/// Délai maximal d'une commande courte ou d'une mesure de latence.
 const EXEC_TIMEOUT: Duration = Duration::from_secs(15);
 /// Taille maximale conservée pour la sortie d'une commande courte.
 const EXEC_OUTPUT_LIMIT: usize = 1024 * 1024;
-/// Commande chronométrée pour mesurer la latence.
-const LATENCY_COMMAND: &str = "true";
 
 // ---------------------------------------------------------------------------
 // Étapes de connexion (contrat : ConnectStep)
@@ -353,14 +351,24 @@ impl Connection {
             .map_err(|_| AppError::network("la commande n'a pas répondu à temps"))?
     }
 
-    /// Durée d'un aller-retour : ouverture d'un canal et commande vide.
+    /// Durée d'un aller-retour SSH : ouverture d'un canal de session jusqu'à
+    /// sa confirmation par le serveur, sans exécuter de commande. Le canal
+    /// est refermé aussitôt.
     pub async fn measure_latency(&self) -> Result<u32, AppError> {
-        let start = Instant::now();
-        let output = self.exec(LATENCY_COMMAND).await?;
-        if !output.success() {
-            return Err(AppError::network("mesure de latence impossible"));
-        }
-        Ok(millis(start.elapsed()))
+        let measure = async {
+            let handle = self.handle()?;
+            let start = Instant::now();
+            let channel = handle
+                .channel_open_session()
+                .await
+                .map_err(|e| AppError::network(format!("mesure de latence impossible : {e}")))?;
+            let elapsed = start.elapsed();
+            let _ = channel.close().await;
+            Ok(millis(elapsed))
+        };
+        tokio::time::timeout(EXEC_TIMEOUT, measure)
+            .await
+            .map_err(|_| AppError::network("le serveur n'a pas répondu à la mesure de latence"))?
     }
 
     /// Ferme proprement la liaison.

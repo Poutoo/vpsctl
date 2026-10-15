@@ -6,6 +6,7 @@ export type ConnectionInfo = { profileId: string,
  */
 connectedAt: number, 
 /**
- * Mesurée en chronométrant une commande vide toutes les 30 secondes.
+ * Mesurée toutes les 30 secondes en chronométrant l'ouverture d'un canal
+ * de session (sans commande), refermé aussitôt.
  */
 latencyMs: number | null, };
