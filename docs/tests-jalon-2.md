@@ -90,55 +90,55 @@ systemctl --user daemon-reload
 ## 1. Conteneurs Docker
 
 - [ ] La section « Conteneurs Docker » liste **tous** les conteneurs, y compris arrêtés, triés par nom. Les compteurs (ex. « 2 nominaux · 3 arrêtés · 1 en échec ») correspondent aux lignes.
-- [ ] `vpsctl-t-exit0` : cercle vide, « Arrêté · code 0 », durée « il y a … ».
-- [ ] `vpsctl-t-exit1` : triangle rouge, « En échec · code 1 ».
-- [ ] `vpsctl-t-stop` : cercle vide, « Arrêté · code 137 ».
-- [ ] `vpsctl-t-run` : cercle plein, « Nominal », sans code, durée « depuis … » (ex. « depuis environ une minute », puis « depuis 2 minutes »).
-- [ ] Les durées sont en français ; leur infobulle donne le texte brut de Docker (`Exited (137) 2 minutes ago`).
-- [ ] L'infobulle du libellé d'état donne l'état brut (`exited · Exited (1) …`).
-- [ ] Le nom long est tronqué avec « … » ; l'infobulle affiche le nom complet. Même chose pour une image longue.
-- [ ] Une image référencée par digest (`image@sha256:…`) s'affiche sans le digest.
-- [ ] Les états et durées correspondent à `docker ps -a` sur le VPS.
-- [ ] Aucun avertissement « élément illisible … ignoré » dans la section Docker. (Ce cas ne se provoque pas avec un vrai Docker : il est couvert par les tests unitaires.)
+- [y] `vpsctl-t-exit0` : cercle vide, « Arrêté · code 0 », durée « il y a … ».
+- [y] `vpsctl-t-exit1` : triangle rouge, « En échec · code 1 ».
+- [y] `vpsctl-t-stop` : cercle vide, « Arrêté · code 137 ».
+- [y] `vpsctl-t-run` : cercle plein, « Nominal », sans code, durée « depuis … » (ex. « depuis environ une minute », puis « depuis 2 minutes »).
+- [y] Les durées sont en français ; leur infobulle donne le texte brut de Docker (`Exited (137) 2 minutes ago`).
+- [y] L'infobulle du libellé d'état donne l'état brut (`exited · Exited (1) …`).
+- [y] Le nom long est tronqué avec « … » ; l'infobulle affiche le nom complet. Même chose pour une image longue.
+- [y] Une image référencée par digest (`image@sha256:…`) s'affiche sans le digest.
+- [y] Les états et durées correspondent à `docker ps -a` sur le VPS.
+- [y] Aucun avertissement « élément illisible … ignoré » dans la section Docker. (Ce cas ne se provoque pas avec un vrai Docker : il est couvert par les tests unitaires.)
 
 ## 2. Services systemd
 
-- [ ] La section « Services systemd » ne liste que des services dont le fichier est dans `~/.config/systemd/user/`. Aucun service du système (`dbus.service`, `pipewire.service`…) alors que `systemctl --user list-units --type=service --all` en affiche.
-- [ ] `vpsctl-t-fail.service` : triangle, « En échec », description « vpsctl test : échec volontaire ».
-- [ ] `vpsctl-t-tpl@1.service` : « Nominal », description « vpsctl test : instance 1 ». `vpsctl-t-tpl@.service` (le gabarit) n'apparaît **pas**.
-- [ ] `vpsctl-t-idle.service` : « Arrêté », description « — » (infobulle « Unité non chargée par systemd »), infobulle de l'état `non chargé · inactive/dead`.
-- [ ] `vpsctl-t-masked.service` : « Arrêté », mention « masqué ».
-- [ ] `vpsctl-t\x2descaped.service` : affiché, avec la mention « non pilotable ».
-- [ ] L'infobulle du libellé d'état donne l'état brut (`loaded · failed/failed`).
-- [ ] Les compteurs correspondent aux lignes.
-- [ ] `systemctl --user start vpsctl-t-tpl@2.service` sur le VPS : l'instance apparaît au rafraîchissement suivant, sans action dans l'appli.
+- [y] La section « Services systemd » ne liste que des services dont le fichier est dans `~/.config/systemd/user/`. Aucun service du système (`dbus.service`, `pipewire.service`…) alors que `systemctl --user list-units --type=service --all` en affiche.
+- [y] `vpsctl-t-fail.service` : triangle, « En échec », description « vpsctl test : échec volontaire ».
+- [y] `vpsctl-t-tpl@1.service` : « Nominal », description « vpsctl test : instance 1 ». `vpsctl-t-tpl@.service` (le gabarit) n'apparaît **pas**.
+- [y] `vpsctl-t-idle.service` : « Arrêté », description « — » (infobulle « Unité non chargée par systemd »), infobulle de l'état `non chargé · inactive/dead`.
+- [y] `vpsctl-t-masked.service` : « Arrêté », mention « masqué ».
+- [y] `vpsctl-t\x2descaped.service` : affiché, avec la mention « non pilotable ».
+- [y] L'infobulle du libellé d'état donne l'état brut (`loaded · failed/failed`).
+- [y] Les compteurs correspondent aux lignes.
+- [y] `systemctl --user start vpsctl-t-tpl@2.service` sur le VPS : l'instance apparaît au rafraîchissement suivant, sans action dans l'appli.
 
 ## 3. Sections indépendantes et erreurs
 
-- [ ] Permission Docker refusée (facultatif, demande des droits root sur le VPS) : `sudo gpasswd -d <utilisateur> docker`, puis se déconnecter et se reconnecter dans l'appli. La section Docker affiche « Accès à Docker refusé : le compte SSH doit appartenir au groupe docker. », sans liste. La section systemd reste remplie et continue de se rafraîchir. Rétablir : `sudo usermod -aG docker <utilisateur>`, se reconnecter : la liste revient.
-- [ ] Pendant un chargement initial (juste après la connexion), chaque section affiche « Chargement… » indépendamment.
-- [ ] Liste vide : sur un serveur sans conteneur (ou après le nettoyage, s'il n'y en avait pas d'autres), « Aucun conteneur sur ce serveur. ». Sans fichier dans `~/.config/systemd/user/` : « Aucun service dans ~/.config/systemd/user/. ».
+- [y] Permission Docker refusée (facultatif, demande des droits root sur le VPS) : `sudo gpasswd -d <utilisateur> docker`, puis se déconnecter et se reconnecter dans l'appli. La section Docker affiche « Accès à Docker refusé : le compte SSH doit appartenir au groupe docker. », sans liste. La section systemd reste remplie et continue de se rafraîchir. Rétablir : `sudo usermod -aG docker <utilisateur>`, se reconnecter : la liste revient.
+- [y] Pendant un chargement initial (juste après la connexion), chaque section affiche « Chargement… » indépendamment.
+- [y] Liste vide : sur un serveur sans conteneur (ou après le nettoyage, s'il n'y en avait pas d'autres), « Aucun conteneur sur ce serveur. ». Sans fichier dans `~/.config/systemd/user/` : « Aucun service dans ~/.config/systemd/user/. ».
 
 ## 4. Rafraîchissement automatique
 
-- [ ] L'indication « Actualisé à HH:MM:SS · il y a N s » s'affiche ; N augmente chaque seconde et repasse à 0 environ toutes les 5 secondes (5 s plus la durée d'un rafraîchissement).
-- [ ] Sur le VPS, `docker stop -t 2 vpsctl-t-run` : la ligne passe en « Arrêté · code 137 » sans action dans l'appli, en moins de 10 secondes.
-- [ ] Bouton « Actualiser » : l'heure se met à jour immédiatement.
+- [y] L'indication « Actualisé à HH:MM:SS · il y a N s » s'affiche ; N augmente chaque seconde et repasse à 0 environ toutes les 5 secondes (5 s plus la durée d'un rafraîchissement).
+- [y] Sur le VPS, `docker stop -t 2 vpsctl-t-run` : la ligne passe en « Arrêté · code 137 » sans action dans l'appli, en moins de 10 secondes.
+- [y] Bouton « Actualiser » : l'heure se met à jour immédiatement.
 
 ## 5. Rafraîchissement limité au tableau de bord et à la fenêtre visible
 
 Avec l'onglet Réseau des outils de développement ouvert :
 
-- [ ] Sur le tableau de bord : une paire `docker_list` / `services_list` environ toutes les 5 secondes.
-- [ ] Aller dans Fichiers ou Scripts pendant 20 secondes : **aucun** appel. Revenir : un appel immédiat, puis toutes les 5 secondes.
-- [ ] Réduire la fenêtre pendant 20 secondes : **aucun** appel. La restaurer : un appel immédiat. À vérifier sous WebView2 (Windows) **et** WebKitGTK (Linux).
+- [y] Sur le tableau de bord : une paire `docker_list` / `services_list` environ toutes les 5 secondes.
+- [y] Aller dans Fichiers ou Scripts pendant 20 secondes : **aucun** appel. Revenir : un appel immédiat, puis toutes les 5 secondes.
+- [y] Réduire la fenêtre pendant 20 secondes : **aucun** appel. La restaurer : un appel immédiat. À vérifier sous WebView2 (Windows) **et** WebKitGTK (Linux).
 - [ ] Linux : passer sur un autre bureau virtuel pendant 20 secondes. Noter si les appels s'arrêtent (dépend du gestionnaire de fenêtres).
-- [ ] Après « Déconnexion » puis reconnexion à un profil, le tableau de bord n'affiche jamais, même brièvement, les listes de la liaison précédente.
+- [y] Après « Déconnexion » puis reconnexion à un profil, le tableau de bord n'affiche jamais, même brièvement, les listes de la liaison précédente.
 
 ## 6. Pas de chevauchement
 
-- [ ] Cliquer rapidement une dizaine de fois sur « Actualiser » : dans l'onglet Réseau, jamais deux `docker_list` (ni deux `services_list`) en cours en même temps.
-- [ ] Cliquer sur « Actualiser » juste avant un rafraîchissement automatique : pas d'appel en double.
+- [y] Cliquer rapidement une dizaine de fois sur « Actualiser » : dans l'onglet Réseau, jamais deux `docker_list` (ni deux `services_list`) en cours en même temps.
+- [y] Cliquer sur « Actualiser » juste avant un rafraîchissement automatique : pas d'appel en double.
 
 ## 7. Nettoyage
 
@@ -165,4 +165,4 @@ systemctl --user list-units --all 'vpsctl-t-*'
 ls ~/.config/systemd/user/ | grep vpsctl-t-
 ```
 
-- [ ] Après le nettoyage, l'appli n'affiche plus aucun objet `vpsctl-t-`, et les compteurs reviennent à l'état de départ noté en préparation.
+- [y] Après le nettoyage, l'appli n'affiche plus aucun objet `vpsctl-t-`, et les compteurs reviennent à l'état de départ noté en préparation.
