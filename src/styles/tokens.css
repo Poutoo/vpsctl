@@ -64,6 +64,7 @@
   --color-danger-text: var(--red-text);
   --color-danger-tint: var(--red-tint);
   --color-danger-tint-strong: var(--red-tint-2);
+  --color-on-danger: var(--paper);
 
   --color-warning: var(--amber);
 
@@ -88,6 +89,9 @@
   --fs-3xl: 40px; /* écran de connexion et planches uniquement */
   --fs-4xl: 56px; /* planches de présentation uniquement */
 
+  --tracking-caps: 0.08em; /* étiquettes courtes en capitales espacées */
+  --lh-title: 1.15; /* interligne des titres en EB Garamond */
+
   /* ---------- Espacements et rayons ---------- */
   --sp-1: 4px;
   --sp-2: 8px;
@@ -106,18 +110,27 @@
 
   --row-height: 38px;
 
+  --titlebar-height: 32px;
+  --titlebar-button-width: 46px;
+  --nav-width: 208px;
+  --nav-width-compact: 56px; /* fenêtre étroite : numéraux seuls */
+  --border-width-accent: 2px; /* trait d'action (sélection, section active) */
+
   /* ---------- Mouvement ---------- */
   --dur-fast: 150ms;
   --dur-base: 200ms;
   --dur-slow: 300ms;
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
   --ease-in-out: cubic-bezier(0.45, 0, 0.2, 1);
+  /* Tour du balayage radar. Non réduit en mouvement réduit : le secteur y est statique. */
+  --dur-sweep: 2.4s;
 
   /* ---------- Image de fond ---------- */
   --bg-image: none; /* à définir quand une image sous licence compatible sera choisie */
   --bg-opacity: 0.12;
   --bg-blend: luminosity; /* variante économe à tester : normal, avec une image déjà désaturée */
   --bg-filter: grayscale(1) contrast(1.1);
+  --bg-parallax-shift: 16px; /* décalage de l'image par section */
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * Fenêtre GO / NO GO. Le focus s'ouvre sur NO GO, Échap vaut NO GO, GO est à
+ * droite et n'est jamais l'action par défaut. Avec `acknowledge`, GO reste
+ * désactivé tant que la case n'est pas cochée.
+ */
 import {
   AlertDialogContent,
   AlertDialogDescription,
@@ -7,9 +12,26 @@ import {
   AlertDialogRoot,
   AlertDialogTitle,
 } from "reka-ui";
+import { computed, ref, watch } from "vue";
 import { useConfirm } from "../../composables/useConfirm";
+import AppButton from "./AppButton.vue";
+import StatusIcon from "./StatusIcon.vue";
 
 const { state, settle } = useConfirm();
+
+const acknowledged = ref(false);
+const noGo = ref<InstanceType<typeof AppButton> | null>(null);
+
+watch(
+  () => state.open,
+  (open) => {
+    if (open) acknowledged.value = false;
+  },
+);
+
+const goDisabled = computed(
+  () => Boolean(state.acknowledge) && !acknowledged.value,
+);
 
 // Fermeture externe (Échap) : vaut annulation. Les boutons n'utilisent pas
 // AlertDialogAction / AlertDialogCancel : leur fermeture interne s'exécute
@@ -17,25 +39,59 @@ const { state, settle } = useConfirm();
 function onOpenChange(open: boolean) {
   if (!open && state.resolve) settle(false);
 }
+
+/** Focus initial sur NO GO, même quand une case à cocher la précède. */
+function focusNoGo(event: Event) {
+  event.preventDefault();
+  (noGo.value?.$el as HTMLElement | undefined)?.focus();
+}
 </script>
 
 <template>
   <AlertDialogRoot :open="state.open" @update:open="onOpenChange">
     <AlertDialogPortal>
       <AlertDialogOverlay class="overlay" />
-      <AlertDialogContent class="dialog">
-        <AlertDialogTitle class="title">{{ state.title }}</AlertDialogTitle>
-        <AlertDialogDescription>{{ state.message }}</AlertDialogDescription>
-        <div class="actions">
-          <button type="button" @click="settle(false)">Annuler</button>
-          <button
-            type="button"
-            :class="{ danger: state.danger }"
+      <AlertDialogContent
+        class="dialog"
+        :class="{ danger: state.danger }"
+        @open-auto-focus="focusNoGo"
+      >
+        <header class="banner">
+          <span class="caps kicker">
+            <StatusIcon name="triangle" />
+            Confirmation requise
+          </span>
+          <span v-if="state.danger" class="caps aside">Irréversible</span>
+        </header>
+
+        <div class="body">
+          <AlertDialogTitle class="title">{{ state.title }}</AlertDialogTitle>
+          <p v-if="state.subject" class="subject">{{ state.subject }}</p>
+          <AlertDialogDescription as="ul" class="consequences">
+            <li v-for="item in state.consequences" :key="item">
+              <span class="dash" aria-hidden="true">—</span>
+              <span>{{ item }}</span>
+            </li>
+          </AlertDialogDescription>
+          <label v-if="state.acknowledge" class="acknowledge">
+            <input v-model="acknowledged" type="checkbox" />
+            {{ state.acknowledge }}
+          </label>
+        </div>
+
+        <footer class="footer">
+          <span class="caps hint">Échap = NO GO</span>
+          <AppButton ref="noGo" @click="settle(false)">
+            <span class="caps code">NO GO</span> Annuler
+          </AppButton>
+          <AppButton
+            :variant="state.danger ? 'danger' : 'primary'"
+            :disabled="goDisabled"
             @click="settle(true)"
           >
-            {{ state.confirmLabel }}
-          </button>
-        </div>
+            <span class="caps code">GO</span> {{ state.confirmLabel }}
+          </AppButton>
+        </footer>
       </AlertDialogContent>
     </AlertDialogPortal>
   </AlertDialogRoot>
@@ -45,34 +101,115 @@ function onOpenChange(open: boolean) {
 .overlay {
   position: fixed;
   inset: 0;
+  z-index: 20;
   background: var(--color-scrim);
+  animation: fade-in var(--dur-slow) var(--ease-out);
 }
 
 .dialog {
   position: fixed;
   top: 50%;
   left: 50%;
+  z-index: 20;
+  width: min(calc(100vw - 2 * var(--sp-4)), calc(7 * var(--sp-8)));
   transform: translate(-50%, -50%);
-  max-width: calc(100vw - 2 * var(--sp-4));
-  padding: var(--sp-5);
   background: var(--color-surface);
-  border: var(--border-width) solid var(--color-border);
+  border: var(--border-width) solid var(--color-border-strong);
   border-radius: var(--r-2);
+  box-shadow: var(--shadow-overlay);
+  animation: fade-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--color-warning);
+}
+
+.danger .kicker {
+  color: var(--color-danger-text);
+}
+
+.aside {
+  color: var(--color-text-muted);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-5) var(--sp-5) var(--sp-4);
 }
 
 .title {
-  margin: 0 0 var(--sp-3);
-  font-size: var(--fs-xl);
+  font-size: var(--fs-2xl);
 }
 
-.actions {
+.subject {
+  color: var(--color-action);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+
+.consequences {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--border-width) solid var(--color-border);
+  font-size: var(--fs-md);
+}
+
+.consequences li {
   display: flex;
-  justify-content: flex-end;
   gap: var(--sp-3);
-  margin-top: var(--sp-5);
+  padding: var(--sp-2) 0;
+  border-bottom: var(--border-width) solid var(--color-border);
 }
 
-.danger {
-  color: var(--color-danger-text);
+.dash {
+  color: var(--color-text-muted);
+}
+
+.acknowledge {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--color-surface-raised);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.hint {
+  margin-right: auto;
+  color: var(--color-text-muted);
+}
+
+.code {
+  font-weight: 600;
 }
 </style>

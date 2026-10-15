@@ -11,8 +11,14 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
+  overflow: hidden;
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-ui);
@@ -20,14 +26,127 @@ body {
   line-height: 1.5;
 }
 
+#app {
+  height: 100%;
+}
+
+/*
+ * Titres : EB Garamond, uniquement en graisse 400 (la seule embarquée).
+ * `font-synthesis-weight: none` empêche le navigateur de fabriquer un faux gras.
+ */
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--font-title);
+  font-weight: 400;
+  font-synthesis-weight: none;
+  line-height: var(--lh-title);
+}
+
 h1 {
-  margin: 0 0 var(--sp-4);
   font-size: var(--fs-2xl);
-  font-weight: 600;
+}
+
+h2 {
+  font-size: var(--fs-xl);
+}
+
+h3 {
+  font-size: var(--fs-lg);
+}
+
+p {
+  margin: 0;
 }
 
 /* Le design ne dépasse jamais la graisse 600 (aucune police 700 embarquée). */
 strong,
 b {
   font-weight: 600;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* Anneau de focus unique, visible sur tous les éléments interactifs. */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+/* ---------- Champs ---------- */
+
+input[type="text"],
+input[type="number"],
+input[type="password"] {
+  width: 100%;
+  min-height: var(--row-height);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--color-field);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--r-1);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+input[type="text"]:hover:not(:disabled),
+input[type="number"]:hover:not(:disabled),
+input[type="password"]:hover:not(:disabled) {
+  border-color: var(--color-text-subtle);
+}
+
+input[type="text"]:focus-visible,
+input[type="number"]:focus-visible,
+input[type="password"]:focus-visible {
+  outline-offset: 0;
+  border-color: var(--color-action);
+}
+
+/* Erreur : bordure rouge et trait d'action à gauche (forme, pas seulement couleur). */
+input[aria-invalid="true"] {
+  border-color: var(--color-danger);
+  box-shadow: inset var(--border-width-accent) 0 0 var(--color-danger);
+}
+
+input:disabled {
+  border-style: dashed;
+  color: var(--color-text-subtle);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--color-action);
+}
+
+/* ---------- Utilitaires typographiques ---------- */
+
+/* Étiquette courte en capitales espacées (monospace). */
+.caps {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* Masqué à l'écran, lu par les lecteurs d'écran. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

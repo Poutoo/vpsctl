@@ -23,7 +23,7 @@ const SHAPE = {
 <template>
   <span class="run-state" :class="state" :title="raw">
     <StatusIcon class="shape" :name="SHAPE[state]" />
-    <span>{{ RUN_STATE_LABEL[state] }}</span>
+    <span class="caps label">{{ RUN_STATE_LABEL[state] }}</span>
     <span v-if="detail" class="detail">· {{ detail }}</span>
   </span>
 </template>
@@ -33,26 +33,42 @@ const SHAPE = {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
+  max-width: 100%;
   white-space: nowrap;
 }
 
-.detail {
-  color: var(--color-text-muted);
+.label {
+  font-weight: 600;
 }
 
-.nominal .shape {
+.detail {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  text-overflow: ellipsis;
+}
+
+/* Forme : --color-danger ; texte : --color-danger-text (contraste). */
+.nominal {
   color: var(--color-success);
+}
+
+.stopped {
+  color: var(--color-text);
 }
 
 .stopped .shape {
   color: var(--color-text-muted);
 }
 
+.failed {
+  color: var(--color-danger-text);
+}
+
 .failed .shape {
   color: var(--color-danger);
 }
 
-.transition .shape {
+.transition {
   color: var(--color-warning);
 }
 </style>

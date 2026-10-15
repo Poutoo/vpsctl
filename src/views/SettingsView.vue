@@ -75,10 +75,14 @@ async function remove() {
   const profile = edited.value;
   if (!profile || profile.id === "") return;
   const confirmed = await confirm({
-    title: `Supprimer le profil « ${profile.name} » ?`,
-    message:
-      "Le profil, son empreinte mémorisée et sa passphrase dans le trousseau seront supprimés. Cette action est définitive.",
-    confirmLabel: "Supprimer le profil",
+    title: "Supprimer le profil ?",
+    subject: profile.name,
+    consequences: [
+      "Le profil et son empreinte mémorisée seront supprimés.",
+      "Sa passphrase sera retirée du trousseau du système.",
+      "Cette action est définitive.",
+    ],
+    confirmLabel: "Supprimer",
     danger: true,
   });
   if (!confirmed) return;
