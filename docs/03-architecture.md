@@ -51,6 +51,7 @@ src-tauri/src/
 **docker** : exécute `docker ps -a --no-trunc --format '{{json .}}'` et désérialise chaque ligne avec `serde`. Gère start, stop, restart, rm et le flux `docker logs -f`.
 
 - `--no-trunc` donne l'ID complet (64 caractères hexadécimaux), utilisé pour les actions. Il a deux effets de bord, corrigés par des fonctions pures : `Names` contient aussi les anciens alias `--link` (`autre/alias`, séparés par des virgules) et on garde le premier nom sans `/` ; `Image` peut contenir un digest (`nginx@sha256:…`), retiré, ou être un identifiant d'image sans nom (`sha256:<64 hex>`), raccourci à 12 caractères.
+- Une ligne illisible (JSON invalide, ID non hexadécimal) est exclue sans invalider les autres ; leur nombre est renvoyé (`skipped`) et affiché en avertissement dans la section Docker.
 - Le code de sortie est extrait du champ `Status` (`Exited (137) 4 days ago`, `Restarting (1) 5 seconds ago`).
 - La durée est extraite du champ `Status` et traduite en français : « depuis 3 heures » pour un conteneur en cours, « il y a 4 jours » pour un conteneur sorti ou en redémarrage. Les formes possibles sont celles de `HumanDuration` (`docker/go-units`) : `Less than a second`, `1 second`, `N seconds`, `About a minute`, `N minutes`, `About an hour`, `N hours`, `N days`, `N weeks`, `N months`, `N years`. Une forme non reconnue est affichée telle quelle.
 - Erreurs : commande introuvable (code 127) → `DockerNotInstalled` ; accès au socket refusé (utilisateur hors du groupe `docker`) → `DockerPermissionDenied` ; tout autre échec → `Remote`.

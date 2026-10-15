@@ -99,6 +99,7 @@ systemctl --user daemon-reload
 - [ ] Le nom long est tronqué avec « … » ; l'infobulle affiche le nom complet. Même chose pour une image longue.
 - [ ] Une image référencée par digest (`image@sha256:…`) s'affiche sans le digest.
 - [ ] Les états et durées correspondent à `docker ps -a` sur le VPS.
+- [ ] Aucun avertissement « élément illisible … ignoré » dans la section Docker. (Ce cas ne se provoque pas avec un vrai Docker : il est couvert par les tests unitaires.)
 
 ## 2. Services systemd
 

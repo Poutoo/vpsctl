@@ -8,6 +8,7 @@ import { errorMessage } from "../../api/errors";
 import type { RunState } from "../../bindings/RunState";
 import type { Section } from "../../stores/services";
 import { formatCounts } from "../ui/runState";
+import StatusIcon from "../ui/StatusIcon.vue";
 
 const props = defineProps<{
   title: string;
@@ -18,6 +19,15 @@ const props = defineProps<{
 const counts = computed(() =>
   formatCounts(props.section.items.map((item) => item.state)),
 );
+
+/** Avertissement si des éléments illisibles ont été exclus de la liste. */
+const skippedWarning = computed(() => {
+  const { loaded, error, skipped } = props.section;
+  if (!loaded || error || skipped === 0) return null;
+  return skipped === 1
+    ? "1 élément illisible dans la réponse du serveur a été ignoré."
+    : `${skipped} éléments illisibles dans la réponse du serveur ont été ignorés.`;
+});
 </script>
 
 <template>
@@ -26,6 +36,10 @@ const counts = computed(() =>
       <h2 class="title">{{ title }}</h2>
       <span v-if="counts" class="counts">{{ counts }}</span>
     </header>
+    <p v-if="skippedWarning" class="warning" role="status">
+      <StatusIcon class="warning-shape" name="triangle" />
+      {{ skippedWarning }}
+    </p>
     <p v-if="!section.loaded" class="state">Chargement…</p>
     <p v-else-if="section.error" class="state error" role="alert">
       {{ errorMessage(section.error) }}
@@ -73,5 +87,19 @@ const counts = computed(() =>
 
 .error {
   color: var(--color-danger-text);
+}
+
+.warning {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-md);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.warning-shape {
+  color: var(--color-warning);
 }
 </style>

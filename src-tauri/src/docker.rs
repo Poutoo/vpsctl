@@ -37,6 +37,18 @@ pub struct Container {
     pub duration: Option<String>,
 }
 
+/// Résultat de `docker_list`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ContainerList {
+    /// Triés par nom.
+    pub containers: Vec<Container>,
+    /// Lignes de `docker ps` illisibles (JSON invalide, ID non hexadécimal),
+    /// exclues de la liste.
+    pub skipped: u32,
+}
+
 /// Une ligne de `docker ps --format '{{json .}}'` (champs utiles seulement).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -50,7 +62,7 @@ struct PsLine {
 }
 
 /// Liste tous les conteneurs, y compris arrêtés, triés par nom.
-pub async fn list(connection: &Connection) -> Result<Vec<Container>, AppError> {
+pub async fn list(connection: &Connection) -> Result<ContainerList, AppError> {
     let output = connection
         .exec_until(LIST_COMMAND, Deadline::after(LIST_TIMEOUT))
         .await?;
@@ -58,9 +70,9 @@ pub async fn list(connection: &Connection) -> Result<Vec<Container>, AppError> {
 }
 
 /// Résultat de `docker ps` : conteneurs, ou erreur compréhensible.
-pub fn interpret_list(output: &ExecOutput) -> Result<Vec<Container>, AppError> {
+pub fn interpret_list(output: &ExecOutput) -> Result<ContainerList, AppError> {
     if output.success() {
-        return parse_ps_output(&output.stdout_text());
+        return Ok(parse_ps_output(&output.stdout_text()));
     }
     match output.exit_code {
         Some(127) => Err(AppError::DockerNotInstalled),
@@ -78,34 +90,38 @@ fn is_permission_denied(stderr: &str) -> bool {
     stderr.contains("permission denied") && stderr.contains("docker")
 }
 
-/// Une ligne JSON par conteneur ; les lignes vides sont ignorées.
-pub fn parse_ps_output(output: &str) -> Result<Vec<Container>, AppError> {
-    let mut containers = output
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(parse_ps_line)
-        .collect::<Result<Vec<_>, _>>()?;
+/// Une ligne JSON par conteneur. Les lignes vides sont ignorées ; une ligne
+/// illisible est exclue et comptée, sans invalider les autres.
+pub fn parse_ps_output(output: &str) -> ContainerList {
+    let mut containers = Vec::new();
+    let mut skipped = 0;
+    for line in output.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        match parse_ps_line(line) {
+            Some(container) => containers.push(container),
+            None => skipped += 1,
+        }
+    }
     containers.sort_by(|a, b| {
         a.name
             .to_lowercase()
             .cmp(&b.name.to_lowercase())
             .then_with(|| a.name.cmp(&b.name))
     });
-    Ok(containers)
+    ContainerList {
+        containers,
+        skipped,
+    }
 }
 
-fn parse_ps_line(line: &str) -> Result<Container, AppError> {
-    let raw: PsLine = serde_json::from_str(line)
-        .map_err(|e| AppError::io(format!("réponse inattendue de docker ps : {e}")))?;
+/// Un conteneur, ou `None` si la ligne est illisible ou son ID n'est pas
+/// hexadécimal (il ne pourrait pas être manipulé sans risque).
+fn parse_ps_line(line: &str) -> Option<Container> {
+    let raw: PsLine = serde_json::from_str(line).ok()?;
     if !is_container_id(&raw.id) {
-        return Err(AppError::io(format!(
-            "réponse inattendue de docker ps : ID invalide « {} »",
-            raw.id
-        )));
+        return None;
     }
     let exit_code = parse_exit_code(&raw.status);
-    Ok(Container {
+    Some(Container {
         name: primary_name(&raw.names),
         image: display_image(&raw.image),
         state: run_state(&raw.state, exit_code),
@@ -287,9 +303,10 @@ mod tests {
 
     #[test]
     fn ps_output_is_parsed_and_sorted_by_name() {
-        let containers = parse_ps_output(&ps_output()).unwrap();
+        let list = parse_ps_output(&ps_output());
+        assert_eq!(list.skipped, 0);
         assert_eq!(
-            containers,
+            list.containers,
             vec![
                 Container {
                     id: ID_DB.into(),
@@ -317,29 +334,40 @@ mod tests {
 
     #[test]
     fn empty_output_is_an_empty_list() {
-        assert_eq!(parse_ps_output("").unwrap(), vec![]);
-        assert_eq!(parse_ps_output("\n\n").unwrap(), vec![]);
+        let empty = ContainerList {
+            containers: vec![],
+            skipped: 0,
+        };
+        assert_eq!(parse_ps_output(""), empty);
+        assert_eq!(parse_ps_output("\n\n"), empty);
     }
 
     #[test]
-    fn invalid_lines_are_errors() {
-        assert!(matches!(
-            parse_ps_output("pas du json"),
-            Err(AppError::Io { .. })
-        ));
+    fn unreadable_lines_are_skipped_and_counted() {
         let wrong_id = json!({
             "ID": "web; rm -rf ~", "Names": "web", "Image": "nginx",
             "State": "running", "Status": "Up 3 hours",
         });
-        assert!(matches!(
-            parse_ps_output(&wrong_id.to_string()),
-            Err(AppError::Io { .. })
-        ));
+        let missing_field = json!({ "ID": ID_WEB, "Names": "web" });
+        let output = format!(
+            "pas du json\n{}{wrong_id}\n{missing_field}\n{{\"ID\":",
+            ps_output()
+        );
+        let list = parse_ps_output(&output);
+        assert_eq!(list.skipped, 4);
+        let names: Vec<_> = list.containers.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["db", "web-nginx-1"]);
+    }
+
+    #[test]
+    fn container_list_serializes_in_camel_case() {
+        let value = serde_json::to_value(parse_ps_output("pas du json")).unwrap();
+        assert_eq!(value, json!({ "containers": [], "skipped": 1 }));
     }
 
     #[test]
     fn container_serializes_in_camel_case() {
-        let container = &parse_ps_output(&ps_output()).unwrap()[0];
+        let container = &parse_ps_output(&ps_output()).containers[0];
         assert_eq!(
             serde_json::to_value(container).unwrap(),
             json!({
@@ -559,6 +587,6 @@ mod tests {
     #[test]
     fn successful_output_is_parsed() {
         let output = exec_output(0, &ps_output(), "");
-        assert_eq!(interpret_list(&output).unwrap().len(), 2);
+        assert_eq!(interpret_list(&output).unwrap().containers.len(), 2);
     }
 }

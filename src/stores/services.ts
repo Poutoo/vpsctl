@@ -10,13 +10,29 @@ import { useConnectionStore } from "./connection";
 /** Une liste du tableau de bord, chargée indépendamment de l'autre. */
 export interface Section<T> {
   items: T[];
+  /** Éléments illisibles dans la réponse du serveur, exclus de `items`. */
+  skipped: number;
   error: AppError | null;
   /** Au moins un chargement terminé (réussi ou non). */
   loaded: boolean;
 }
 
 function emptySection<T>(): Section<T> {
-  return { items: [], error: null, loaded: false };
+  return { items: [], skipped: 0, error: null, loaded: false };
+}
+
+interface Fetched<T> {
+  items: T[];
+  skipped: number;
+}
+
+async function fetchContainers(): Promise<Fetched<Container>> {
+  const list = await docker.listContainers();
+  return { items: list.containers, skipped: list.skipped };
+}
+
+async function fetchServices(): Promise<Fetched<Service>> {
+  return { items: await systemd.listServices(), skipped: 0 };
 }
 
 export const useServicesStore = defineStore("services", () => {
@@ -49,8 +65,8 @@ export const useServicesStore = defineStore("services", () => {
     try {
       // Chaque liste gère son propre échec : l'une n'empêche pas l'autre.
       await Promise.all([
-        load(containers, docker.listContainers, current),
-        load(services, systemd.listServices, current),
+        load(containers, fetchContainers, current),
+        load(services, fetchServices, current),
       ]);
       if (current === generation) refreshedAt.value = Date.now();
     } finally {
@@ -60,14 +76,14 @@ export const useServicesStore = defineStore("services", () => {
 
   async function load<T>(
     section: Ref<Section<T>>,
-    fetch: () => Promise<T[]>,
+    fetch: () => Promise<Fetched<T>>,
     current: number,
   ) {
     let next: Section<T>;
     try {
-      next = { items: await fetch(), error: null, loaded: true };
+      next = { ...(await fetch()), error: null, loaded: true };
     } catch (error) {
-      next = { items: [], error: error as AppError, loaded: true };
+      next = { items: [], skipped: 0, error: error as AppError, loaded: true };
     }
     if (current === generation) section.value = next;
   }

@@ -90,7 +90,7 @@ Les chemins locaux sont choisis côté Vue avec `tauri-plugin-dialog`.
 ## Docker
 
 ```ts
-docker_list(): Container[]      // délai maximal 10 s ; trié par nom
+docker_list(): ContainerList    // délai maximal 10 s
 docker_action(id: string, action: "start" | "stop" | "restart"): void
 docker_remove(id: string): void
 ```
@@ -157,6 +157,11 @@ interface FileEntry {
 
 // État affiché dans l'interface, calculé par le backend.
 type RunState = "nominal" | "stopped" | "failed" | "transition"
+
+interface ContainerList {
+  containers: Container[]   // triés par nom
+  skipped: number           // lignes de docker ps illisibles (JSON invalide, ID non hexadécimal), exclues
+}
 
 interface Container {
   id: string                // ID complet (64 caractères hexadécimaux)
