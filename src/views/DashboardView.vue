@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import ContainerTable from "../components/features/ContainerTable.vue";
 import DashboardSection from "../components/features/DashboardSection.vue";
 import ServiceTable from "../components/features/ServiceTable.vue";
+import PageHeader from "../components/layout/PageHeader.vue";
+import AppButton from "../components/ui/AppButton.vue";
+import AppIcon from "../components/ui/AppIcon.vue";
+import { formatElapsed, useElapsed } from "../composables/useElapsed";
 import { useVisiblePolling } from "../composables/useVisiblePolling";
 import { useServicesStore } from "../stores/services";
 
@@ -25,6 +29,17 @@ onBeforeUnmount(() => {
   if (clock) clearInterval(clock);
 });
 
+// Chrono de l'interrogation en cours (pas de spinner).
+const refreshStartedAt = ref<number | null>(null);
+watch(
+  () => store.refreshing,
+  (refreshing) => {
+    refreshStartedAt.value = refreshing ? performance.now() : null;
+  },
+  { immediate: true },
+);
+const refreshElapsed = useElapsed(refreshStartedAt);
+
 const refreshedLabel = computed(() => {
   const at = store.refreshedAt;
   if (at === null) return "Actualisation…";
@@ -36,28 +51,47 @@ const refreshedLabel = computed(() => {
 
 <template>
   <div class="dashboard">
-    <header class="header">
-      <h1>Tableau de bord</h1>
+    <PageHeader section="dashboard" title="Tableau de bord">
       <div class="refresh">
-        <span class="refreshed" aria-live="off">{{ refreshedLabel }}</span>
-        <button type="button" @click="trigger">Actualiser</button>
+        <span
+          v-if="refreshElapsed !== null"
+          class="refreshed probing"
+          aria-live="off"
+        >
+          Interrogation · {{ formatElapsed(refreshElapsed, "ms") }}
+        </span>
+        <span v-else class="refreshed" aria-live="off">{{
+          refreshedLabel
+        }}</span>
+        <AppButton @click="trigger">
+          <AppIcon name="refresh" />
+          Actualiser
+        </AppButton>
       </div>
-    </header>
+    </PageHeader>
 
     <DashboardSection
+      v-slot="{ loading }"
       title="Conteneurs Docker"
+      command="docker ps -a"
       :section="store.containers"
-      empty-text="Aucun conteneur sur ce serveur."
+      empty-kicker="0 conteneur · docker ps -a"
+      empty-title="Aucun conteneur"
+      empty-text="Aucun conteneur, même arrêté, sur ce serveur."
     >
-      <ContainerTable :containers="store.containers.items" />
+      <ContainerTable :containers="store.containers.items" :loading="loading" />
     </DashboardSection>
 
     <DashboardSection
+      v-slot="{ loading }"
       title="Services systemd"
+      command="systemctl --user list-units"
       :section="store.services"
-      empty-text="Aucun service dans ~/.config/systemd/user/."
+      empty-kicker="0 unité gérée · ~/.config/systemd/user/"
+      empty-title="Aucun service utilisateur"
+      empty-text="Aucun service dans ~/.config/systemd/user/ sur ce serveur."
     >
-      <ServiceTable :services="store.services.items" />
+      <ServiceTable :services="store.services.items" :loading="loading" />
     </DashboardSection>
   </div>
 </template>
@@ -66,30 +100,27 @@ const refreshedLabel = computed(() => {
 .dashboard {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
+  gap: var(--sp-6);
 }
 
-.header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-
-.header h1 {
-  margin: 0;
-}
-
+/* Bloc d'actualisation : surface opaque, posé sur l'image de fond. */
 .refresh {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
 }
 
 .refreshed {
+  min-width: 32ch;
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
+}
+
+.probing {
+  color: var(--color-warning);
 }
 </style>

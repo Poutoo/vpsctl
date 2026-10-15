@@ -6,7 +6,12 @@ import RunStateLabel from "../ui/RunStateLabel.vue";
 
 defineProps<{
   services: Service[];
+  /** Premier chargement : registre tracé et vide. */
+  loading?: boolean;
 }>();
+
+/** Lignes vides tracées pendant le premier chargement. */
+const PLACEHOLDER_ROWS = 3;
 
 function rawState(service: Service): string {
   return `${service.load ?? "non chargé"} · ${service.active}/${service.sub}`;
@@ -27,8 +32,19 @@ function rawState(service: Service): string {
         <th scope="col">Description</th>
       </tr>
     </thead>
-    <tbody>
-      <tr v-for="service in services" :key="service.unit">
+    <tbody v-if="loading">
+      <tr v-for="n in PLACEHOLDER_ROWS" :key="n" class="placeholder">
+        <td>—</td>
+        <td />
+        <td />
+      </tr>
+    </tbody>
+    <TransitionGroup v-else name="row-in" tag="tbody" appear>
+      <tr
+        v-for="service in services"
+        :key="service.unit"
+        :class="{ failed: service.state === 'failed' }"
+      >
         <td>
           <div class="unit-cell">
             <span class="truncate" :title="service.unit">{{
@@ -36,13 +52,13 @@ function rawState(service: Service): string {
             }}</span>
             <span
               v-if="service.masked"
-              class="tag"
+              class="caps tag"
               title="Unité masquée : elle ne peut pas être démarrée."
               >masqué</span
             >
             <span
               v-else-if="!service.controllable"
-              class="tag"
+              class="caps tag"
               title="Nom hors du format accepté : aucune action possible sur ce service."
               >non pilotable</span
             >
@@ -53,14 +69,14 @@ function rawState(service: Service): string {
         </td>
         <td
           v-if="service.description !== null"
-          class="truncate"
+          class="truncate description-cell"
           :title="service.description"
         >
           {{ service.description }}
         </td>
         <td v-else class="muted" title="Unité non chargée par systemd.">—</td>
       </tr>
-    </tbody>
+    </TransitionGroup>
   </DataTable>
 </template>
 
@@ -70,11 +86,11 @@ function rawState(service: Service): string {
 }
 
 .state {
-  width: 20%;
+  width: 22%;
 }
 
 .description {
-  width: 45%;
+  width: 43%;
 }
 
 .unit-cell {
@@ -86,8 +102,14 @@ function rawState(service: Service): string {
 
 .tag {
   flex-shrink: 0;
+  padding: 0 var(--sp-1);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--r-1);
   color: var(--color-text-muted);
-  font-size: var(--fs-xs);
-  text-transform: uppercase;
+}
+
+/* Description : texte courant, pas une donnée technique. */
+.description-cell {
+  font-family: var(--font-ui);
 }
 </style>

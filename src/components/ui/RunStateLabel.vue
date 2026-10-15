@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** État d'un service : forme et libellé, jamais la couleur seule. */
 import type { RunState } from "../../bindings/RunState";
-import { RUN_STATE_LABEL } from "./runState";
+import { RUN_STATE_LABEL, RUN_STATE_SHAPE } from "./runState";
 import StatusIcon from "./StatusIcon.vue";
 
 defineProps<{
@@ -11,18 +11,11 @@ defineProps<{
   /** État brut, en infobulle. */
   raw: string;
 }>();
-
-const SHAPE = {
-  nominal: "disc",
-  stopped: "circle",
-  failed: "triangle",
-  transition: "half",
-} as const;
 </script>
 
 <template>
   <span class="run-state" :class="state" :title="raw">
-    <StatusIcon class="shape" :name="SHAPE[state]" />
+    <StatusIcon class="shape" :name="RUN_STATE_SHAPE[state]" />
     <span class="caps label">{{ RUN_STATE_LABEL[state] }}</span>
     <span v-if="detail" class="detail">· {{ detail }}</span>
   </span>

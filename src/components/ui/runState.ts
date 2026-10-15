@@ -15,6 +15,14 @@ export const RUN_STATE_LABEL: Record<RunState, string> = {
   transition: "En transition",
 };
 
+/** Forme de chaque état (`StatusIcon`) : un état n'est jamais indiqué par la couleur seule. */
+export const RUN_STATE_SHAPE = {
+  nominal: "disc",
+  stopped: "circle",
+  failed: "triangle",
+  transition: "half",
+} as const satisfies Record<RunState, string>;
+
 const COUNT_LABEL: Record<RunState, [one: string, many: string]> = {
   nominal: ["nominal", "nominaux"],
   stopped: ["arrêté", "arrêtés"],
@@ -22,14 +30,19 @@ const COUNT_LABEL: Record<RunState, [one: string, many: string]> = {
   transition: ["en transition", "en transition"],
 };
 
-/** Compteurs par état, ex. « 2 nominaux · 1 arrêté ». Les états absents sont omis. */
-export function formatCounts(states: RunState[]): string {
-  return RUN_STATES.map((state) => {
+export interface StateCount {
+  state: RunState;
+  count: number;
+  /** Ex. « 2 nominaux ». */
+  label: string;
+}
+
+/** Compteurs par état, dans l'ordre d'affichage. Les états absents sont omis. */
+export function countsByState(states: RunState[]): StateCount[] {
+  return RUN_STATES.flatMap((state) => {
     const count = states.filter((s) => s === state).length;
-    if (count === 0) return null;
+    if (count === 0) return [];
     const [one, many] = COUNT_LABEL[state];
-    return `${count} ${count > 1 ? many : one}`;
-  })
-    .filter(Boolean)
-    .join(" · ");
+    return [{ state, count, label: `${count} ${count > 1 ? many : one}` }];
+  });
 }
