@@ -16,11 +16,15 @@ type AppError =
   | { kind: "UnknownHostKey"; fingerprint: string }
   | { kind: "HostKeyMismatch"; expected: string; received: string }
   | { kind: "PassphraseRequired" }
+  | { kind: "PassphraseIncorrect" }
   | { kind: "AuthFailed" }
-  | { kind: "Network"; message: string }
+  | { kind: "Cancelled" }                  // connexion interrompue par l'utilisateur
+  | { kind: "Network"; message: string }   // y compris délai dépassé
   | { kind: "InvalidInput"; message: string }
   | { kind: "Remote"; exitCode: number; stderr: string }
   | { kind: "Io"; message: string }
+  | { kind: "DockerNotInstalled" }         // commande docker introuvable sur le serveur
+  | { kind: "DockerPermissionDenied" }     // utilisateur hors du groupe docker
 ```
 
 `HostKeyMismatch` est présenté comme une alerte de sécurité, pas comme une erreur ordinaire.
@@ -86,7 +90,7 @@ Les chemins locaux sont choisis côté Vue avec `tauri-plugin-dialog`.
 ## Docker
 
 ```ts
-docker_list(): Container[]
+docker_list(): Container[]      // délai maximal 10 s ; trié par nom
 docker_action(id: string, action: "start" | "stop" | "restart"): void
 docker_remove(id: string): void
 ```
@@ -94,11 +98,13 @@ docker_remove(id: string): void
 ## Systemd
 
 ```ts
-services_list(): Service[]
+services_list(): Service[]      // délai maximal 10 s ; trié par nom d'unité
 service_action(unit: string, action: "start" | "stop" | "restart"): void
 service_create(def: ServiceDef): Service
 service_delete(unit: string): void
 ```
+
+Les deux listes sont des commandes indépendantes : l'interface les appelle séparément, et l'échec de l'une n'empêche pas l'affichage de l'autre. Les états d'interface (`RunState`), le code de sortie et la règle de filtrage des services sont calculés dans le backend (voir `docs/03-architecture.md`).
 
 ## Logs (Docker et systemd)
 
@@ -149,20 +155,29 @@ interface FileEntry {
   permissions: string
 }
 
+// État affiché dans l'interface, calculé par le backend.
+type RunState = "nominal" | "stopped" | "failed" | "transition"
+
 interface Container {
-  id: string
-  name: string
-  image: string
-  state: string
-  status: string
+  id: string                // ID complet (64 caractères hexadécimaux)
+  name: string              // premier nom, sans les alias --link
+  image: string             // sans digest ; image sans nom : 12 premiers caractères de son ID
+  state: RunState
+  dockerState: string       // état brut : running, exited, created…
+  exitCode: number | null   // conteneur exited ou restarting, sinon null
+  status: string            // texte brut de Docker, ex. "Exited (137) 4 days ago"
+  duration: string | null   // "depuis 3 heures", "il y a 4 jours" ; null si non applicable
 }
 
 interface Service {
   unit: string
-  load: string
-  active: string
-  sub: string
-  description: string
+  load: string | null       // null : fichier présent mais unité non chargée par systemd
+  active: string            // état brut : active, inactive, failed…
+  sub: string               // sous-état brut : running, dead, exited…
+  description: string | null  // null si l'unité n'est pas chargée
+  state: RunState
+  masked: boolean
+  controllable: boolean     // false si masquée, ou si le nom ne respecte pas ^[a-zA-Z0-9@._-]+\.service$
 }
 
 interface ServiceDef {
