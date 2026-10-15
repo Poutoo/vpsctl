@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import {
-  AlertDialogAction,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogOverlay,
@@ -13,6 +11,9 @@ import { useConfirm } from "../../composables/useConfirm";
 
 const { state, settle } = useConfirm();
 
+// Fermeture externe (Échap) : vaut annulation. Les boutons n'utilisent pas
+// AlertDialogAction / AlertDialogCancel : leur fermeture interne s'exécute
+// avant notre @click et résolvait la confirmation à `false`.
 function onOpenChange(open: boolean) {
   if (!open && state.resolve) settle(false);
 }
@@ -26,13 +27,14 @@ function onOpenChange(open: boolean) {
         <AlertDialogTitle class="title">{{ state.title }}</AlertDialogTitle>
         <AlertDialogDescription>{{ state.message }}</AlertDialogDescription>
         <div class="actions">
-          <AlertDialogCancel @click="settle(false)">Annuler</AlertDialogCancel>
-          <AlertDialogAction
+          <button type="button" @click="settle(false)">Annuler</button>
+          <button
+            type="button"
             :class="{ danger: state.danger }"
             @click="settle(true)"
           >
             {{ state.confirmLabel }}
-          </AlertDialogAction>
+          </button>
         </div>
       </AlertDialogContent>
     </AlertDialogPortal>
