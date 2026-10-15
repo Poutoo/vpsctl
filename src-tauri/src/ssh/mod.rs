@@ -2,7 +2,8 @@
 //!
 //! Expose deux primitives sur cette connexion : exécuter une commande et
 //! récupérer sa sortie (`Connection::exec`), et plus tard ouvrir un canal en
-//! streaming. Chaque opération ouvre son propre canal.
+//! streaming. Chaque opération ouvre son propre canal. La session SFTP, elle,
+//! est partagée (`Connection::sftp`).
 //!
 //! Séquence de `connect`, émise étape par étape (`ConnectStep`) :
 //! tcp → ssh (négociation) → hostKey → auth → aos.
@@ -11,6 +12,7 @@
 
 pub mod host_key;
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -19,6 +21,7 @@ use std::time::{Duration, Instant};
 use russh::client::{self, AuthResult};
 use russh::keys::{PrivateKey, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::{ChannelMsg, Disconnect};
+use russh_sftp::client::SftpSession;
 use serde::Serialize;
 use tokio::net::TcpStream;
 use ts_rs::TS;
@@ -308,6 +311,9 @@ impl ExecOutput {
 /// (russh ne la ferme pas seul quand le `Handle` est abandonné).
 pub struct Connection {
     handle: Option<client::Handle<Handler>>,
+    /// Session SFTP partagée, ouverte à la première utilisation et recréée
+    /// seulement après sa fermeture.
+    sftp: tokio::sync::Mutex<Option<Arc<SftpSession>>>,
 }
 
 impl Connection {
@@ -371,6 +377,45 @@ impl Connection {
             .map_err(|_| AppError::network("le serveur n'a pas répondu à la mesure de latence"))?
     }
 
+    /// Session SFTP de la liaison : la session existante, ou une nouvelle
+    /// ouverte sur un canal dédié si aucune n'est ouverte.
+    pub async fn sftp(&self) -> Result<Arc<SftpSession>, AppError> {
+        let mut slot = self.sftp.lock().await;
+        if let Some(session) = slot.as_ref() {
+            return Ok(session.clone());
+        }
+        let open =
+            async {
+                let channel = self.handle()?.channel_open_session().await.map_err(|e| {
+                    AppError::network(format!("ouverture d'un canal impossible : {e}"))
+                })?;
+                channel.request_subsystem(true, "sftp").await.map_err(|e| {
+                    AppError::network(format!("sous-système SFTP indisponible : {e}"))
+                })?;
+                SftpSession::new(channel.into_stream()).await.map_err(|e| {
+                    AppError::network(format!("ouverture de la session SFTP impossible : {e}"))
+                })
+            };
+        let session = Arc::new(
+            tokio::time::timeout(EXEC_TIMEOUT, open)
+                .await
+                .map_err(|_| {
+                    AppError::network("la session SFTP n'a pas pu être ouverte à temps")
+                })??,
+        );
+        *slot = Some(session.clone());
+        Ok(session)
+    }
+
+    /// Oublie la session SFTP après une erreur de transport : la suivante
+    /// sera recréée. Sans effet si une autre session l'a déjà remplacée.
+    pub async fn discard_sftp(&self, session: &Arc<SftpSession>) {
+        let mut slot = self.sftp.lock().await;
+        if slot.as_ref().is_some_and(|s| Arc::ptr_eq(s, session)) {
+            *slot = None;
+        }
+    }
+
     /// Ferme proprement la liaison.
     pub async fn close(mut self) {
         if let Some(handle) = self.handle.take() {
@@ -389,6 +434,20 @@ impl Drop for Connection {
             }
         }
     }
+}
+
+/// Limite la durée d'une opération distante. Au-delà, elle est abandonnée et
+/// l'erreur est `Network`.
+pub async fn within<T>(
+    limit: Duration,
+    operation: impl Future<Output = Result<T, AppError>>,
+) -> Result<T, AppError> {
+    tokio::time::timeout(limit, operation).await.map_err(|_| {
+        AppError::network(format!(
+            "le serveur n'a pas répondu en {} s",
+            limit.as_secs()
+        ))
+    })?
 }
 
 fn append_limited(buffer: &mut Vec<u8>, data: &[u8]) {
@@ -534,6 +593,7 @@ pub async fn connect(params: ConnectParams, on_step: StepSink) -> Result<Connect
     };
     let mut connection = Connection {
         handle: Some(handle),
+        sftp: tokio::sync::Mutex::new(None),
     };
 
     // 4. Authentification par clé

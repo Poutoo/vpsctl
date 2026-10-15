@@ -277,11 +277,17 @@ impl AppState {
         }
     }
 
+    /// Liaison active, pour une opération distante. Le verrou de la liaison
+    /// n'est pas gardé pendant l'opération.
+    pub async fn connection(&self) -> Result<Arc<Connection>, AppError> {
+        match &*self.link.lock().await {
+            Link::Connected(active) => Ok(active.connection.clone()),
+            _ => Err(AppError::NotConnected),
+        }
+    }
+
     pub async fn server_info(&self) -> Result<ServerInfo, AppError> {
-        let connection = match &*self.link.lock().await {
-            Link::Connected(active) => active.connection.clone(),
-            _ => return Err(AppError::NotConnected),
-        };
+        let connection = self.connection().await?;
         Ok(ssh::server_info(&connection).await)
     }
 }
