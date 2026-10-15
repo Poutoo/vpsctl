@@ -117,7 +117,7 @@ function submit() {
 
 .form {
   display: flex;
-  flex: 1 1 calc(4 * var(--sp-8));
+  flex: 1 1 calc(3 * var(--sp-8));
   flex-direction: column;
   gap: var(--sp-3);
 }

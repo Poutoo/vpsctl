@@ -76,7 +76,7 @@ ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</pre>
 
 .explain {
   display: flex;
-  flex: 1 1 calc(4 * var(--sp-8));
+  flex: 1 1 calc(3 * var(--sp-8));
   flex-direction: column;
   gap: var(--sp-3);
   font-size: var(--fs-md);
@@ -99,9 +99,10 @@ ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</pre>
   word-break: break-all;
 }
 
+/* Largeur de la grille : la chaîne complète passe à la ligne dessous. */
 .print {
   display: flex;
-  flex: 0 1 auto;
+  flex: 0 0 min-content;
   flex-direction: column;
   gap: var(--sp-2);
 }

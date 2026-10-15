@@ -141,6 +141,11 @@ input[type="radio"] {
   font-family: var(--font-mono);
 }
 
+/* Dans une étiquette en capitales : nom, chemin ou commande, casse conservée. */
+.verbatim {
+  text-transform: none;
+}
+
 /* Masqué à l'écran, lu par les lecteurs d'écran. */
 .visually-hidden {
   position: absolute;

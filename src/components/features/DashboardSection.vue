@@ -22,6 +22,8 @@ const props = defineProps<{
   command: string;
   section: Section<{ state: RunState }>;
   emptyKicker: string;
+  /** Chemin ou commande accolé à l'étiquette de l'état vide. */
+  emptyDetail: string;
   emptyTitle: string;
   emptyText: string;
 }>();
@@ -72,7 +74,9 @@ const skippedWarning = computed(() => {
     <div class="card">
       <p v-if="loading" class="probe" role="status">
         <StatusIcon class="probe-shape" name="half" />
-        <span class="caps">Interrogation · {{ command }}</span>
+        <span class="caps"
+          >Interrogation · <span class="verbatim">{{ command }}</span></span
+        >
         <span v-if="elapsed !== null" class="probe-chrono">{{
           formatElapsed(elapsed, "ms")
         }}</span>
@@ -85,13 +89,15 @@ const skippedWarning = computed(() => {
       <StateMessage
         v-if="section.error"
         tone="error"
-        :kicker="`Échec · ${command}`"
+        kicker="Échec"
+        :kicker-detail="command"
       >
         {{ errorMessage(section.error) }}
       </StateMessage>
       <StateMessage
         v-else-if="section.loaded && section.items.length === 0"
         :kicker="emptyKicker"
+        :kicker-detail="emptyDetail"
         :title="emptyTitle"
       >
         {{ emptyText }}

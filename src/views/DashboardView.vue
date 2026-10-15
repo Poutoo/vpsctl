@@ -75,7 +75,8 @@ const refreshedLabel = computed(() => {
       title="Conteneurs Docker"
       command="docker ps -a"
       :section="store.containers"
-      empty-kicker="0 conteneur · docker ps -a"
+      empty-kicker="0 conteneur"
+      empty-detail="docker ps -a"
       empty-title="Aucun conteneur"
       empty-text="Aucun conteneur, même arrêté, sur ce serveur."
     >
@@ -87,7 +88,8 @@ const refreshedLabel = computed(() => {
       title="Services systemd"
       command="systemctl --user list-units"
       :section="store.services"
-      empty-kicker="0 unité gérée · ~/.config/systemd/user/"
+      empty-kicker="0 unité gérée"
+      empty-detail="~/.config/systemd/user/"
       empty-title="Aucun service utilisateur"
       empty-text="Aucun service dans ~/.config/systemd/user/ sur ce serveur."
     >

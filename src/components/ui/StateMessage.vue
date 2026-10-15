@@ -9,11 +9,18 @@ import StatusIcon from "./StatusIcon.vue";
 withDefaults(
   defineProps<{
     tone?: "neutral" | "error";
-    /** Étiquette en capitales, ex. « 0 conteneur · docker ps -a ». */
+    /** Étiquette en capitales, ex. « 0 conteneur ». */
     kicker?: string;
+    /** Complément de l'étiquette en casse d'origine (commande, chemin). */
+    kickerDetail?: string;
     title?: string;
   }>(),
-  { tone: "neutral", kicker: undefined, title: undefined },
+  {
+    tone: "neutral",
+    kicker: undefined,
+    kickerDetail: undefined,
+    title: undefined,
+  },
 );
 </script>
 
@@ -26,6 +33,7 @@ withDefaults(
     <p v-if="kicker" class="caps kicker">
       <StatusIcon v-if="tone === 'error'" class="shape" name="triangle" />
       {{ kicker }}
+      <span v-if="kickerDetail" class="verbatim">· {{ kickerDetail }}</span>
     </p>
     <h3 v-if="title" class="title">{{ title }}</h3>
     <div class="text"><slot /></div>

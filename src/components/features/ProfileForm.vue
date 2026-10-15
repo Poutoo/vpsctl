@@ -91,7 +91,10 @@ function submit() {
 
 <template>
   <PanelCard tag="form" novalidate @submit.prevent="submit">
-    <template #kicker>Profil · {{ isNew ? "nouveau" : profile.name }}</template>
+    <template #kicker>
+      Profil ·
+      <span class="verbatim">{{ isNew ? "nouveau" : profile.name }}</span>
+    </template>
     <template #aside>
       <span class="caps" :class="{ default: profile.isDefault }">{{
         profile.isDefault ? "Par défaut" : "Secondaire"

@@ -3,7 +3,7 @@
  * Télémétrie de liaison : étapes réelles de la connexion, horodatées depuis
  * le début de la tentative, et bannière LOS en cas d'échec.
  */
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { ConnectStep } from "../../bindings/ConnectStep";
 import { formatElapsed, useElapsed } from "../../composables/useElapsed";
 import type { ConnectPhase, TimedStep } from "../../stores/connection";
@@ -131,9 +131,22 @@ const live = useElapsed(
   computed(() => (connecting.value ? props.startedAt : null)),
 );
 
+/** Durée de la dernière tentative, figée quand elle se termine. */
+const endedAfter = ref<number | null>(null);
+watch(
+  () => props.phase,
+  (phase, previous) => {
+    if (phase === "connecting") endedAfter.value = null;
+    else if (previous === "connecting" && props.startedAt !== null) {
+      endedAfter.value = performance.now() - props.startedAt;
+    }
+  },
+);
+
 /** Chrono de l'en-tête : en direct pendant la connexion, figé ensuite. */
 const chrono = computed(() => {
   if (live.value !== null) return seconds(live.value);
+  if (endedAfter.value !== null) return seconds(endedAfter.value);
   const last = props.steps[props.steps.length - 1];
   return seconds(last?.atMs ?? 0);
 });
