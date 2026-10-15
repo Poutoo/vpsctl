@@ -16,14 +16,25 @@ export function formatElapsed(ms: number, precision: "s" | "ms"): string {
   return `T+${whole.padStart(2, "0")}.${fraction}`;
 }
 
+/** Durée longue au format `02:14:07` (heures, minutes, secondes). */
+export function formatClock(ms: number): string {
+  const total = Math.floor(Math.max(0, ms) / 1000);
+  return [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+}
+
 /**
- * Durée écoulée depuis `since` (horodatage `performance.now()` ou
- * `Date.now()`, selon `clock`), relue toutes les 50 ms tant que `since`
- * n'est pas nul. Le minuteur s'arrête au démontage.
+ * Durée écoulée depuis `since` (horodatage `performance.now()` par défaut,
+ * ou celui de `clock`), relue toutes les `tickMs` tant que `since` n'est pas
+ * nul. Le minuteur s'arrête au démontage.
  */
 export function useElapsed(
   since: Ref<number | null>,
-  clock: () => number = () => performance.now(),
+  {
+    clock = () => performance.now(),
+    tickMs = TICK_MS,
+  }: { clock?: () => number; tickMs?: number } = {},
 ) {
   const now = ref(clock());
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -39,7 +50,7 @@ export function useElapsed(
       stop();
       now.value = clock();
       if (value !== null) {
-        timer = setInterval(() => (now.value = clock()), TICK_MS);
+        timer = setInterval(() => (now.value = clock()), tickMs);
       }
     },
     { immediate: true },
