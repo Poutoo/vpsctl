@@ -43,6 +43,12 @@ pub enum AppError {
 
     #[error("erreur d'entrée/sortie : {message}")]
     Io { message: String },
+
+    #[error("Docker n'est pas installé sur le serveur")]
+    DockerNotInstalled,
+
+    #[error("accès à Docker refusé (utilisateur hors du groupe docker)")]
+    DockerPermissionDenied,
 }
 
 impl AppError {

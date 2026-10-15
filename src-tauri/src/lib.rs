@@ -4,6 +4,7 @@ pub mod commands;
 pub mod config;
 pub mod docker;
 pub mod error;
+pub mod run_state;
 pub mod scripts;
 pub mod secrets;
 pub mod sftp;
@@ -31,6 +32,7 @@ pub fn run() {
             commands::connection::disconnect,
             commands::connection::connection_status,
             commands::connection::server_info,
+            commands::docker::docker_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

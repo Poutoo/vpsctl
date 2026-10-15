@@ -24,6 +24,7 @@ src-tauri/src/
 ├── lib.rs            point d'entrée Tauri 2 : enregistrement des commandes et de l'état
 ├── error.rs          enum AppError unique (thiserror), sérialisable vers le frontend
 ├── state.rs          AppState : connexion active + registre des flux en cours
+├── run_state.rs      RunState : état affiché d'un conteneur ou d'un service
 ├── ssh/
 │   ├── mod.rs        connect, exec, open_stream
 │   └── host_key.rs   vérification de l'empreinte de la clé hôte

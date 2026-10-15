@@ -36,5 +36,9 @@ export function errorMessage(error: AppError): string {
       return error.message;
     case "Remote":
       return `La commande distante a échoué (code ${error.exitCode}) : ${error.stderr}`;
+    case "DockerNotInstalled":
+      return "Docker n'est pas installé sur le serveur.";
+    case "DockerPermissionDenied":
+      return "Accès à Docker refusé : le compte SSH doit appartenir au groupe docker.";
   }
 }
