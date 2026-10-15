@@ -29,13 +29,41 @@ type AppError =
 
 ```ts
 list_profiles(): Profile[]
-save_profile(profile: Profile): Profile
+save_profile(profile: Profile): Profile   // si l'hôte ou le port change, l'empreinte mémorisée est effacée ; un seul profil par défaut
 delete_profile(id: string): void
 set_key_passphrase(profileId: string, passphrase: string): void
 trust_host_key(profileId: string, fingerprint: string): void
-connect(profileId: string): ConnectionInfo
-disconnect(): void
+connect(profileId: string, onStep: Channel<ConnectStep>): ConnectionInfo
+disconnect(): void      // ferme la liaison, ou interrompt une connexion en cours
 connection_status(): ConnectionInfo | null
+server_info(): ServerInfo      // appelé une fois après la connexion, affiché dans la barre d'état
+```
+
+`server_info` lit `PRETTY_NAME` dans `/etc/os-release`, `docker version --format '{{.Server.Version}}'` et la première ligne de `systemctl --version`. Si une information n'est pas disponible, le champ vaut `null` : l'échec d'une de ces commandes ne doit jamais bloquer la connexion.
+
+### Séquence de connexion
+
+`connect` émet une étape par phase réelle, affichée dans la télémétrie de liaison :
+
+```ts
+type ConnectStep =
+  | { step: "tcp"; status: "ok" | "error"; durationMs: number | null; message: string | null }
+  | { step: "ssh"; status: "ok" | "error"; message: string | null }
+  | { step: "hostKey"; status: "ok" | "unknown" | "mismatch"; fingerprint: string }
+  | { step: "auth"; status: "ok" | "passphraseRequired" | "error"; message: string | null }
+  | { step: "aos" }
+```
+
+Clé hôte inconnue ou différente : la liaison est **fermée** avant toute authentification, et `connect` échoue avec `UnknownHostKey` ou `HostKeyMismatch`. Après validation par l'utilisateur (`trust_host_key`), une **nouvelle** connexion est lancée. On ne garde pas la négociation suspendue pendant que l'utilisateur compare l'empreinte : le serveur la couperait de lui-même passé son délai de connexion (`LoginGraceTime`, 120 secondes par défaut sur OpenSSH).
+
+Les empreintes sont mémorisées dans le profil de connexion de l'application, jamais dans `~/.ssh/known_hosts`.
+
+```ts
+interface ConnectionInfo {
+  profileId: string
+  connectedAt: number        // horodatage
+  latencyMs: number | null   // mesurée en chronométrant une commande vide toutes les 30 secondes
+}
 ```
 
 ## Fichiers
@@ -103,6 +131,13 @@ interface Profile {
   user: string
   keyPath: string
   hostKeyFingerprint: string | null
+  isDefault: boolean
+}
+
+interface ServerInfo {
+  os: string | null        // ex. "Ubuntu 24.04.1 LTS"
+  docker: string | null    // ex. "27.3.1"
+  systemd: string | null   // ex. "255"
 }
 
 interface FileEntry {
@@ -142,8 +177,10 @@ interface ServiceDef {
 interface Script {
   id: string
   name: string
+  description: string
   command: string
   requireConfirmation: boolean
+  lastRun: { at: number; exitCode: number | null } | null   // mis à jour par le backend à la fin de chaque exécution
 }
 
 type LogEvent =
@@ -163,5 +200,3 @@ type Progress =
   | { type: "cancelled" }
   | { type: "error"; message: string }
 ```
-
-`ConnectionInfo` reste à préciser lors du jalon 1.

@@ -35,7 +35,16 @@ Il s'agit de services utilisateur (`systemctl --user`), pas de services système
 
 - Stockés localement dans un fichier JSON de l'application
 - Chaque script : nom, commande, confirmation obligatoire ou non
+- Description facultative
+- Dernière exécution mémorisée localement (date et code de sortie)
+- Ajout, modification et suppression depuis l'appli
 - Exécution avec sortie affichée en direct
+
+## Profils de connexion
+
+- Plusieurs profils, **une seule connexion active à la fois**
+- Un profil peut être marqué « par défaut » (présélectionné à l'ouverture)
+- Ajout, modification et suppression (avec confirmation)
 
 ## Hors MVP
 
@@ -43,7 +52,9 @@ Il s'agit de services utilisateur (`systemctl --user`), pas de services système
 - Édition de fichiers texte dans l'appli
 - Terminal intégré
 - Monitoring CPU, RAM, disque
-- Interface multi-VPS (le modèle de données supporte déjà plusieurs profils, seule l'interface est limitée à un)
+- Connexions simultanées à plusieurs VPS
+- Oublier l'empreinte ou la passphrase depuis les réglages (le remplacement d'empreinte passe par l'alerte de sécurité ; une passphrase erronée est simplement redemandée puis remplacée dans le trousseau)
+- Modification des droits des fichiers
 - Services lancés autrement que par Docker ou systemd (screen, tmux, pm2)
 - Activer ou désactiver un service au démarrage (`systemctl --user enable/disable`) : v2
 - Filtre de recherche dans les listes : v2
