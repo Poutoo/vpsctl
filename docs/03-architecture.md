@@ -84,6 +84,15 @@ Toute valeur saisie dans l'interface et insérée dans une commande shell est va
 - `journalctl` : le journal ne conserve pas, par défaut, de quel flux vient une ligne. On récupère à la place la priorité syslog de chaque message (`journalctl --user -o json`, champ `PRIORITY`). L'interface affiche `ERR` pour une priorité inférieure ou égale à 3 (err, crit, alert, emerg).
 - Horodatages : `docker logs --timestamps` et le champ `__REALTIME_TIMESTAMP` du JSON de `journalctl`.
 
+### Vérification après une action sur un service
+
+Le code de retour d'une commande ne suffit pas à savoir si un service a démarré. Pour un service systemd de type `simple` (le type par défaut), `systemctl --user start` réussit dès que le processus est lancé, même s'il plante juste après. `docker start` se comporte de la même façon.
+
+Après un démarrage ou un redémarrage :
+1. Le service passe en état « En transition ».
+2. Son état est relu après un court délai (2 à 3 secondes).
+3. Seulement alors, l'état réel est affiché, avec une notification d'échec si besoin.
+
 ### Arrêt des flux
 
 Chaque flux (logs, exécution de script) reçoit un identifiant et est enregistré dans `state.rs`. Une commande d'arrêt ferme le canal correspondant, ce qui termine le processus distant. Sans cela, les canaux s'accumulent.
@@ -132,6 +141,10 @@ src/
 - **`useLogStream(source)`** gère tout le cycle de vie d'un flux : démarrage, mémoire tampon limitée (5 000 lignes par défaut, les plus anciennes sont supprimées), appel automatique de `logs_stop` au démontage du composant. Aucun flux ne doit rester ouvert après un changement d'écran. Utilisé aussi pour l'exécution des scripts.
 - **Transferts** : file d'attente gérée dans le store `transfers`, un seul transfert actif à la fois. Chaque transfert a un identifiant et peut être annulé. « Afficher » ouvre le dossier local du fichier téléchargé via le plugin officiel opener de Tauri.
 - **Rafraîchissement des services** : toutes les 5 secondes uniquement quand le tableau de bord est visible, plus un bouton d'actualisation manuelle.
+- **Sortie d'erreur ≠ erreur** : beaucoup de programmes écrivent tous leurs logs sur la sortie d'erreur (Caddy, le module `logging` de Python par défaut). Une ligne `stderr` est donc marquée de façon neutre (étiquette discrète, sans fond rouge). Le style d'erreur rouge est réservé aux messages systemd de priorité ≤ 3.
+- **Console** : un seul composant console, utilisé à l'identique dans la vue plein écran, le panneau ancré du tableau de bord et l'exécution des scripts (défilement automatique, indicateur de nouvelles lignes, bannière LOS). Le panneau ancré réduit la zone du tableau au-dessus de lui, il ne la recouvre pas.
+- **Barre de titre personnalisée** : la barre native est désactivée (`decorations: false`). La zone de déplacement utilise `data-tauri-drag-region`, les boutons réduire, agrandir et fermer appellent l'API de fenêtre de Tauri, avec les permissions correspondantes dans les capabilities. Le double-clic sur la barre agrandit la fenêtre. Limite connue : sous Windows, le menu d'ancrage (Snap Layouts) au survol du bouton agrandir n'est pas disponible ; sous Linux, le comportement est à tester selon le gestionnaire de fenêtres.
+- **Barre d'état** : affiche `server_info` (système, Docker, systemd), récupéré une fois après la connexion.
 - **Erreurs** : chaque `kind` de `AppError` est traduit en message clair. `HostKeyMismatch` redirige vers un écran d'alerte dédié, jamais une simple notification.
 
 ### Routes
