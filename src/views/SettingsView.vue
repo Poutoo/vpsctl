@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from "vue";
 import { errorMessage, toAppError } from "../api/errors";
 import type { Profile } from "../bindings/Profile";
 import ProfileForm from "../components/features/ProfileForm.vue";
+import PageHeader from "../components/layout/PageHeader.vue";
+import AppButton from "../components/ui/AppButton.vue";
 import { useConfirm } from "../composables/useConfirm";
 import { useConnectionStore } from "../stores/connection";
 import { useProfilesStore } from "../stores/profiles";
@@ -100,18 +102,17 @@ function makeDefault() {
 
 <template>
   <div class="settings">
-    <header class="header">
-      <h1>Réglages · profils de liaison</h1>
-      <RouterLink v-if="!connection.isConnected" :to="{ name: 'connect' }">
+    <PageHeader section="settings" title="Réglages">
+      <AppButton v-if="!connection.isConnected" :to="{ name: 'connect' }">
         Retour à la connexion
-      </RouterLink>
-      <button type="button" :disabled="busy" @click="select('')">
+      </AppButton>
+      <AppButton variant="primary" :disabled="busy" @click="select('')">
         Nouveau profil
-      </button>
-    </header>
+      </AppButton>
+    </PageHeader>
 
     <div class="layout">
-      <ul class="list">
+      <ul class="list" aria-label="Profils de liaison">
         <li v-for="p in profiles.profiles" :key="p.id">
           <button
             type="button"
@@ -119,16 +120,21 @@ function makeDefault() {
             :aria-current="p.id === editedId"
             @click="select(p.id)"
           >
-            <strong>{{ p.name }}</strong>
-            <span v-if="p.isDefault" class="muted"> · par défaut</span>
-            <span v-if="p.id === linkedId" class="muted">
-              · liaison en cours</span
-            >
-            <br />
-            <span class="mono">{{ p.user }}@{{ p.host }}:{{ p.port }}</span>
+            <span class="item-head">
+              <span class="name">{{ p.name }}</span>
+              <span v-if="p.isDefault" class="caps tag">par défaut</span>
+            </span>
+            <span class="endpoint">{{ p.user }}@{{ p.host }}:{{ p.port }}</span>
+            <span v-if="p.id === linkedId" class="caps linked">
+              liaison en cours
+            </span>
           </button>
         </li>
-        <li v-if="editedId === ''" class="muted">Nouveau profil…</li>
+        <li v-if="editedId === ''">
+          <span class="item new" aria-current="true">
+            <span class="name">Nouveau profil…</span>
+          </span>
+        </li>
       </ul>
 
       <ProfileForm
@@ -150,18 +156,7 @@ function makeDefault() {
 .settings {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
-}
-
-.header {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-4);
-}
-
-.header h1 {
-  margin: 0;
-  margin-right: auto;
+  gap: var(--sp-5);
 }
 
 .layout {
@@ -171,32 +166,79 @@ function makeDefault() {
   align-items: start;
 }
 
+/* Liste des profils : surface opaque, une ligne par profil. */
 .list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
   margin: 0;
   padding: 0;
   list-style: none;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+}
+
+.list li + li {
+  border-top: var(--border-width) solid var(--color-border);
 }
 
 .item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
   width: 100%;
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: transparent;
+  border: none;
   text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.item:hover {
+  background: var(--color-surface-hover);
+}
+
+.item:focus-visible {
+  outline-offset: calc(-1 * var(--focus-offset));
 }
 
 .item[aria-current="true"] {
-  border-color: var(--color-action);
+  background: var(--color-surface-raised);
+  box-shadow: inset var(--border-width-accent) 0 0 var(--color-action);
 }
 
-.muted {
+.item.new {
+  cursor: default;
+}
+
+.item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.name {
+  overflow: hidden;
+  font-family: var(--font-title);
+  font-size: var(--fs-lg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag {
+  flex-shrink: 0;
+  color: var(--color-action);
+}
+
+.endpoint {
+  overflow: hidden;
   color: var(--color-text-muted);
-  font-size: var(--fs-md);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.mono {
-  font-family: var(--font-mono);
-  font-size: var(--fs-md);
+.linked {
+  color: var(--color-success);
 }
 </style>

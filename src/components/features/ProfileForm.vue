@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from "vue";
+import { computed, reactive, useId, watch } from "vue";
 import type { Profile } from "../../bindings/Profile";
+import AppButton from "../ui/AppButton.vue";
+import PanelCard from "../ui/PanelCard.vue";
+import StatusIcon from "../ui/StatusIcon.vue";
 
 const props = defineProps<{
   /** Profil édité ; `id` vide pour un nouveau profil. */
@@ -53,6 +56,15 @@ const problems = computed(() => ({
     : "Le chemin de la clé privée est requis.",
 }));
 
+/** Erreurs affichées : après le premier passage dans le champ (le port, toujours). */
+const shown = computed(() => ({
+  name: touched.name ? problems.value.name : null,
+  host: touched.host ? problems.value.host : null,
+  port: problems.value.port,
+  user: touched.user ? problems.value.user : null,
+  keyPath: touched.keyPath ? problems.value.keyPath : null,
+}));
+
 const valid = computed(() =>
   Object.values(problems.value).every((p) => p === null),
 );
@@ -66,6 +78,10 @@ const endpointChanged = computed(
       draft.port !== props.profile.port),
 );
 
+/** Identifiants des messages d'erreur, pour `aria-describedby`. */
+const uid = useId();
+const errorId = (field: string) => `${uid}-${field}-error`;
+
 function submit() {
   Object.assign(touched, { name: true, host: true, user: true, keyPath: true });
   if (!valid.value || props.busy) return;
@@ -74,137 +90,164 @@ function submit() {
 </script>
 
 <template>
-  <form class="form" novalidate @submit.prevent="submit">
-    <p class="kicker">
-      Profil · {{ isNew ? "nouveau" : profile.name }}
-      <span v-if="profile.isDefault"> · par défaut</span>
-    </p>
+  <PanelCard tag="form" novalidate @submit.prevent="submit">
+    <template #kicker>Profil · {{ isNew ? "nouveau" : profile.name }}</template>
+    <template #aside>
+      <span class="caps" :class="{ default: profile.isDefault }">{{
+        profile.isDefault ? "Par défaut" : "Secondaire"
+      }}</span>
+    </template>
 
     <label class="field">
-      Nom du profil
-      <input v-model="draft.name" type="text" @blur="touched.name = true" />
-      <span v-if="touched.name && problems.name" class="error">{{
-        problems.name
-      }}</span>
+      <span class="label">Nom du profil</span>
+      <input
+        v-model="draft.name"
+        type="text"
+        :aria-invalid="shown.name !== null"
+        :aria-describedby="shown.name ? errorId('name') : undefined"
+        @blur="touched.name = true"
+      />
+      <span v-if="shown.name" :id="errorId('name')" class="error">
+        <StatusIcon class="shape" name="triangle" />{{ shown.name }}
+      </span>
     </label>
 
     <div class="row">
-      <label class="field grow">
-        Hôte
+      <label class="field">
+        <span class="label">Hôte</span>
         <input
           v-model="draft.host"
           type="text"
           spellcheck="false"
           autocomplete="off"
+          :aria-invalid="shown.host !== null"
+          :aria-describedby="shown.host ? errorId('host') : undefined"
           @blur="touched.host = true"
         />
-        <span v-if="touched.host && problems.host" class="error">{{
-          problems.host
-        }}</span>
+        <span v-if="shown.host" :id="errorId('host')" class="error">
+          <StatusIcon class="shape" name="triangle" />{{ shown.host }}
+        </span>
       </label>
       <label class="field">
-        Port
-        <input v-model.number="draft.port" type="number" min="1" max="65535" />
-        <span v-if="problems.port" class="error">{{ problems.port }}</span>
+        <span class="label">Port</span>
+        <input
+          v-model.number="draft.port"
+          type="number"
+          min="1"
+          max="65535"
+          :aria-invalid="shown.port !== null"
+          :aria-describedby="shown.port ? errorId('port') : undefined"
+        />
+        <span v-if="shown.port" :id="errorId('port')" class="error">
+          <StatusIcon class="shape" name="triangle" />{{ shown.port }}
+        </span>
       </label>
     </div>
 
     <div class="row">
-      <label class="field grow">
-        Utilisateur
+      <label class="field">
+        <span class="label">Utilisateur</span>
         <input
           v-model="draft.user"
           type="text"
           spellcheck="false"
           autocomplete="off"
+          :aria-invalid="shown.user !== null"
+          :aria-describedby="shown.user ? errorId('user') : undefined"
           @blur="touched.user = true"
         />
-        <span v-if="touched.user && problems.user" class="error">{{
-          problems.user
-        }}</span>
+        <span v-if="shown.user" :id="errorId('user')" class="error">
+          <StatusIcon class="shape" name="triangle" />{{ shown.user }}
+        </span>
       </label>
-      <label class="field grow">
-        Clé privée
+      <label class="field">
+        <span class="label">Clé privée</span>
         <input
           v-model="draft.keyPath"
           type="text"
           spellcheck="false"
           autocomplete="off"
           placeholder="~/.ssh/id_ed25519"
+          :aria-invalid="shown.keyPath !== null"
+          :aria-describedby="shown.keyPath ? errorId('keyPath') : undefined"
           @blur="touched.keyPath = true"
         />
-        <span v-if="touched.keyPath && problems.keyPath" class="error">{{
-          problems.keyPath
-        }}</span>
+        <span v-if="shown.keyPath" :id="errorId('keyPath')" class="error">
+          <StatusIcon class="shape" name="triangle" />{{ shown.keyPath }}
+        </span>
       </label>
     </div>
 
-    <section class="fingerprint">
-      <h3>Empreinte de la clé du serveur</h3>
-      <p v-if="profile.hostKeyFingerprint" class="mono">
-        {{ profile.hostKeyFingerprint }}
-      </p>
-      <p v-else class="muted">
+    <p v-if="linked" class="notice" role="note">
+      <StatusIcon class="notice-shape" name="triangle" />
+      Liaison active : une modification d'hôte, de port ou d'utilisateur ne
+      s'appliquera qu'après avoir rétabli la liaison.
+    </p>
+
+    <section class="fingerprint" aria-labelledby="fingerprint-title">
+      <h3 id="fingerprint-title" class="label">
+        Empreinte de la clé du serveur
+      </h3>
+      <template v-if="profile.hostKeyFingerprint">
+        <p class="print">
+          <StatusIcon class="print-shape" name="check" />
+          <span class="print-text">{{ profile.hostKeyFingerprint }}</span>
+        </p>
+        <p class="help">
+          Lecture seule. Elle ne change que par l'alerte de sécurité de l'écran
+          de connexion.
+        </p>
+      </template>
+      <p v-else class="print empty">
         Aucune empreinte mémorisée. Elle sera à vérifier à la première
         connexion.
       </p>
-      <p v-if="endpointChanged" class="warning" role="status">
+      <p v-if="endpointChanged" class="notice" role="status">
+        <StatusIcon class="notice-shape" name="triangle" />
         L'hôte ou le port a changé : l'empreinte mémorisée sera effacée à
         l'enregistrement et devra être vérifiée à la prochaine connexion.
       </p>
     </section>
 
-    <p v-if="error" class="error" role="alert">{{ error }}</p>
+    <p v-if="error" class="error save-error" role="alert">
+      <StatusIcon class="shape" name="triangle" />{{ error }}
+    </p>
 
-    <div class="actions">
-      <button
+    <template #footer>
+      <AppButton
         v-if="!isNew"
-        type="button"
-        class="danger"
+        variant="danger"
         :disabled="linked || busy"
-        :title="
-          linked
-            ? 'Impossible de supprimer le profil de la liaison en cours'
-            : undefined
-        "
         @click="emit('remove')"
       >
         Supprimer…
-      </button>
+      </AppButton>
+      <span v-if="!isNew && linked" class="hint">
+        Profil connecté : coupez la liaison pour le supprimer.
+      </span>
       <span class="spacer" />
-      <button
+      <AppButton
         v-if="!isNew && !profile.isDefault"
-        type="button"
         :disabled="busy"
         @click="emit('makeDefault')"
       >
         Définir par défaut
-      </button>
-      <button type="submit" :disabled="busy">Enregistrer</button>
-    </div>
-  </form>
+      </AppButton>
+      <AppButton variant="primary" type="submit" :disabled="busy">
+        Enregistrer
+      </AppButton>
+    </template>
+  </PanelCard>
 </template>
 
 <style scoped>
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-  padding: var(--sp-4);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--r-2);
-}
-
-.kicker,
-.muted {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--fs-md);
+.default {
+  color: var(--color-action);
 }
 
 .row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-4);
 }
 
@@ -212,48 +255,89 @@ function submit() {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
+  min-width: 0;
 }
 
-.grow {
-  flex: 1;
-}
-
-.fingerprint h3 {
-  margin: 0 0 var(--sp-2);
-  font-size: var(--fs-lg);
-}
-
-.fingerprint p {
-  margin: 0;
-}
-
-.mono {
-  font-family: var(--font-mono);
-  word-break: break-all;
-}
-
-.warning {
-  margin-top: var(--sp-2);
-  color: var(--color-warning);
+.label {
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  font-weight: 500;
 }
 
 .error {
-  margin: 0;
-  color: var(--color-danger-text);
-  font-size: var(--fs-md);
-}
-
-.actions {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
+  gap: var(--sp-2);
+  color: var(--color-danger-text);
+  font-size: var(--fs-sm);
+}
+
+.shape {
+  color: var(--color-danger);
+}
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--color-field);
+  border: var(--border-width) solid var(--color-border-strong);
+  font-size: var(--fs-sm);
+}
+
+.notice-shape {
+  margin-top: var(--sp-1);
+  color: var(--color-warning);
+}
+
+.fingerprint {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-top: var(--sp-4);
+  border-top: var(--border-width) solid var(--color-border);
+}
+
+.print {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--row-height);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--color-field);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--r-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.print-shape {
+  color: var(--color-success);
+}
+
+.print-text {
+  user-select: all;
+  word-break: break-all;
+}
+
+.print.empty {
+  border-style: dashed;
+  color: var(--color-text-muted);
+  font-family: var(--font-ui);
+}
+
+.help {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+.hint {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
 }
 
 .spacer {
   flex: 1;
-}
-
-.danger {
-  color: var(--color-danger-text);
 }
 </style>
