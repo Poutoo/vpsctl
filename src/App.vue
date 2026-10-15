@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import ConfirmDialog from "./components/ui/ConfirmDialog.vue";
 import { useConnectionStore } from "./stores/connection";
 import { useProfilesStore } from "./stores/profiles";
 
@@ -59,6 +60,7 @@ async function disconnect() {
   <main class="main">
     <RouterView />
   </main>
+  <ConfirmDialog />
 </template>
 
 <style scoped>

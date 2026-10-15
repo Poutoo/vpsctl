@@ -151,6 +151,7 @@ export const useConnectionStore = defineStore("connection", () => {
   async function submitPassphrase(passphrase: string, remember: boolean) {
     const id = profileId.value;
     if (!id) return;
+    passphraseRejected.value = false;
     if (remember) {
       try {
         await api.setKeyPassphrase(id, passphrase);

@@ -41,6 +41,9 @@
   /* Bordures */
   --border-width: 1px;
 
+  /* Voile derrière une modale */
+  --overlay-opacity: 0.8;
+
   /* Typographie (polices système, provisoire) */
   --font-sans: system-ui, sans-serif;
   --font-mono: ui-monospace, monospace;
