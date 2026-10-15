@@ -9,7 +9,7 @@ use ts_rs::TS;
 
 use crate::error::AppError;
 use crate::run_state::RunState;
-use crate::ssh::{self, Connection, ExecOutput};
+use crate::ssh::{Connection, Deadline, ExecOutput};
 
 /// `--no-trunc` : ID complet, utilisé pour les actions.
 const LIST_COMMAND: &str = "docker ps -a --no-trunc --format '{{json .}}'";
@@ -51,7 +51,9 @@ struct PsLine {
 
 /// Liste tous les conteneurs, y compris arrêtés, triés par nom.
 pub async fn list(connection: &Connection) -> Result<Vec<Container>, AppError> {
-    let output = ssh::within(LIST_TIMEOUT, connection.exec(LIST_COMMAND)).await?;
+    let output = connection
+        .exec_until(LIST_COMMAND, Deadline::after(LIST_TIMEOUT))
+        .await?;
     interpret_list(&output)
 }
 

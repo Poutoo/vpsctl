@@ -17,7 +17,7 @@ use ts_rs::TS;
 use crate::error::AppError;
 use crate::run_state::RunState;
 use crate::sftp::{self, DirEntry, EntryKind};
-use crate::ssh::{self, Connection};
+use crate::ssh::{self, Connection, Deadline};
 
 const LIST_COMMAND: &str =
     "systemctl --user list-units --type=service --all --output=json --no-pager";
@@ -67,16 +67,18 @@ pub struct UnitFile {
 }
 
 /// Liste les services utilisateur, triés par nom d'unité.
+/// Les deux lectures partagent la même échéance de 10 s.
 pub async fn list(connection: &Connection) -> Result<Vec<Service>, AppError> {
-    ssh::within(LIST_TIMEOUT, async {
-        let (units, files) = tokio::join!(list_units(connection), unit_files(connection));
-        Ok(select_user_services(units?, &files?))
-    })
-    .await
+    let deadline = Deadline::after(LIST_TIMEOUT);
+    let (units, files) = tokio::join!(
+        list_units(connection, deadline),
+        ssh::within(deadline, unit_files(connection)),
+    );
+    Ok(select_user_services(units?, &files?))
 }
 
-async fn list_units(connection: &Connection) -> Result<Vec<UnitRow>, AppError> {
-    let output = connection.exec(LIST_COMMAND).await?;
+async fn list_units(connection: &Connection, deadline: Deadline) -> Result<Vec<UnitRow>, AppError> {
+    let output = connection.exec_until(LIST_COMMAND, deadline).await?;
     if !output.success() {
         return Err(output.remote_error());
     }

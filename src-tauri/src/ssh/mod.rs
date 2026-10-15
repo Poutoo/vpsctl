@@ -343,33 +343,28 @@ impl Connection {
     /// Exécute une commande fixe (jamais construite à partir d'une saisie non
     /// validée) et renvoie sa sortie complète.
     pub async fn exec(&self, command: &str) -> Result<ExecOutput, AppError> {
-        let run = async {
-            let handle = self.handle()?;
-            let mut channel = handle
+        self.exec_until(command, Deadline::after(EXEC_TIMEOUT))
+            .await
+    }
+
+    /// Comme `exec`, avec une échéance. Échéance dépassée : la commande
+    /// distante est interrompue et son canal fermé (voir `run_command`).
+    pub async fn exec_until(
+        &self,
+        command: &str,
+        deadline: Deadline,
+    ) -> Result<ExecOutput, AppError> {
+        let handle = self.handle()?;
+        // Un canal dont l'ouverture n'est pas encore confirmée est refermé
+        // par russh à l'abandon de la demande.
+        let channel = within(deadline, async {
+            handle
                 .channel_open_session()
                 .await
-                .map_err(|e| AppError::network(format!("ouverture d'un canal impossible : {e}")))?;
-            channel
-                .exec(true, command)
-                .await
-                .map_err(|e| AppError::network(format!("envoi de la commande impossible : {e}")))?;
-
-            let mut output = ExecOutput::default();
-            while let Some(msg) = channel.wait().await {
-                match msg {
-                    ChannelMsg::Data { data } => append_limited(&mut output.stdout, &data),
-                    ChannelMsg::ExtendedData { data, ext: 1 } => {
-                        append_limited(&mut output.stderr, &data)
-                    }
-                    ChannelMsg::ExitStatus { exit_status } => output.exit_code = Some(exit_status),
-                    _ => {}
-                }
-            }
-            Ok(output)
-        };
-        tokio::time::timeout(EXEC_TIMEOUT, run)
-            .await
-            .map_err(|_| AppError::network("la commande n'a pas répondu à temps"))?
+                .map_err(|e| AppError::network(format!("ouverture d'un canal impossible : {e}")))
+        })
+        .await?;
+        run_command(channel, command, deadline).await
     }
 
     /// Durée d'un aller-retour SSH : ouverture d'un canal de session jusqu'à
@@ -451,18 +446,110 @@ impl Drop for Connection {
     }
 }
 
-/// Limite la durée d'une opération distante. Au-delà, elle est abandonnée et
-/// l'erreur est `Network`.
-pub async fn within<T>(
+/// Échéance d'une opération distante, partageable entre plusieurs étapes.
+#[derive(Debug, Clone, Copy)]
+pub struct Deadline {
+    at: tokio::time::Instant,
     limit: Duration,
-    operation: impl Future<Output = Result<T, AppError>>,
-) -> Result<T, AppError> {
-    tokio::time::timeout(limit, operation).await.map_err(|_| {
+}
+
+impl Deadline {
+    pub fn after(limit: Duration) -> Self {
+        Self {
+            at: tokio::time::Instant::now() + limit,
+            limit,
+        }
+    }
+
+    fn error(&self) -> AppError {
         AppError::network(format!(
             "le serveur n'a pas répondu en {} s",
-            limit.as_secs()
+            self.limit.as_secs()
         ))
-    })?
+    }
+}
+
+/// Limite la durée d'une opération distante. Au-delà, elle est abandonnée et
+/// l'erreur est `Network`. Ne convient pas à une commande : `exec_until`
+/// l'interrompt en plus côté serveur.
+pub async fn within<T>(
+    deadline: Deadline,
+    operation: impl Future<Output = Result<T, AppError>>,
+) -> Result<T, AppError> {
+    tokio::time::timeout_at(deadline.at, operation)
+        .await
+        .map_err(|_| deadline.error())?
+}
+
+/// Délai accordé à l'interruption d'une commande (signal et fermeture).
+const ABORT_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Canal portant une commande. Abstrait pour tester `run_command` sans réseau.
+trait CommandChannel {
+    async fn start(&mut self, command: &str) -> Result<(), AppError>;
+    async fn next_message(&mut self) -> Option<ChannelMsg>;
+    /// Interrompt la commande distante et ferme le canal.
+    async fn abort(self);
+}
+
+impl CommandChannel for russh::Channel<client::Msg> {
+    async fn start(&mut self, command: &str) -> Result<(), AppError> {
+        self.exec(true, command)
+            .await
+            .map_err(|e| AppError::network(format!("envoi de la commande impossible : {e}")))
+    }
+
+    async fn next_message(&mut self) -> Option<ChannelMsg> {
+        self.wait().await
+    }
+
+    /// SIGTERM si le serveur accepte les signaux, puis fermeture du canal :
+    /// sshd ferme alors les sorties de la commande, qui s'arrête au plus tard
+    /// à sa prochaine écriture.
+    async fn abort(self) {
+        let _ = tokio::time::timeout(ABORT_TIMEOUT, async {
+            let _ = self.signal(russh::Sig::TERM).await;
+            let _ = self.eof().await;
+            let _ = self.close().await;
+        })
+        .await;
+    }
+}
+
+/// Lance la commande et lit sa sortie jusqu'à la fin. Échéance dépassée ou
+/// commande refusée : le canal est interrompu, rien n'est laissé ouvert.
+async fn run_command<C: CommandChannel>(
+    mut channel: C,
+    command: &str,
+    deadline: Deadline,
+) -> Result<ExecOutput, AppError> {
+    let result = tokio::time::timeout_at(deadline.at, async {
+        channel.start(command).await?;
+        let mut output = ExecOutput::default();
+        while let Some(msg) = channel.next_message().await {
+            match msg {
+                ChannelMsg::Data { data } => append_limited(&mut output.stdout, &data),
+                ChannelMsg::ExtendedData { data, ext: 1 } => {
+                    append_limited(&mut output.stderr, &data)
+                }
+                ChannelMsg::ExitStatus { exit_status } => output.exit_code = Some(exit_status),
+                _ => {}
+            }
+        }
+        Ok(output)
+    })
+    .await;
+    match result {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(error)) => {
+            channel.abort().await;
+            Err(error)
+        }
+        Err(_) => {
+            channel.abort().await;
+            Err(deadline.error())
+        }
+    }
 }
 
 fn append_limited(buffer: &mut Vec<u8>, data: &[u8]) {
@@ -1002,5 +1089,106 @@ mod tests {
         assert_eq!(parse_systemd_version(output).as_deref(), Some("255"));
         assert_eq!(parse_systemd_version("bash: systemctl: not found"), None);
         assert_eq!(parse_systemd_version(""), None);
+    }
+
+    // --- Exécution avec échéance (canal simulé) -------------------------
+
+    use std::collections::VecDeque;
+
+    /// Canal simulé : renvoie ses messages puis, si `hang`, ne répond plus
+    /// (serveur lent). Note l'interruption dans `aborted`.
+    struct FakeChannel {
+        start: Result<(), String>,
+        messages: VecDeque<ChannelMsg>,
+        hang: bool,
+        aborted: Arc<AtomicBool>,
+    }
+
+    impl FakeChannel {
+        fn new(messages: Vec<ChannelMsg>, hang: bool) -> (Self, Arc<AtomicBool>) {
+            let aborted = Arc::new(AtomicBool::new(false));
+            let channel = Self {
+                start: Ok(()),
+                messages: messages.into(),
+                hang,
+                aborted: aborted.clone(),
+            };
+            (channel, aborted)
+        }
+    }
+
+    impl CommandChannel for FakeChannel {
+        async fn start(&mut self, _command: &str) -> Result<(), AppError> {
+            self.start.clone().map_err(AppError::network)
+        }
+
+        async fn next_message(&mut self) -> Option<ChannelMsg> {
+            match self.messages.pop_front() {
+                Some(msg) => Some(msg),
+                None if self.hang => std::future::pending().await,
+                None => None,
+            }
+        }
+
+        async fn abort(self) {
+            self.aborted.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn completed_command_is_not_aborted() {
+        let (channel, aborted) =
+            FakeChannel::new(vec![ChannelMsg::ExitStatus { exit_status: 3 }], false);
+        let output = run_command(channel, "true", Deadline::after(Duration::from_secs(5)))
+            .await
+            .unwrap();
+        assert_eq!(output.exit_code, Some(3));
+        assert!(!aborted.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn command_past_its_deadline_is_aborted() {
+        let (channel, aborted) =
+            FakeChannel::new(vec![ChannelMsg::ExitStatus { exit_status: 0 }], true);
+        let error = run_command(channel, "sleep", Deadline::after(Duration::from_millis(50)))
+            .await
+            .unwrap_err();
+        match error {
+            AppError::Network { message } => {
+                assert_eq!(message, "le serveur n'a pas répondu en 0 s")
+            }
+            other => panic!("attendu Network, reçu {other:?}"),
+        }
+        assert!(aborted.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn refused_command_is_aborted() {
+        let (mut channel, aborted) = FakeChannel::new(vec![], false);
+        channel.start = Err("refusée".into());
+        let error = run_command(channel, "x", Deadline::after(Duration::from_secs(5)))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::Network { .. }));
+        assert!(aborted.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn within_gives_up_at_the_deadline() {
+        let result = within(Deadline::after(Duration::from_millis(50)), async {
+            std::future::pending::<Result<(), AppError>>().await
+        })
+        .await;
+        assert!(matches!(result, Err(AppError::Network { .. })));
+    }
+
+    #[test]
+    fn timeout_message_gives_the_limit_in_seconds() {
+        match Deadline::after(Duration::from_secs(10)).error() {
+            AppError::Network { message } => {
+                assert_eq!(message, "le serveur n'a pas répondu en 10 s")
+            }
+            other => panic!("attendu Network, reçu {other:?}"),
+        }
     }
 }
