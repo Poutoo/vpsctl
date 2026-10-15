@@ -179,7 +179,7 @@ src/
 ├── bindings/          types générés par ts-rs (jamais modifiés à la main)
 ├── api/               une fonction typée par commande Tauri, regroupées par domaine
 ├── stores/            Pinia : connection, profiles, files, services, scripts, ui
-├── composables/       useLogStream, useConfirm, useAsyncAction
+├── composables/       useLogStream, useConfirm, useAsyncAction, useVisiblePolling
 ├── router/            routes + garde « connexion requise »
 ├── styles/            tokens.css, base.css
 ├── components/
