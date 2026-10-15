@@ -36,7 +36,10 @@ trust_host_key(profileId: string, fingerprint: string): void
 connect(profileId: string): ConnectionInfo
 disconnect(): void
 connection_status(): ConnectionInfo | null
+server_info(): ServerInfo      // appelé une fois après la connexion, affiché dans la barre d'état
 ```
+
+`server_info` lit `PRETTY_NAME` dans `/etc/os-release`, `docker version --format '{{.Server.Version}}'` et la première ligne de `systemctl --version`. Si une information n'est pas disponible, le champ vaut `null` : l'échec d'une de ces commandes ne doit jamais bloquer la connexion.
 
 ## Fichiers
 
@@ -103,6 +106,12 @@ interface Profile {
   user: string
   keyPath: string
   hostKeyFingerprint: string | null
+}
+
+interface ServerInfo {
+  os: string | null        // ex. "Ubuntu 24.04.1 LTS"
+  docker: string | null    // ex. "27.3.1"
+  systemd: string | null   // ex. "255"
 }
 
 interface FileEntry {
