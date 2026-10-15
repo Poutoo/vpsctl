@@ -46,7 +46,7 @@ src-tauri/src/
 
 **ssh** : ouvre et maintient une seule connexion SSH. Les autres modules ouvrent des canaux dessus. Expose deux primitives : exécuter une commande et récupérer sa sortie, ouvrir un canal en streaming. Implémente la vérification de la clé hôte. Une commande a une échéance : au-delà, elle est interrompue (SIGTERM si le serveur accepte les signaux) et son canal est fermé, pour qu'aucun canal abandonné ne s'accumule.
 
-**sftp** : ouvre le sous-système SFTP sur un canal (`russh-sftp`) et réalise toutes les opérations sur les fichiers. Aucune commande shell. Une seule session SFTP est gardée ouverte sur la liaison (dans `Connection`) et recréée uniquement si elle s'est fermée ; toutes les opérations la partagent (lecture du dossier des unités systemd, explorateur).
+**sftp** : ouvre le sous-système SFTP sur un canal (`russh-sftp`) et réalise toutes les opérations sur les fichiers. Aucune commande shell. Une seule session SFTP est gardée ouverte sur la liaison (dans `Connection`) et recréée uniquement si elle s'est fermée : après une erreur de transport, la session est recréée et l'opération retentée une seule fois avant de remonter l'erreur. Toutes les opérations la partagent (lecture du dossier des unités systemd, explorateur).
 
 **docker** : exécute `docker ps -a --no-trunc --format '{{json .}}'` et désérialise chaque ligne avec `serde`. Gère start, stop, restart, rm et le flux `docker logs -f`.
 
