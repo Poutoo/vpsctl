@@ -4,7 +4,7 @@ Statut : fait.
 
 ## Environnement
 
-- VPS Hetzner, Ubuntu 24.04
+- VPS Hetzner, Ubuntu 26.04
 - Les services tournent sous Docker (projets docker compose) et en services systemd **utilisateur**
 
 ## Compte utilisé par l'application
