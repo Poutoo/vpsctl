@@ -213,59 +213,59 @@ function fingerprintPreview(fingerprint: string | null): string {
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  gap: var(--space-6);
+  gap: var(--sp-6);
 }
 
 .profiles,
 .state {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--sp-3);
 }
 
 .muted {
   margin: 0;
   color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
 }
 
 .error {
   margin: 0;
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 
 h2 {
   margin: 0;
-  font-size: var(--font-size-xl);
+  font-size: var(--fs-2xl);
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--sp-2);
   margin: 0;
-  padding: var(--space-3);
+  padding: var(--sp-3);
   border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--r-2);
 }
 
 .profile {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-2);
+  gap: var(--sp-2);
 }
 
 .mono {
   font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
 }
 
 .details {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  gap: var(--space-1) var(--space-3);
+  gap: var(--sp-1) var(--sp-3);
   margin: 0;
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
 }
 
 .details dt {
@@ -281,11 +281,11 @@ h2 {
 .actions {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--sp-3);
 }
 
 .telemetry-title {
-  margin: var(--space-4) 0 0;
-  font-size: var(--font-size-md);
+  margin: var(--sp-4) 0 0;
+  font-size: var(--fs-lg);
 }
 </style>

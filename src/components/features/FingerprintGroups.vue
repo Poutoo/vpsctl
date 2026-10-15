@@ -54,7 +54,7 @@ const groups = computed(() => {
 .groups {
   display: grid;
   grid-template-columns: repeat(4, max-content);
-  gap: var(--space-3) var(--space-5);
+  gap: var(--sp-3) var(--sp-5);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -67,23 +67,23 @@ const groups = computed(() => {
 
 .number {
   color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
 }
 
 .text {
   font-family: var(--font-mono);
-  font-size: var(--font-size-lg);
+  font-size: var(--fs-xl);
 }
 
 .differs .text {
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   text-decoration: underline;
 }
 
 .full {
-  margin: var(--space-4) 0 0;
+  margin: var(--sp-4) 0 0;
   font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
   user-select: all;
   word-break: break-all;
 }

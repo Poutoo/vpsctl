@@ -67,18 +67,18 @@ async function disconnect() {
 .nav {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
   border-bottom: var(--border-width) solid var(--color-border);
 }
 
 .status {
   margin-left: auto;
   color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
 }
 
 .main {
-  padding: var(--space-4);
+  padding: var(--sp-4);
 }
 </style>

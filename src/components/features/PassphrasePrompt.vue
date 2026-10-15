@@ -87,50 +87,50 @@ function submit() {
 .panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
+  gap: var(--sp-3);
+  padding: var(--sp-4);
   border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--r-2);
 }
 
 .kicker,
 .muted {
   margin: 0;
   color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
 }
 
 h2 {
   margin: 0;
-  font-size: var(--font-size-lg);
+  font-size: var(--fs-xl);
 }
 
 .path {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--sp-1);
 }
 
 .check {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--sp-2);
 }
 
 .error {
   margin: 0;
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 
 .actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--space-3);
+  gap: var(--sp-3);
 }
 </style>

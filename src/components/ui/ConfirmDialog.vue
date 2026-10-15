@@ -45,8 +45,7 @@ function onOpenChange(open: boolean) {
 .overlay {
   position: fixed;
   inset: 0;
-  background: var(--color-bg);
-  opacity: var(--overlay-opacity);
+  background: var(--color-scrim);
 }
 
 .dialog {
@@ -54,26 +53,26 @@ function onOpenChange(open: boolean) {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  max-width: calc(100vw - 2 * var(--space-4));
-  padding: var(--space-5);
+  max-width: calc(100vw - 2 * var(--sp-4));
+  padding: var(--sp-5);
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--r-2);
 }
 
 .title {
-  margin: 0 0 var(--space-3);
-  font-size: var(--font-size-lg);
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-xl);
 }
 
 .actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--space-3);
-  margin-top: var(--space-5);
+  gap: var(--sp-3);
+  margin-top: var(--sp-5);
 }
 
 .danger {
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 </style>

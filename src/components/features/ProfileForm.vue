@@ -189,29 +189,29 @@ function submit() {
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-4);
+  gap: var(--sp-4);
+  padding: var(--sp-4);
   border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--r-2);
 }
 
 .kicker,
 .muted {
   margin: 0;
   color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
 }
 
 .row {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-4);
+  gap: var(--sp-4);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--sp-1);
 }
 
 .grow {
@@ -219,8 +219,8 @@ function submit() {
 }
 
 .fingerprint h3 {
-  margin: 0 0 var(--space-2);
-  font-size: var(--font-size-md);
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-lg);
 }
 
 .fingerprint p {
@@ -233,20 +233,20 @@ function submit() {
 }
 
 .warning {
-  margin-top: var(--space-2);
+  margin-top: var(--sp-2);
   color: var(--color-warning);
 }
 
 .error {
   margin: 0;
-  color: var(--color-danger);
-  font-size: var(--font-size-sm);
+  color: var(--color-danger-text);
+  font-size: var(--fs-md);
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--sp-3);
 }
 
 .spacer {
@@ -254,6 +254,6 @@ function submit() {
 }
 
 .danger {
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 </style>

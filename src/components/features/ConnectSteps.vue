@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import type { ConnectStep } from "../../bindings/ConnectStep";
 import type { ConnectPhase, TimedStep } from "../../stores/connection";
+import StatusIcon from "../ui/StatusIcon.vue";
 
 const props = defineProps<{
   steps: TimedStep[];
@@ -20,7 +21,12 @@ interface Row {
   detail: string | null;
 }
 
-const MARK_SYMBOL: Record<Mark, string> = { ok: "✓", pending: "?", error: "✗" };
+/** Libellé accessible de chaque marque (la forme ne suffit pas seule). */
+const MARK_LABEL: Record<Mark, string> = {
+  ok: "réussi",
+  pending: "en attente",
+  error: "échec",
+};
 
 function seconds(ms: number): string {
   return `T+${(ms / 1000).toFixed(3)}`;
@@ -120,9 +126,11 @@ const closedBeforeAuth = computed(
     <ol v-else class="rows">
       <li v-for="(row, index) in rows" :key="index" :class="row.mark">
         <span class="at">{{ row.at }}</span>
-        <span class="mark" :aria-label="row.mark">{{
-          MARK_SYMBOL[row.mark]
-        }}</span>
+        <span class="mark" role="img" :aria-label="MARK_LABEL[row.mark]">
+          <StatusIcon v-if="row.mark === 'ok'" name="check" />
+          <StatusIcon v-else-if="row.mark === 'error'" name="cross" />
+          <template v-else>?</template>
+        </span>
         <span class="label">{{ row.label }}</span>
         <span class="text">{{ row.text }}</span>
         <span v-if="row.detail" class="detail">{{ row.detail }}</span>
@@ -134,7 +142,9 @@ const closedBeforeAuth = computed(
       </li>
       <li v-if="closedBeforeAuth" class="pending">
         <span class="at" />
-        <span class="mark">○</span>
+        <span class="mark" role="img" aria-label="fermée">
+          <StatusIcon name="circle" />
+        </span>
         <span class="label">LIAISON</span>
         <span class="text">fermée avant authentification</span>
         <span class="detail">aucune donnée d'authentification envoyée</span>
@@ -146,7 +156,7 @@ const closedBeforeAuth = computed(
 <style scoped>
 .telemetry {
   font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
 }
 
 .empty {
@@ -162,8 +172,8 @@ const closedBeforeAuth = computed(
 .rows li {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-1) 0;
+  gap: var(--sp-3);
+  padding: var(--sp-1) 0;
 }
 
 .at {
@@ -189,8 +199,12 @@ const closedBeforeAuth = computed(
   color: var(--color-warning);
 }
 
-.error .mark,
-.error .detail {
+/* Le symbole est une forme : --color-danger ; le texte : --color-danger-text. */
+.error .mark {
   color: var(--color-danger);
+}
+
+.error .detail {
+  color: var(--color-danger-text);
 }
 </style>

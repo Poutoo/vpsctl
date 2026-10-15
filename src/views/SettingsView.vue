@@ -146,13 +146,13 @@ function makeDefault() {
 .settings {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--sp-4);
 }
 
 .header {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--sp-4);
 }
 
 .header h1 {
@@ -163,14 +163,14 @@ function makeDefault() {
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  gap: var(--space-5);
+  gap: var(--sp-5);
   align-items: start;
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--sp-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -178,21 +178,21 @@ function makeDefault() {
 
 .item {
   width: 100%;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--sp-2) var(--sp-3);
   text-align: left;
 }
 
 .item[aria-current="true"] {
-  border-color: var(--color-accent);
+  border-color: var(--color-action);
 }
 
 .muted {
   color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
 }
 
 .mono {
   font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
 }
 </style>

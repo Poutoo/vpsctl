@@ -1,73 +1,130 @@
 /*
- * Design tokens — PROVISOIRES.
+ * Atlas céleste : design tokens
+ * Source : maquettes Claude Design (planche I, planche II, écrans 1 à 8).
  *
- * Valeurs neutres posées uniquement pour que le squelette s'affiche
- * correctement en clair et en sombre. Aucune décision d'identité visuelle
- * n'est prise ici : palette, échelles et typographie seront redéfinies
- * avec les maquettes (voir docs/05-roadmap.md).
- *
- * Règle : les composants n'utilisent que ces variables, jamais de valeur en dur.
+ * Deux couches :
+ *   1. Primitives : les couleurs de base. Jamais utilisées directement dans un composant.
+ *   2. Sémantique : les rôles (--color-*). Les composants n'utilisent QUE cette couche.
+ * Un futur thème clair ne modifiera que la couche sémantique.
  */
 
 :root {
-  color-scheme: light dark;
+  /* ---------- 1. Primitives ---------- */
+  --ink-900: #0b0f14;
+  --ink: #10151c;
+  --surface-1: #151b23;
+  --surface-2: #1b222c;
+  --surface-3: #232b37;
+  --line: #2c3441;
+  --line-strong: #414b5a;
 
-  /* Couleurs — thème clair (gris neutres, placeholders) */
-  --color-bg: #ffffff;
-  --color-surface: #f4f4f5;
-  --color-border: #d4d4d8;
-  --color-text: #18181b;
-  --color-text-muted: #71717a;
+  --paper: #e6dfcc;
+  --paper-2: #ada693;
+  --paper-3: #958f7f;
 
-  /* Couleurs sémantiques — placeholders, à définir */
-  --color-accent: #52525b;
-  --color-danger: #b91c1c;
-  --color-success: #15803d;
-  --color-warning: #a16207;
+  --amber: #c8893b;
+  --amber-hi: #d9a05a;
+  --amber-lo: #a9712e;
+  --amber-tint: rgba(200, 137, 59, 0.14);
 
-  /* Espacements (échelle de 4 px, provisoire) */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
+  --verdigris: #6f9a8b;
+  --verdigris-tint: rgba(111, 154, 139, 0.14);
 
-  /* Rayons */
-  --radius-sm: 2px;
-  --radius-md: 4px;
-  --radius-lg: 8px;
+  --red: #c2412d; /* contraste 3,6:1 : formes uniquement, jamais du texte */
+  --red-lo: #a3361f;
+  --red-text: #e5735c; /* variante lisible pour le texte d'erreur */
+  --red-tint: rgba(194, 65, 45, 0.14);
+  --red-tint-2: rgba(194, 65, 45, 0.26);
 
-  /* Bordures */
+  /* ---------- 2. Sémantique ---------- */
+  --color-bg: var(--ink);
+  --color-surface: var(--surface-1);
+  --color-surface-raised: var(--surface-2);
+  --color-surface-hover: var(--surface-3);
+  --color-field: var(--ink-900);
+
+  --color-border: var(--line);
+  --color-border-strong: var(--line-strong);
+
+  --color-text: var(--paper);
+  --color-text-muted: var(--paper-2);
+  --color-text-subtle: var(--paper-3);
+
+  --color-action: var(--amber);
+  --color-action-hover: var(--amber-hi);
+  --color-action-pressed: var(--amber-lo);
+  --color-on-action: var(--ink);
+  --color-selection: var(--amber-tint);
+
+  --color-success: var(--verdigris);
+  --color-success-tint: var(--verdigris-tint);
+
+  --color-danger: var(--red);
+  --color-danger-pressed: var(--red-lo);
+  --color-danger-text: var(--red-text);
+  --color-danger-tint: var(--red-tint);
+  --color-danger-tint-strong: var(--red-tint-2);
+
+  --color-warning: var(--amber);
+
+  --color-scrim: rgba(11, 15, 20, 0.75);
+  --shadow-overlay: 0 18px 40px rgba(0, 0, 0, 0.45);
+  --focus-ring: 2px solid var(--color-action);
+  --focus-offset: 2px;
+
+  /* ---------- Typographie ---------- */
+  --font-title: "EB Garamond", Garamond, serif; /* titres uniquement */
+  --font-ui: "IBM Plex Sans", system-ui, sans-serif; /* interface */
+  --font-mono:
+    "IBM Plex Mono", ui-monospace, monospace; /* données techniques */
+
+  --fs-xs: 11px; /* étiquettes courtes en monospace, jamais du texte à lire */
+  --fs-sm: 12px;
+  --fs-data: 13px; /* données des tableaux et de la console */
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px; /* titres de section et de dialogue */
+  --fs-2xl: 28px; /* titre de page, maximum dans l'application */
+  --fs-3xl: 40px; /* écran de connexion et planches uniquement */
+  --fs-4xl: 56px; /* planches de présentation uniquement */
+
+  /* ---------- Espacements et rayons ---------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+
+  --r-0: 0;
+  --r-1: 2px;
+  --r-2: 4px;
+
   --border-width: 1px;
 
-  /* Voile derrière une modale */
-  --overlay-opacity: 0.8;
+  --row-height: 38px;
 
-  /* Typographie (polices système, provisoire) */
-  --font-sans: system-ui, sans-serif;
-  --font-mono: ui-monospace, monospace;
-  --font-size-sm: 0.875rem;
-  --font-size-md: 1rem;
-  --font-size-lg: 1.25rem;
-  --font-size-xl: 1.5rem;
-  --font-weight-normal: 400;
-  --font-weight-bold: 600;
-  --line-height: 1.5;
+  /* ---------- Mouvement ---------- */
+  --dur-fast: 150ms;
+  --dur-base: 200ms;
+  --dur-slow: 300ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.45, 0, 0.2, 1);
+
+  /* ---------- Image de fond ---------- */
+  --bg-image: none; /* à définir quand une image sous licence compatible sera choisie */
+  --bg-opacity: 0.12;
+  --bg-blend: luminosity; /* variante économe à tester : normal, avec une image déjà désaturée */
+  --bg-filter: grayscale(1) contrast(1.1);
 }
 
-/* Couleurs — thème sombre (gris neutres, placeholders) */
-@media (prefers-color-scheme: dark) {
+@media (prefers-reduced-motion: reduce) {
   :root {
-    --color-bg: #18181b;
-    --color-surface: #27272a;
-    --color-border: #3f3f46;
-    --color-text: #f4f4f5;
-    --color-text-muted: #a1a1aa;
-
-    --color-accent: #a1a1aa;
-    --color-danger: #f87171;
-    --color-success: #4ade80;
-    --color-warning: #facc15;
+    /* 0.01ms plutôt que 0 : les événements de fin de transition restent émis */
+    --dur-fast: 0.01ms;
+    --dur-base: 0.01ms;
+    --dur-slow: 0.01ms;
   }
 }

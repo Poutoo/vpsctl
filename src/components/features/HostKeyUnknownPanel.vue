@@ -47,36 +47,36 @@ const emit = defineEmits<{
 .panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
+  gap: var(--sp-3);
+  padding: var(--sp-4);
   border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--r-2);
 }
 
 .kicker,
 .muted {
   margin: 0;
   color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
 }
 
 h2 {
   margin: 0;
-  font-size: var(--font-size-lg);
+  font-size: var(--fs-xl);
 }
 
 .command {
   margin: 0;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--sp-2) var(--sp-3);
   background: var(--color-surface);
   font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
+  font-size: var(--fs-md);
   white-space: pre-wrap;
 }
 
 .actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--space-3);
+  gap: var(--sp-3);
 }
 </style>
