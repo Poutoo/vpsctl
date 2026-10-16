@@ -373,8 +373,12 @@ const errorTitle = computed(() => {
   transition: opacity var(--dur-fast) var(--ease-out);
 }
 
-/* Pendant la lecture, l'ancienne liste ne réagit plus à la souris. */
-.stale :deep(.scroller-wrap) {
+/*
+ * Pendant la lecture, l'ancienne liste ne réagit plus à la souris. Sur la
+ * zone défilante et non sur son conteneur : Reka UI pose un
+ * `pointer-events: auto` en ligne sur ce dernier, qui l'emporterait.
+ */
+.stale :deep(.scroller) {
   pointer-events: none;
 }
 
