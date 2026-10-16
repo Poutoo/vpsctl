@@ -26,6 +26,8 @@ const LIST_COMMAND: &str =
 pub const UNIT_DIR: &str = ".config/systemd/user";
 /// Délai maximal de `services_list`.
 pub const LIST_TIMEOUT: Duration = Duration::from_secs(10);
+/// Délai maximal de `service_action` (relecture de la liste et commande).
+const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -69,7 +71,43 @@ pub struct UnitFile {
 /// Liste les services utilisateur, triés par nom d'unité.
 /// Les deux lectures partagent la même échéance de 10 s.
 pub async fn list(connection: &Connection) -> Result<Vec<Service>, AppError> {
-    let deadline = Deadline::after(LIST_TIMEOUT);
+    list_until(connection, Deadline::after(LIST_TIMEOUT)).await
+}
+
+/// Démarre, arrête ou redémarre un service pilotable, sans attendre le
+/// résultat (`--no-block`). La liste est relue au préalable : l'unité doit
+/// être un service utilisateur pilotable (règle de `select_user_services`).
+/// Les deux étapes partagent une échéance de 20 s.
+pub async fn action(connection: &Connection, unit: &str, action: Action) -> Result<(), AppError> {
+    let command = action_command(unit, action)?;
+    let deadline = Deadline::after(ACTION_TIMEOUT);
+    let services = list_until(connection, deadline).await?;
+    ensure_controllable(&services, unit)?;
+    let output = connection.exec_until(&command, deadline).await?;
+    if output.success() {
+        Ok(())
+    } else {
+        Err(output.remote_error())
+    }
+}
+
+/// L'unité figure dans la liste et peut recevoir une action.
+pub fn ensure_controllable(services: &[Service], unit: &str) -> Result<(), AppError> {
+    match services.iter().find(|s| s.unit == unit) {
+        None => Err(AppError::invalid_input(format!(
+            "{unit} n'est pas un service de ~/.config/systemd/user/"
+        ))),
+        Some(service) if service.masked => Err(AppError::invalid_input(format!(
+            "{unit} est masqué : il ne peut pas être piloté"
+        ))),
+        Some(service) if !service.controllable => Err(AppError::invalid_input(format!(
+            "{unit} n'est pas pilotable"
+        ))),
+        Some(_) => Ok(()),
+    }
+}
+
+async fn list_until(connection: &Connection, deadline: Deadline) -> Result<Vec<Service>, AppError> {
     let (units, files) = tokio::join!(
         list_units(connection, deadline),
         ssh::within(deadline, unit_files(connection)),
@@ -623,6 +661,32 @@ mod tests {
             action_command("-x.service", Action::Start).unwrap(),
             "systemctl --user --no-block start -- '-x.service'"
         );
+    }
+
+    #[test]
+    fn only_listed_controllable_units_accept_actions() {
+        let named = |unit: &str, masked: bool, controllable: bool| Service {
+            unit: unit.into(),
+            masked,
+            controllable,
+            ..service("api.service")
+        };
+        let services = [
+            named("api.service", false, true),
+            named("masked.service", true, false),
+            named("a\\x2db.service", false, false),
+        ];
+
+        assert!(ensure_controllable(&services, "api.service").is_ok());
+        for refused in ["masked.service", "a\\x2db.service", "dbus.service"] {
+            assert!(
+                matches!(
+                    ensure_controllable(&services, refused),
+                    Err(AppError::InvalidInput { .. })
+                ),
+                "{refused}"
+            );
+        }
     }
 
     #[test]
