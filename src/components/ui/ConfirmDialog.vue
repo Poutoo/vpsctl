@@ -200,6 +200,14 @@ function focusNoGo(event: Event) {
   color: var(--color-text-muted);
 }
 
+/* Un long chemin sans espace se coupe au lieu de sortir de la fenêtre. */
+.consequences li > span:last-child,
+.warning strong,
+.check-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Condition vérifiée : coche (forme) et libellé, puis la donnée brute. */
 .check {
   align-items: center;

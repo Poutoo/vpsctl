@@ -147,7 +147,7 @@ async function cancel(item: Transfer) {
             <StatusIcon class="shape" :name="SHAPES[item.status]" />
             {{ statusText(item) }}
           </span>
-          <span class="detail">{{ detail(item) }}</span>
+          <span class="detail" :title="detail(item)">{{ detail(item) }}</span>
           <span
             v-if="item.status === 'error' && item.error"
             class="message"
@@ -301,19 +301,19 @@ async function cancel(item: Transfer) {
   color: var(--color-danger-text);
 }
 
-.detail,
-.message {
-  overflow: hidden;
+/* Détail (taille, débit, temps restant) : passe à la ligne plutôt que d'être coupé. */
+.detail {
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .message {
+  overflow: hidden;
   color: var(--color-danger-text);
-  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .actions {

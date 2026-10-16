@@ -14,8 +14,18 @@ export function formatBytes(bytes: number, fixed = false): string {
     value /= 1024;
     unit += 1;
   }
-  const decimals = unit === 0 ? 0 : fixed || value < 10 ? 1 : 0;
-  const text = value.toLocaleString("fr-FR", {
+  const decimalsFor = (shown: number) =>
+    unit === 0 ? 0 : fixed || shown < 10 ? 1 : 0;
+  // L'unité et les décimales se décident sur la valeur arrondie :
+  // 1 023,96 Ko s'affiche « 1,0 Mo », pas « 1 024 Ko » ; 9,96 Ko, « 10 Ko ».
+  let rounded = Number(value.toFixed(decimalsFor(value)));
+  if (rounded >= 1024 && unit < BYTE_UNITS.length - 1) {
+    unit += 1;
+    rounded = Number((rounded / 1024).toFixed(decimalsFor(rounded / 1024)));
+  }
+  const decimals = decimalsFor(rounded);
+  rounded = Number(rounded.toFixed(decimals));
+  const text = rounded.toLocaleString("fr-FR", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });

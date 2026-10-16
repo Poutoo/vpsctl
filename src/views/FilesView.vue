@@ -50,6 +50,10 @@ const routePath = computed(() => {
   return pathFromSegments(segments);
 });
 
+// Dossier personnel connu même après un rechargement sur une route directe :
+// il sert au refus immédiat de supprimer ou renommer le dossier personnel.
+void files.ensureHome().catch(() => undefined);
+
 /** Entrée à sélectionner à l'arrivée dans le dossier (retour au parent). */
 let selectOnArrival: string | null = null;
 
@@ -76,7 +80,12 @@ watch(
   { immediate: true },
 );
 
+/**
+ * Ouvre un dossier. Ignoré pendant une lecture : un seul dossier à la fois,
+ * la liste affichée étant celle du dossier précédent.
+ */
 function navigate(path: string) {
+  if (files.loading) return;
   if (path === files.path) {
     void files.refresh();
     return;
@@ -89,6 +98,7 @@ function openEntry(entry: FileEntry) {
 }
 
 function goUp() {
+  if (files.loading) return;
   const current = files.path;
   const parent = current === null ? null : parentPath(current);
   if (parent === null) return;
@@ -103,7 +113,8 @@ const draftError = ref<string | null>(null);
 const draftBusy = ref(false);
 
 function startDraft(next: Draft) {
-  if (draftBusy.value) return;
+  // Pendant l'ouverture d'un autre dossier, la liste affichée est périmée.
+  if (draftBusy.value || files.navigating) return;
   draftError.value = null;
   draft.value = next;
 }
@@ -145,6 +156,23 @@ watch(
   },
 );
 
+// Entrée renommée disparue de la liste (relue entre-temps) : la saisie n'a
+// plus d'objet.
+watch(
+  () => files.entries,
+  (entries) => {
+    const current = draft.value;
+    if (
+      current?.mode === "rename" &&
+      !draftBusy.value &&
+      !entries.some((entry) => entry.path === current.path)
+    ) {
+      draft.value = null;
+      draftError.value = null;
+    }
+  },
+);
+
 /** Le dossier affiché accepte une création. */
 const canCreate = computed(
   () => files.path !== null && files.error === null && !files.loading,
@@ -153,7 +181,11 @@ const canCreate = computed(
 // --- Actions d'une entrée ------------------------------------------------------
 
 function onAction(entry: FileEntry, action: FileAction) {
-  if (files.busy[entry.path] && action !== "copyPath") return;
+  // Pendant l'ouverture d'un autre dossier, la liste affichée est périmée :
+  // seule la copie du chemin reste possible.
+  if ((files.navigating || files.busy[entry.path]) && action !== "copyPath") {
+    return;
+  }
   switch (action) {
     case "open":
       if (isDirLike(entry)) openEntry(entry);
@@ -222,6 +254,7 @@ const errorTitle = computed(() => {
       v-if="files.path !== null"
       :path="files.path"
       :server="server"
+      :busy="files.loading"
       @navigate="navigate"
     />
 
@@ -261,7 +294,7 @@ const errorTitle = computed(() => {
       <FileTable
         v-else
         class="table"
-        :class="{ stale: files.loading }"
+        :class="{ stale: files.navigating }"
         :entries="files.sorted"
         :selected="files.selected"
         :sort="files.sort"
@@ -293,6 +326,7 @@ const errorTitle = computed(() => {
         <IconButton
           icon="refresh"
           label="Actualiser le dossier"
+          :unavailable="files.loading ? 'lecture en cours' : null"
           @click="files.refresh()"
         />
       </footer>
@@ -317,6 +351,7 @@ const errorTitle = computed(() => {
   flex: 1;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-border);
 }
@@ -325,14 +360,26 @@ const errorTitle = computed(() => {
   flex: 1;
 }
 
+/* État vide ou d'erreur : défile dans le cadre si la hauteur manque. */
 .message {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* Lecture d'un autre dossier : l'ancien contenu reste, atténué. */
 .stale {
   opacity: 0.6;
   transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+/* Pendant la lecture, l'ancienne liste ne réagit plus à la souris. */
+.stale :deep(.scroller-wrap) {
+  pointer-events: none;
+}
+
+.listing[aria-busy="true"] {
+  cursor: progress;
 }
 
 .status {

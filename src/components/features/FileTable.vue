@@ -17,14 +17,26 @@
  * Création et renommage : saisie du nom dans la liste (`draft`), Entrée
  * valide, Échap annule. Les actions sont émises vers le parent.
  */
-import { useVirtualizer } from "@tanstack/vue-virtual";
+import {
+  defaultRangeExtractor,
+  useVirtualizer,
+  type Range,
+} from "@tanstack/vue-virtual";
 import {
   ContextMenuRoot,
   ContextMenuTrigger,
   DropdownMenuRoot,
   DropdownMenuTrigger,
 } from "reka-ui";
-import { computed, nextTick, onMounted, ref, useId, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  useId,
+  watch,
+} from "vue";
 import type { FileEntry } from "../../bindings/FileEntry";
 import { formatBytes, formatModified } from "../../format";
 import {
@@ -90,13 +102,39 @@ onMounted(() => {
   if (Number.isFinite(parsed) && parsed > 0) rowHeight.value = parsed;
 });
 
+/** Ligne dont le menu déroulant (« ⋯ ») est ouvert. */
+const menuOpen = ref<string | null>(null);
+
+/** Entrée en cours de renommage. */
+const renamed = computed(() => {
+  const draft = props.draft;
+  if (draft?.mode !== "rename") return null;
+  return props.entries.find((entry) => entry.path === draft.path) ?? null;
+});
+
+/**
+ * Ligne gardée rendue même hors de la zone visible : celle du renommage. Sa
+ * saisie, démontée par le défilement, perdrait son focus et son contenu.
+ */
+const pinnedIndex = computed(() =>
+  renamed.value ? props.entries.indexOf(renamed.value) : -1,
+);
+
 const virtualizer = useVirtualizer(
-  computed(() => ({
-    count: props.entries.length,
-    getScrollElement: () => scroller.value,
-    estimateSize: () => rowHeight.value,
-    overscan: 10,
-  })),
+  computed(() => {
+    const pinned = pinnedIndex.value;
+    return {
+      count: props.entries.length,
+      getScrollElement: () => scroller.value,
+      estimateSize: () => rowHeight.value,
+      overscan: 10,
+      rangeExtractor: (range: Range) => {
+        const indexes = defaultRangeExtractor(range);
+        if (pinned < 0 || indexes.includes(pinned)) return indexes;
+        return [...indexes, pinned].sort((a, b) => a - b);
+      },
+    };
+  }),
 );
 /** Lignes rendues : celles qui sont visibles, et quelques-unes autour. */
 const visible = computed(() =>
@@ -114,9 +152,64 @@ const hintId = `${uid}-draft-hint`;
 const selectedIndex = computed(() =>
   props.entries.findIndex((entry) => entry.path === props.selected),
 );
-const activeDescendant = computed(() =>
-  selectedIndex.value >= 0 ? rowId(selectedIndex.value) : undefined,
+/** Ligne désignée par `aria-activedescendant`, seulement si elle est rendue. */
+const activeDescendant = computed(() => {
+  const index = selectedIndex.value;
+  return index >= 0 && visible.value.some((v) => v.row.index === index)
+    ? rowId(index)
+    : undefined;
+});
+
+// --- Défilement --------------------------------------------------------------
+
+// Nouveau dossier : la liste repart du haut, ou de l'entrée sélectionnée
+// (retour au dossier parent). Une relecture du même dossier ne bouge pas.
+watch(
+  () => props.listKey,
+  () => {
+    if (props.draft) return;
+    const index = selectedIndex.value;
+    if (index >= 0) virtualizer.value.scrollToIndex(index, { align: "center" });
+    else virtualizer.value.scrollToOffset(0);
+  },
+  { flush: "post" },
 );
+
+// Sélection décidée ailleurs (création, renommage) ou tri changé : la ligne
+// sélectionnée est ramenée à l'écran. Une relecture qui décale seulement son
+// index (fin d'un envoi) ne fait pas sauter la vue.
+watch(
+  () => [props.selected, props.sort.key, props.sort.descending] as const,
+  () => {
+    const index = selectedIndex.value;
+    if (index >= 0 && !props.draft) {
+      virtualizer.value.scrollToIndex(index, { align: "auto" });
+    }
+  },
+  { flush: "post" },
+);
+
+/**
+ * Largeur de la barre de défilement de la zone des lignes, reportée en marge
+ * droite de l'en-tête : les colonnes en pourcentage se calculent alors sur
+ * la même largeur (barres classiques de WebView2 ; 0 avec des barres
+ * superposées).
+ */
+const gutter = ref(0);
+
+function measureGutter() {
+  const element = scroller.value;
+  if (element) gutter.value = element.offsetWidth - element.clientWidth;
+}
+
+let resizeObserver: ResizeObserver | null = null;
+onMounted(() => {
+  resizeObserver = new ResizeObserver(measureGutter);
+  if (scroller.value) resizeObserver.observe(scroller.value);
+  measureGutter();
+});
+onBeforeUnmount(() => resizeObserver?.disconnect());
+watch([totalHeight, () => props.draft], measureGutter, { flush: "post" });
 
 function ariaSort(key: SortKey) {
   if (props.sort.key !== key) return "none";
@@ -281,10 +374,91 @@ defineExpose({ focus });
 
 // --- Menus -------------------------------------------------------------------
 
-/** Ligne dont le menu déroulant (« ⋯ ») est ouvert. */
-const menuOpen = ref<string | null>(null);
 /** Ligne visée par le menu contextuel. */
 const contextEntry = ref<FileEntry | null>(null);
+/** Le menu contextuel est ouvert. */
+const contextOpen = ref(false);
+/** Un menu est ouvert : les infobulles des lignes sont coupées (Échap ferme le menu). */
+const anyMenuOpen = computed(
+  () => menuOpen.value !== null || contextOpen.value,
+);
+
+/**
+ * Boutons « ⋯ » rendus, qui ancrent leur menu. L'infobulle qui enveloppe le
+ * bouton crée son propre contexte de positionnement (Reka UI), qui capte
+ * l'ancre du menu : l'ancre est donc passée explicitement (`reference`).
+ * Fonctions de référence gardées par ligne : une fonction stable n'est pas
+ * rappelée avec `null` à chaque rendu.
+ */
+const menuButtons = new Map<string, HTMLElement>();
+const menuButtonRefs = new Map<string, (element: unknown) => void>();
+/** Incrémenté quand le bouton de la ligne ouverte est (re)monté. */
+const anchorTick = ref(0);
+
+function menuButtonRef(path: string) {
+  let setter = menuButtonRefs.get(path);
+  if (!setter) {
+    setter = (element: unknown) => {
+      if (element instanceof HTMLElement) {
+        const changed = menuButtons.get(path) !== element;
+        menuButtons.set(path, element);
+        if (changed && menuOpen.value === path) anchorTick.value++;
+      } else {
+        menuButtons.delete(path);
+      }
+    };
+    menuButtonRefs.set(path, setter);
+  }
+  return setter;
+}
+
+/**
+ * Ancre du menu d'une ligne : `null` quand il est fermé, jamais `undefined`.
+ * Reka UI ne transmet pas une prop `undefined` au montage, puis ne la suit
+ * plus : la clé doit exister dès le départ.
+ */
+function menuAnchor(path: string): HTMLElement | null {
+  void anchorTick.value;
+  return menuOpen.value === path ? (menuButtons.get(path) ?? null) : null;
+}
+
+// Changement de dossier : les références des anciennes lignes sont oubliées.
+watch(
+  () => props.listKey,
+  () => {
+    for (const path of menuButtonRefs.keys()) {
+      if (!menuButtons.has(path)) menuButtonRefs.delete(path);
+    }
+  },
+);
+
+/**
+ * Ferme le menu déroulant sans passer par Reka UI (ligne démontée ou sortie
+ * de la zone visible). Le focus revient à la grille après le rendu, une fois
+ * le piège à focus du menu retiré (`onMenuClosed`).
+ */
+function closeMenu() {
+  menuOpen.value = null;
+  pending = null;
+  onMenuClosed();
+}
+
+// Ligne du menu déroulant sortie du rendu (relecture, défilement).
+watch(visible, (rows) => {
+  const open = menuOpen.value;
+  if (open !== null && !rows.some((v) => v.entry.path === open)) closeMenu();
+});
+
+/** Défilement : un menu dont le bouton sort de la zone visible est refermé. */
+function onScroll() {
+  const open = menuOpen.value;
+  const button = open === null ? undefined : menuButtons.get(open);
+  const area = scroller.value;
+  if (!button || !area) return;
+  const b = button.getBoundingClientRect();
+  const a = area.getBoundingClientRect();
+  if (b.bottom <= a.top || b.top >= a.bottom) closeMenu();
+}
 /** Action choisie dans un menu, lancée une fois le menu refermé. */
 let pending: { entry: FileEntry; action: FileAction } | null = null;
 
@@ -355,6 +529,7 @@ function onDropdownOpen(entry: FileEntry, open: boolean) {
 }
 
 function onContextOpen(open: boolean) {
+  contextOpen.value = open;
   if (!open) onMenuClosed();
 }
 
@@ -375,7 +550,8 @@ function onContextCapture(event: MouseEvent) {
   }
   const row = target.closest<HTMLElement>("[data-index]");
   const entry = row ? props.entries[Number(row.dataset.index)] : undefined;
-  if (!entry || props.draft) {
+  // Un menu déroulant ouvert garde la main : pas de second menu par-dessus.
+  if (!entry || props.draft || menuOpen.value !== null) {
     event.preventDefault();
     event.stopPropagation();
     return;
@@ -392,16 +568,12 @@ const draftInput = ref<HTMLInputElement | null>(null);
 const attempted = ref(false);
 /** La saisie a été fermée au clavier : le focus revient à la grille. */
 let refocusAfterDraft = false;
+/** La saisie a été validée : l'entrée obtenue est ramenée à l'écran. */
+let revealAfterDraft = false;
 
 function setDraftInput(element: unknown) {
   draftInput.value = element instanceof HTMLInputElement ? element : null;
 }
-
-const renamed = computed(() => {
-  const draft = props.draft;
-  if (draft?.mode !== "rename") return null;
-  return props.entries.find((entry) => entry.path === draft.path) ?? null;
-});
 
 const draftProblem = computed(() => {
   const draft = props.draft;
@@ -443,25 +615,54 @@ function focusDraft(attempt = 0) {
   }
 }
 
+/** Ouvre une saisie : nom de départ, ligne amenée à l'écran, focus. */
+function applyDraft() {
+  attempted.value = false;
+  draftValue.value = renamed.value?.name ?? "";
+  const index = renamed.value ? props.entries.indexOf(renamed.value) : 0;
+  if (props.entries.length > 0) {
+    virtualizer.value.scrollToIndex(Math.max(index, 0), { align: "auto" });
+  }
+  void nextTick(() => focusDraft());
+}
+
 watch(
   () => props.draft,
   (draft) => {
-    attempted.value = false;
     if (draft) {
-      draftValue.value = renamed.value?.name ?? "";
-      const index = renamed.value ? props.entries.indexOf(renamed.value) : 0;
-      if (props.entries.length > 0) {
-        virtualizer.value.scrollToIndex(Math.max(index, 0), {
-          align: "auto",
-        });
-      }
-      void nextTick(() => focusDraft());
-    } else if (refocusAfterDraft) {
+      applyDraft();
+      return;
+    }
+    attempted.value = false;
+    // Saisie validée : l'entrée créée ou renommée, sélectionnée, est montrée.
+    // Pas après un clic ailleurs : la liste sauterait sous le pointeur.
+    if (revealAfterDraft) {
+      revealAfterDraft = false;
+      const index = selectedIndex.value;
+      if (index >= 0) virtualizer.value.scrollToIndex(index, { align: "auto" });
+    }
+    if (refocusAfterDraft) {
       refocusAfterDraft = false;
       void nextTick(focus);
     }
   },
 );
+
+// Liste montée avec une saisie déjà ouverte (dossier vide, puis « Nouveau
+// fichier ») : la saisie prend le focus dès que la liste existe. Sinon, la
+// sélection gardée (retour au parent depuis un dossier vide ou illisible,
+// retour sur l'écran) est montrée. Après le rendu : le virtualiseur n'a son
+// élément de défilement qu'à la fin du montage.
+onMounted(() => {
+  if (props.draft) {
+    applyDraft();
+    return;
+  }
+  void nextTick(() => {
+    const index = selectedIndex.value;
+    if (index >= 0) virtualizer.value.scrollToIndex(index, { align: "center" });
+  });
+});
 
 // Refus du serveur : la saisie reprend le focus pour être corrigée.
 watch(
@@ -486,17 +687,25 @@ function commitDraft() {
     return;
   }
   refocusAfterDraft = true;
+  revealAfterDraft = true;
   emit("commitDraft", name);
 }
 
 function cancelDraft() {
   refocusAfterDraft = true;
+  revealAfterDraft = false;
   emit("cancelDraft");
 }
 
-/** Clic ailleurs : la saisie est abandonnée, sauf pendant sa validation. */
+/**
+ * Clic ailleurs : la saisie est abandonnée, sauf pendant sa validation. Le
+ * focus reste où l'utilisateur a cliqué.
+ */
 function onDraftBlur() {
-  if (!props.draftBusy) emit("cancelDraft");
+  if (props.draftBusy) return;
+  refocusAfterDraft = false;
+  revealAfterDraft = false;
+  emit("cancelDraft");
 }
 </script>
 
@@ -512,7 +721,12 @@ function onDraftBlur() {
     @keydown="onKeydown"
     @contextmenu="onGridContextMenu"
   >
-    <div class="row head" role="row" aria-rowindex="1">
+    <div
+      class="row head"
+      role="row"
+      aria-rowindex="1"
+      :style="{ paddingRight: `${gutter}px` }"
+    >
       <div
         v-for="column in COLUMNS"
         :key="column.key"
@@ -544,7 +758,7 @@ function onDraftBlur() {
         class="scroller-wrap"
         @contextmenu.capture="onContextCapture"
       >
-        <div ref="scroller" class="scroller">
+        <div ref="scroller" class="scroller" @scroll.passive="onScroll">
           <div v-if="draft?.mode === 'create'" class="row draft-row" role="row">
             <div role="gridcell" class="cell draft-cell">
               <AppIcon
@@ -574,8 +788,9 @@ function onDraftBlur() {
               />
               <span
                 :id="hintId"
-                class="draft-hint"
+                class="draft-hint truncate"
                 :class="{ error: draftProblem !== null }"
+                :title="draftHint"
                 >{{ draftHint }}</span
               >
             </div>
@@ -650,7 +865,11 @@ function onDraftBlur() {
                       (cassé)</template
                     ></span
                   >
-                  <AppTooltip v-if="entry.residue" :text="residueHelp(entry)">
+                  <AppTooltip
+                    v-if="entry.residue"
+                    :text="residueHelp(entry)"
+                    :disabled="anyMenuOpen"
+                  >
                     <span class="caps tag residue">Résidu de transfert</span>
                   </AppTooltip>
                   <span v-if="entry.residue" class="visually-hidden">{{
@@ -687,6 +906,7 @@ function onDraftBlur() {
                   v-if="isFileLike(entry)"
                   :text="`Télécharger ${entry.name}`"
                   side="top"
+                  :disabled="anyMenuOpen"
                 >
                   <button
                     type="button"
@@ -702,9 +922,14 @@ function onDraftBlur() {
                   :open="menuOpen === entry.path"
                   @update:open="(open: boolean) => onDropdownOpen(entry, open)"
                 >
-                  <AppTooltip :text="`Actions de ${entry.name}`" side="top">
+                  <AppTooltip
+                    :text="`Actions de ${entry.name}`"
+                    side="top"
+                    :disabled="anyMenuOpen"
+                  >
                     <DropdownMenuTrigger as-child>
                       <button
+                        :ref="menuButtonRef(entry.path)"
                         type="button"
                         class="row-button"
                         tabindex="-1"
@@ -717,6 +942,7 @@ function onDraftBlur() {
                   <FileMenu
                     :entry="entry"
                     variant="dropdown"
+                    :reference="menuAnchor(entry.path)"
                     @action="(action) => choose(entry, action)"
                     @close-auto-focus="preventFocusReturn"
                   />
@@ -739,7 +965,11 @@ function onDraftBlur() {
 
 <style scoped>
 .grid {
-  --columns: minmax(0, 1fr) 11% 16% 13%
+  /* Nom : le reste. Taille, Modifié, Droits : une part, jamais moins que leur
+     donnée la plus longue (« 1 023 Ko », « 12 sept. 14:02 », « drwxr-xr-x »). */
+  --columns: minmax(0, 1fr) minmax(calc(10ch + 2 * var(--sp-4)), 11%)
+    minmax(calc(15ch + 2 * var(--sp-4)), 16%)
+    minmax(calc(11ch + 2 * var(--sp-4)), 13%)
     calc(2 * var(--icon-button-size) + var(--sp-1) + 2 * var(--sp-4));
 
   display: flex;
@@ -774,6 +1004,7 @@ function onDraftBlur() {
   gap: var(--sp-2);
   min-width: 0;
   padding: 0 var(--sp-4);
+  white-space: nowrap;
 }
 
 .numeric {
@@ -951,9 +1182,11 @@ function onDraftBlur() {
   grid-column: 1 / -1;
 }
 
+/* Le champ garde une largeur utile ; l'aide prend le reste et se coupe. */
 .draft-input {
-  flex: 0 1 calc(7 * var(--sp-8));
-  min-width: 0;
+  flex: 1 1 calc(3 * var(--sp-8));
+  min-width: calc(2 * var(--sp-8));
+  max-width: calc(7 * var(--sp-8));
   min-height: 0;
   height: calc(var(--row-height) - 2 * var(--sp-1));
   padding: 0 var(--sp-2);
@@ -961,6 +1194,7 @@ function onDraftBlur() {
 }
 
 .draft-hint {
+  flex: 0 1 auto;
   color: var(--color-text-muted);
   font-size: var(--fs-sm);
   font-weight: 400;

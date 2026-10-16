@@ -13,6 +13,8 @@ const props = defineProps<{
   path: string;
   /** Nom du serveur, affiché à la racine. */
   server: string;
+  /** Lecture en cours : les étapes ne sont plus cliquables. */
+  busy?: boolean;
 }>();
 
 const emit = defineEmits<{ navigate: [path: string] }>();
@@ -70,6 +72,7 @@ watch(
           v-else
           type="button"
           class="node"
+          :disabled="busy"
           @click="emit('navigate', stop.path)"
         >
           <StatusIcon class="marker" name="circle" />
@@ -131,8 +134,13 @@ button.node {
   transition: background-color var(--dur-fast) var(--ease-out);
 }
 
-button.node:hover {
+button.node:hover:not(:disabled) {
   background: var(--color-surface-hover);
+}
+
+button.node:disabled {
+  color: var(--color-text-subtle);
+  cursor: progress;
 }
 
 .marker {

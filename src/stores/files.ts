@@ -42,6 +42,10 @@ export const useFilesStore = defineStore("files", () => {
 
   const sorted = computed(() => sortEntries(entries.value, sort.value));
   const loading = computed(() => loadingSince.value !== null);
+  /** Ouverture d'un autre dossier : la liste affichée est celle du précédent. */
+  const navigating = computed(
+    () => loading.value && loadedPath.value !== path.value,
+  );
 
   /** Destination de l'entrée « Fichiers » de la navigation. */
   const entryRoute = computed<RouteLocationRaw>(() => {
@@ -53,6 +57,8 @@ export const useFilesStore = defineStore("files", () => {
 
   let request = 0;
   let homeRequest: Promise<string> | null = null;
+  /** Relecture demandée pendant une lecture du même dossier, faite à sa fin. */
+  let again = false;
 
   /** Dossier personnel, lu une fois par liaison. */
   function ensureHome(): Promise<string> {
@@ -70,6 +76,7 @@ export const useFilesStore = defineStore("files", () => {
    */
   async function open(target: string, select?: string | null) {
     const current = ++request;
+    if (target !== path.value) again = false;
     if (select !== undefined) selected.value = select;
     else if (target !== path.value) selected.value = null;
     path.value = target;
@@ -91,6 +98,10 @@ export const useFilesStore = defineStore("files", () => {
       if (current === request) {
         loadedPath.value = target;
         loadingSince.value = null;
+        if (again) {
+          again = false;
+          void open(target);
+        }
       }
     }
   }
@@ -100,9 +111,15 @@ export const useFilesStore = defineStore("files", () => {
     return Promise.resolve();
   }
 
-  /** Relit le dossier s'il est affiché (fin d'un envoi, par exemple). */
+  /**
+   * Relit le dossier s'il est affiché (fin d'un envoi, par exemple). Une
+   * lecture en cours a pu partir avant le changement : une relecture est
+   * faite à sa fin (une seule pour une rafale d'envois), sans l'interrompre.
+   */
   function refreshIfShowing(dir: string) {
-    if (path.value === dir && !loading.value) void refresh();
+    if (path.value !== dir) return;
+    if (loading.value) again = true;
+    else void refresh();
   }
 
   function setSort(key: SortOrder["key"]) {
@@ -127,6 +144,7 @@ export const useFilesStore = defineStore("files", () => {
 
   function reset() {
     request++;
+    again = false;
     home.value = null;
     path.value = null;
     loadedPath.value = null;
@@ -151,6 +169,7 @@ export const useFilesStore = defineStore("files", () => {
     sorted,
     error,
     loading,
+    navigating,
     loadingSince,
     sort,
     selected,

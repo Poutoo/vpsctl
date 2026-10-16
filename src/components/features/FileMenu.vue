@@ -29,6 +29,12 @@ export type FileAction = "open" | "download" | "rename" | "copyPath" | "delete";
 const props = defineProps<{
   entry: FileEntry;
   variant: "context" | "dropdown";
+  /**
+   * Menu déroulant : élément qui l'ancre. Nécessaire quand le déclencheur est
+   * enveloppé dans une infobulle, dont le contexte de positionnement capte
+   * l'ancre du menu.
+   */
+  reference?: HTMLElement | null;
 }>();
 
 const emit = defineEmits<{
@@ -55,10 +61,22 @@ const parts = computed(() =>
       },
 );
 
-/** Placement du menu déroulant ; le menu contextuel s'ouvre au point de clic. */
+/**
+ * Placement du menu déroulant ; le menu contextuel s'ouvre au point de clic.
+ * `reference` reste présente même à `null` (Reka UI ne suit pas une prop
+ * absente au montage) ; à `null`, Reka UI revient à l'ancre de son contexte.
+ */
 const placement = computed(() =>
   props.variant === "dropdown"
-    ? { side: "bottom" as const, align: "end" as const, sideOffset: 4 }
+    ? {
+        side: "bottom" as const,
+        align: "end" as const,
+        sideOffset: 4,
+        // `null` accepté à l'exécution (prop sans type, transmise si elle n'est
+        // pas `undefined`), mais absent des types de Reka UI.
+        reference: (props.reference ?? null) as unknown as
+          HTMLElement | undefined,
+      }
     : {},
 );
 

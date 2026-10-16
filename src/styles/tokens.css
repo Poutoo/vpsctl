@@ -129,7 +129,7 @@
   /* panneau de console ancré en bas du tableau de bord, hauteur fixe */
   --toast-width: 340px;
   --orbit-width: 180px;
-  --orbit-height: 36px;
+  --orbit-height: 40px;
   /* arc de l'orbite de transfert, dans la file d'attente */
   --transfer-list-height: 200px;
   /* file d'attente des transferts : au-delà, elle défile */
