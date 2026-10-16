@@ -100,7 +100,7 @@ Toutes les opérations passent par la session SFTP partagée : aucune commande s
 
 - Un chemin distant est absolu, sans caractère nul, sans composant vide, `.` ou `..` (`/` seul désigne la racine), sinon `InvalidInput`. Les chemins sont construits par le backend (`FileEntry.path`) ou par l'interface en joignant un dossier et un nom ; ils ne sont jamais résolus ni normalisés.
 - Un nom saisi (création, renommage) n'est ni vide, ni `.`, ni `..`, et ne contient ni `/` ni caractère nul, sinon `InvalidInput`.
-- `delete_path` et `rename` refusent la racine et le dossier personnel lui-même (`InvalidInput`).
+- `delete_path` et `rename` refusent la racine, le dossier personnel et les dossiers qui le contiennent, y compris atteints par un chemin qui les résout (`InvalidInput`) : l'opération emporterait le dossier personnel. Un lien vers eux reste un lien ordinaire.
 
 ### Création, renommage, suppression
 

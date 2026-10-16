@@ -5,6 +5,7 @@ use tauri::State;
 use crate::error::AppError;
 use crate::sftp::fs::SftpFs;
 use crate::sftp::ops::{self, FileEntry};
+use crate::sftp::walk::DirSummary;
 use crate::state::AppState;
 
 #[tauri::command]
@@ -42,4 +43,20 @@ pub async fn rename(
 ) -> Result<(), AppError> {
     let fs = SftpFs::shared(state.connection().await?);
     ops::rename(&*fs, &from_path, &to_path).await
+}
+
+#[tauri::command]
+pub async fn dir_summary(state: State<'_, AppState>, path: String) -> Result<DirSummary, AppError> {
+    let fs = SftpFs::shared(state.connection().await?);
+    ops::dir_summary(&fs, &path).await
+}
+
+#[tauri::command]
+pub async fn delete_path(
+    state: State<'_, AppState>,
+    path: String,
+    recursive: bool,
+) -> Result<(), AppError> {
+    let fs = SftpFs::shared(state.connection().await?);
+    ops::delete_path(&fs, &path, recursive).await
 }

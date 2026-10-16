@@ -11,8 +11,9 @@ use ts_rs::TS;
 
 use super::fs::{for_each_limited, Meta, RemoteFs, PARALLEL_REQUESTS};
 use super::path::{self, TempKind};
+use super::walk::{self, DirSummary};
 use super::EntryKind;
-use crate::error::AppError;
+use crate::error::{AppError, FileSide};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -212,9 +213,9 @@ pub async fn rename(fs: &impl RemoteFs, from: &str, to: &str) -> Result<(), AppE
     path::validate_item(from)?;
     path::validate_item(to)?;
     let Some(meta) = fs.lstat(from).await? else {
-        return Err(AppError::not_found(from, crate::error::FileSide::Remote));
+        return Err(AppError::not_found(from, FileSide::Remote));
     };
-    refuse_home(fs, from, &meta, "renommé").await?;
+    refuse_home(fs, from, &meta, "renommés").await?;
     if let Some(existing) = fs.lstat(to).await? {
         return Err(AppError::already_exists(
             to,
@@ -227,21 +228,74 @@ pub async fn rename(fs: &impl RemoteFs, from: &str, to: &str) -> Result<(), AppE
     }
 }
 
-/// Refuse d'agir sur le dossier personnel lui-même (y compris atteint par un
-/// chemin qui le résout). Un lien vers lui reste un lien ordinaire.
+/// Contenu d'un dossier, affiché avant sa suppression. Pour un élément qui
+/// n'est pas un dossier, le décompte de cet élément seul.
+pub async fn dir_summary<F: RemoteFs>(fs: &Arc<F>, target: &str) -> Result<DirSummary, AppError> {
+    path::validate_path(target)?;
+    let Some(meta) = fs.lstat(target).await? else {
+        return Err(AppError::not_found(target, FileSide::Remote));
+    };
+    Ok(match meta.kind {
+        EntryKind::Dir => walk::summarize(fs, target, walk::SUMMARY_LIMIT).await?,
+        EntryKind::Symlink => DirSummary {
+            links: 1,
+            ..DirSummary::default()
+        },
+        EntryKind::File => DirSummary {
+            files: 1,
+            bytes: meta.size,
+            ..DirSummary::default()
+        },
+        EntryKind::Other => DirSummary {
+            files: 1,
+            ..DirSummary::default()
+        },
+    })
+}
+
+/// Supprime un élément. Fichier ou lien : supprimé directement (le lien
+/// seul, jamais sa cible). Dossier : `rmdir` s'il est vide, sinon toute
+/// l'arborescence avec `recursive`, sans suivre les liens.
+pub async fn delete_path<F: RemoteFs>(
+    fs: &Arc<F>,
+    target: &str,
+    recursive: bool,
+) -> Result<(), AppError> {
+    path::validate_item(target)?;
+    let Some(meta) = fs.lstat(target).await? else {
+        return Err(AppError::not_found(target, FileSide::Remote));
+    };
+    refuse_home(&**fs, target, &meta, "supprimés").await?;
+    match meta.kind {
+        EntryKind::Dir if recursive => walk::delete_tree(fs, target).await,
+        EntryKind::Dir => fs.remove_dir(target).await.map_err(|error| match error {
+            AppError::Io { .. } => AppError::io(format!("{target} : le dossier n'est pas vide")),
+            other => other,
+        }),
+        _ => fs.remove_file(target).await,
+    }
+}
+
+/// Refuse d'agir sur le dossier personnel ou sur un dossier qui le contient
+/// (y compris atteint par un chemin qui le résout) : l'opération emporterait
+/// le dossier personnel. Un lien vers eux reste un lien ordinaire.
 pub(super) async fn refuse_home(
     fs: &impl RemoteFs,
     target: &str,
     meta: &Meta,
     action: &str,
 ) -> Result<(), AppError> {
+    if meta.kind != EntryKind::Dir {
+        return Ok(());
+    }
     let home = fs.real_path(".").await?;
-    let is_home = target == home
-        || (meta.kind == EntryKind::Dir
-            && fs.real_path(target).await.ok().as_deref() == Some(&home));
-    if is_home {
+    let resolved = fs
+        .real_path(target)
+        .await
+        .unwrap_or_else(|_| target.to_owned());
+    if path::is_within(&home, target) || path::is_within(&home, &resolved) {
         return Err(AppError::invalid_input(format!(
-            "le dossier personnel ne peut pas être {action}"
+            "le dossier personnel et les dossiers qui le contiennent ne peuvent pas être {action}"
         )));
     }
     Ok(())
@@ -261,7 +315,6 @@ pub(super) async fn explain_failure(fs: &impl RemoteFs, target: &str, error: App
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::FileSide;
     use crate::sftp::fs::mem::MemFs;
 
     fn meta(kind: EntryKind, mode: u32) -> Meta {
@@ -471,5 +524,65 @@ mod tests {
         // Un lien vers le dossier personnel se renomme normalement.
         fs.add_link("/srv/moi", "/home/deploy");
         rename(&*fs, "/srv/moi", "/srv/toi").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn deleting_a_link_keeps_its_target() {
+        let fs = MemFs::new("/home/deploy");
+        fs.add_file("/srv/data/base.db", b"donnees");
+        fs.add_link("/home/deploy/data", "/srv/data");
+        fs.add_link("/home/deploy/base", "/srv/data/base.db");
+        delete_path(&fs, "/home/deploy/data", true).await.unwrap();
+        delete_path(&fs, "/home/deploy/base", false).await.unwrap();
+        assert!(!fs.exists("/home/deploy/data"));
+        assert!(!fs.exists("/home/deploy/base"));
+        assert_eq!(fs.content("/srv/data/base.db").unwrap(), b"donnees");
+    }
+
+    #[tokio::test]
+    async fn deleting_a_directory_needs_recursive_unless_empty() {
+        let fs = MemFs::new("/home/deploy");
+        fs.add_file("/home/deploy/plein/f", b"1");
+        fs.mkdir_all("/home/deploy/vide");
+        assert!(matches!(
+            delete_path(&fs, "/home/deploy/plein", false).await,
+            Err(AppError::Io { .. })
+        ));
+        assert!(fs.exists("/home/deploy/plein/f"));
+        delete_path(&fs, "/home/deploy/vide", false).await.unwrap();
+        delete_path(&fs, "/home/deploy/plein", true).await.unwrap();
+        assert!(!fs.exists("/home/deploy/plein"));
+        assert!(matches!(
+            delete_path(&fs, "/home/deploy/plein", true).await,
+            Err(AppError::NotFound { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn the_home_and_its_parents_are_never_deleted() {
+        let fs = MemFs::new("/home/deploy");
+        fs.add_file("/home/deploy/f", b"1");
+        fs.add_link("/srv/moi", "/home");
+        for target in ["/home/deploy", "/home", "/"] {
+            assert!(matches!(
+                delete_path(&fs, target, true).await,
+                Err(AppError::InvalidInput { .. })
+            ));
+        }
+        assert!(fs.exists("/home/deploy/f"));
+        // Le lien seul est supprimé.
+        delete_path(&fs, "/srv/moi", true).await.unwrap();
+        assert!(fs.exists("/home/deploy/f"));
+    }
+
+    #[tokio::test]
+    async fn summary_of_a_single_item() {
+        let fs = MemFs::new("/home/deploy");
+        fs.add_file("/home/deploy/f", b"12345");
+        fs.add_link("/home/deploy/l", "f");
+        let file = dir_summary(&fs, "/home/deploy/f").await.unwrap();
+        assert_eq!((file.files, file.bytes), (1, 5));
+        let link = dir_summary(&fs, "/home/deploy/l").await.unwrap();
+        assert_eq!((link.links, link.files), (1, 0));
     }
 }

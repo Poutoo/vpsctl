@@ -59,6 +59,8 @@ pub fn run() {
             commands::files::create_file,
             commands::files::create_dir,
             commands::files::rename,
+            commands::files::dir_summary,
+            commands::files::delete_path,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
