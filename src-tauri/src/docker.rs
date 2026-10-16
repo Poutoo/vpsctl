@@ -15,6 +15,12 @@ use crate::ssh::{shell, Connection, Deadline, ExecOutput};
 const LIST_COMMAND: &str = "docker ps -a --no-trunc --format '{{json .}}'";
 /// Délai maximal de `docker_list`.
 pub const LIST_TIMEOUT: Duration = Duration::from_secs(10);
+/// Délai maximal de `docker start`.
+const START_TIMEOUT: Duration = Duration::from_secs(20);
+/// Délai maximal de `docker stop` et `docker restart`.
+const STOP_TIMEOUT: Duration = Duration::from_secs(45);
+/// Délai maximal de `docker rm`.
+const REMOVE_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -74,10 +80,54 @@ pub fn interpret_list(output: &ExecOutput) -> Result<ContainerList, AppError> {
     if output.success() {
         return Ok(parse_ps_output(&output.stdout_text()));
     }
+    Err(failure(output))
+}
+
+/// Démarre, arrête ou redémarre un conteneur (ID complet).
+pub async fn action(connection: &Connection, id: &str, action: Action) -> Result<(), AppError> {
+    let command = action_command(id, action)?;
+    let output = connection
+        .exec_until(&command, Deadline::after(action_timeout(action)))
+        .await?;
+    interpret_done(&output)
+}
+
+/// Supprime un conteneur arrêté (ID complet). Ses volumes et son image sont
+/// conservés ; un conteneur en marche est refusé par Docker (`Remote`).
+pub async fn remove(connection: &Connection, id: &str) -> Result<(), AppError> {
+    let command = remove_command(id)?;
+    let output = connection
+        .exec_until(&command, Deadline::after(REMOVE_TIMEOUT))
+        .await?;
+    interpret_done(&output)
+}
+
+/// Délai d'une action. `docker stop` attend lui-même le délai d'arrêt du
+/// conteneur (10 s par défaut) avant de forcer : le nôtre est nettement
+/// supérieur, et `restart` enchaîne un arrêt et un démarrage.
+pub fn action_timeout(action: Action) -> Duration {
+    match action {
+        Action::Start => START_TIMEOUT,
+        Action::Stop | Action::Restart => STOP_TIMEOUT,
+    }
+}
+
+/// Résultat d'une action ou d'une suppression : rien, ou erreur compréhensible.
+pub fn interpret_done(output: &ExecOutput) -> Result<(), AppError> {
+    if output.success() {
+        Ok(())
+    } else {
+        Err(failure(output))
+    }
+}
+
+/// Échec d'une commande `docker` : commande introuvable, accès au socket
+/// refusé, ou toute autre erreur (`Remote`, avec la sortie d'erreur).
+fn failure(output: &ExecOutput) -> AppError {
     match output.exit_code {
-        Some(127) => Err(AppError::DockerNotInstalled),
-        _ if is_permission_denied(&output.stderr_text()) => Err(AppError::DockerPermissionDenied),
-        _ => Err(output.remote_error()),
+        Some(127) => AppError::DockerNotInstalled,
+        _ if is_permission_denied(&output.stderr_text()) => AppError::DockerPermissionDenied,
+        _ => output.remote_error(),
     }
 }
 
@@ -691,5 +741,52 @@ mod tests {
     fn successful_output_is_parsed() {
         let output = exec_output(0, &ps_output(), "");
         assert_eq!(interpret_list(&output).unwrap().containers.len(), 2);
+    }
+
+    // --- Actions et suppression ------------------------------------------
+
+    #[test]
+    fn successful_action_returns_nothing() {
+        // `docker start` réécrit l'ID sur la sortie standard.
+        assert!(interpret_done(&exec_output(0, &format!("{ID_WEB}\n"), "")).is_ok());
+    }
+
+    #[test]
+    fn removing_a_running_container_is_a_remote_error() {
+        let stderr = format!(
+            "Error response from daemon: cannot remove container \"{ID_WEB}\": container is running: \
+             stop the container before removing or force remove\n"
+        );
+        match interpret_done(&exec_output(1, "", &stderr)) {
+            Err(AppError::Remote { exit_code, stderr }) => {
+                assert_eq!(exit_code, 1);
+                assert!(stderr.contains("container is running"));
+            }
+            other => panic!("attendu Remote, reçu {other:?}"),
+        }
+    }
+
+    #[test]
+    fn action_failures_are_classified_like_the_list() {
+        assert!(matches!(
+            interpret_done(&exec_output(127, "", "sh: 1: docker: not found")),
+            Err(AppError::DockerNotInstalled)
+        ));
+        assert!(matches!(
+            interpret_done(&exec_output(
+                1,
+                "",
+                "permission denied while trying to connect to the docker API at unix:///var/run/docker.sock"
+            )),
+            Err(AppError::DockerPermissionDenied)
+        ));
+    }
+
+    #[test]
+    fn stop_timeout_is_well_above_the_docker_grace_period() {
+        // `docker stop` attend jusqu'à 10 s avant de forcer l'arrêt.
+        assert!(action_timeout(Action::Stop) >= Duration::from_secs(40));
+        assert!(action_timeout(Action::Restart) >= Duration::from_secs(40));
+        assert_eq!(action_timeout(Action::Start), Duration::from_secs(20));
     }
 }
