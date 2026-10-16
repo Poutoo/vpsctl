@@ -48,7 +48,7 @@ watch(
 <style scoped>
 .shell {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-content);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100%;

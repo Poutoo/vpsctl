@@ -38,7 +38,7 @@ withDefaults(
 
 <style scoped>
 .tooltip {
-  z-index: 30;
+  z-index: var(--z-tooltip);
   max-width: calc(5 * var(--sp-8));
   padding: var(--sp-1) var(--sp-2);
   background: var(--color-surface-raised);

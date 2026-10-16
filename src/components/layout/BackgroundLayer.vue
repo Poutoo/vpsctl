@@ -31,7 +31,7 @@ const style = computed(() => {
 .background {
   position: fixed;
   inset: 0 calc(-1 * var(--bg-max-index) * var(--bg-parallax-shift)) 0 0;
-  z-index: 0;
+  z-index: var(--z-background);
   background: var(--bg-image) center / cover no-repeat;
   opacity: var(--bg-opacity);
   mix-blend-mode: var(--bg-blend);

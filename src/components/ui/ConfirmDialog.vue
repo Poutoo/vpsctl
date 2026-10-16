@@ -101,7 +101,7 @@ function focusNoGo(event: Event) {
 .overlay {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: var(--z-dialog);
   background: var(--color-scrim);
   animation: fade-in var(--dur-slow) var(--ease-out);
 }
@@ -110,7 +110,7 @@ function focusNoGo(event: Event) {
   position: fixed;
   top: 50%;
   left: 50%;
-  z-index: 20;
+  z-index: var(--z-dialog);
   width: min(calc(100vw - 2 * var(--sp-4)), calc(7 * var(--sp-8)));
   transform: translate(-50%, -50%);
   background: var(--color-surface);

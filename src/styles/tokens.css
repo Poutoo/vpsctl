@@ -116,6 +116,15 @@
   --nav-width-compact: 56px; /* fenêtre étroite : numéraux seuls */
   --border-width-accent: 2px; /* trait d'action (sélection, section active) */
 
+  /* ---------- Superposition ---------- */
+  --z-background: 0; /* image de fond */
+  --z-content: 1; /* interface, au-dessus de l'image */
+  --z-titlebar: 10;
+  --z-menu: 100;
+  --z-dialog: 300; /* fenêtre GO / NO GO et son voile */
+  --z-toast: 400;
+  --z-tooltip: 500;
+
   /* ---------- Mouvement ---------- */
   --dur-fast: 150ms;
   --dur-base: 200ms;
