@@ -1,4 +1,6 @@
 import type { AppError } from "../bindings/AppError";
+import type { FileSide } from "../bindings/FileSide";
+import { formatBytes } from "../format";
 
 /** Normalise une erreur reçue d'`invoke()` en `AppError`. */
 export function toAppError(error: unknown): AppError {
@@ -40,5 +42,25 @@ export function errorMessage(error: AppError): string {
       return "Docker n'est pas installé sur le serveur.";
     case "DockerPermissionDenied":
       return "Accès à Docker refusé : le compte SSH doit appartenir au groupe docker.";
+    case "PermissionDenied":
+      return `Accès refusé ${where(error.side)} : ${error.path}`;
+    case "NotFound":
+      return `Élément introuvable ${where(error.side)} : ${error.path}`;
+    case "AlreadyExists":
+      return error.isDir
+        ? `Un dossier porte déjà ce nom : ${error.path}`
+        : `Un élément porte déjà ce nom : ${error.path}`;
+    case "InsufficientSpace":
+      return `Espace disque insuffisant ${where(error.side)}${spaceDetail(error.needed, error.available)}.`;
   }
+}
+
+function where(side: FileSide): string {
+  return side === "remote" ? "sur le VPS" : "sur cette machine";
+}
+
+function spaceDetail(needed: number | null, available: number | null): string {
+  if (needed === null) return "";
+  const free = available === null ? "" : `, ${formatBytes(available)} libres`;
+  return ` (${formatBytes(needed)} nécessaires${free})`;
 }

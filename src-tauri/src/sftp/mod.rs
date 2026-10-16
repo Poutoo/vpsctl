@@ -14,8 +14,10 @@ use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::{FileType, StatusCode};
 
-use crate::error::AppError;
+use crate::error::{AppError, FileSide};
 use crate::ssh::Connection;
+
+pub mod path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryKind {
@@ -128,7 +130,7 @@ where
                 return Err(match status.status_code {
                     StatusCode::NoSuchFile => Failure::NotFound,
                     StatusCode::PermissionDenied => {
-                        Failure::App(AppError::io(format!("accès refusé : {path}")))
+                        Failure::App(AppError::permission_denied(path, FileSide::Remote))
                     }
                     _ => Failure::App(AppError::io(format!("{path} : {}", status.error_message))),
                 })
@@ -253,10 +255,11 @@ mod tests {
         })
         .await;
         match denied {
-            Err(Failure::App(AppError::Io { message })) => {
-                assert_eq!(message, "accès refusé : secret")
+            Err(Failure::App(AppError::PermissionDenied { path, side })) => {
+                assert_eq!(path, "secret");
+                assert_eq!(side, FileSide::Remote);
             }
-            _ => panic!("attendu Io"),
+            _ => panic!("attendu PermissionDenied"),
         }
 
         assert_eq!(attempts.load(Ordering::SeqCst), 2);

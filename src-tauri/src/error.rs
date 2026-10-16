@@ -49,9 +49,68 @@ pub enum AppError {
 
     #[error("accès à Docker refusé (utilisateur hors du groupe docker)")]
     DockerPermissionDenied,
+
+    #[error("accès refusé ({side}) : {path}")]
+    PermissionDenied { path: String, side: FileSide },
+
+    #[error("élément introuvable ({side}) : {path}")]
+    NotFound { path: String, side: FileSide },
+
+    /// Sur le VPS uniquement.
+    #[error("un élément porte déjà ce nom : {path}")]
+    AlreadyExists { path: String, is_dir: bool },
+
+    #[error("espace disque insuffisant ({side}) : {path}")]
+    InsufficientSpace {
+        path: String,
+        side: FileSide,
+        #[ts(type = "number | null")]
+        needed: Option<u64>,
+        #[ts(type = "number | null")]
+        available: Option<u64>,
+    },
+}
+
+/// Côté d'un élément de fichier : le VPS ou la machine locale.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum FileSide {
+    Local,
+    Remote,
+}
+
+impl std::fmt::Display for FileSide {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Local => "local",
+            Self::Remote => "VPS",
+        })
+    }
 }
 
 impl AppError {
+    pub fn permission_denied(path: impl Into<String>, side: FileSide) -> Self {
+        Self::PermissionDenied {
+            path: path.into(),
+            side,
+        }
+    }
+
+    pub fn not_found(path: impl Into<String>, side: FileSide) -> Self {
+        Self::NotFound {
+            path: path.into(),
+            side,
+        }
+    }
+
+    pub fn already_exists(path: impl Into<String>, is_dir: bool) -> Self {
+        Self::AlreadyExists {
+            path: path.into(),
+            is_dir,
+        }
+    }
+
     pub fn network(message: impl Into<String>) -> Self {
         Self::Network {
             message: message.into(),
@@ -161,6 +220,35 @@ mod tests {
         assert_eq!(
             to_value(AppError::Cancelled).unwrap(),
             json!({ "kind": "Cancelled" })
+        );
+    }
+
+    #[test]
+    fn file_errors_serialize_their_path_and_side() {
+        use super::FileSide;
+        assert_eq!(
+            to_value(AppError::permission_denied("/root", FileSide::Remote)).unwrap(),
+            json!({ "kind": "PermissionDenied", "path": "/root", "side": "remote" })
+        );
+        assert_eq!(
+            to_value(AppError::already_exists("/srv/app", true)).unwrap(),
+            json!({ "kind": "AlreadyExists", "path": "/srv/app", "isDir": true })
+        );
+        assert_eq!(
+            to_value(AppError::InsufficientSpace {
+                path: "C:\\dl".into(),
+                side: FileSide::Local,
+                needed: Some(10),
+                available: None,
+            })
+            .unwrap(),
+            json!({
+                "kind": "InsufficientSpace",
+                "path": "C:\\dl",
+                "side": "local",
+                "needed": 10,
+                "available": null,
+            })
         );
     }
 
