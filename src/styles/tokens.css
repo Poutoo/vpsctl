@@ -135,9 +135,9 @@
   --dur-sweep: 2.4s;
 
   /* ---------- Image de fond ---------- */
-  --bg-image: none; /* à définir quand une image sous licence compatible sera choisie */
-  --bg-opacity: 0.12;
-  --bg-blend: luminosity; /* variante économe à tester : normal, avec une image déjà désaturée */
+  --bg-image: url("../assets/bg/black-white.png"); /* à définir quand une image sous licence compatible sera choisie */
+  --bg-opacity: 0.15; 
+  --bg-blend: normal; /* variante économe à tester : normal, avec une image déjà désaturée */
   --bg-filter: grayscale(1) contrast(1.1);
   --bg-parallax-shift: 16px; /* décalage de l'image par section */
 }
