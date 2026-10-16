@@ -23,12 +23,18 @@ VPS (SSH, port 22)
 src-tauri/src/
 ├── lib.rs            point d'entrée Tauri 2 : enregistrement des commandes et de l'état
 ├── error.rs          enum AppError unique (thiserror), sérialisable vers le frontend
-├── state.rs          AppState : connexion active + registre des flux en cours
+├── state.rs          AppState : connexion active + registres des flux et des transferts en cours
 ├── run_state.rs      RunState : état affiché d'un conteneur ou d'un service
 ├── ssh/
 │   ├── mod.rs        connect, exec, open_stream
 │   └── host_key.rs   vérification de l'empreinte de la clé hôte
-├── sftp.rs
+├── sftp/
+│   ├── mod.rs        session partagée, reprise après erreur de transport, classement des erreurs
+│   ├── path.rs       fonctions pures : chemins, noms, droits, temporaires, résidus, accès SSH
+│   ├── fs.rs         trait RemoteFs et son implémentation SFTP
+│   ├── ops.rs        lister, créer, renommer, supprimer
+│   ├── walk.rs       parcours d'une arborescence sans suivre les liens : décompte et suppression
+│   └── transfer.rs   envoi et téléchargement par blocs, temporaires, annulation
 ├── stream.rs         flux de lignes : LogEvent, découpage, lots, boucle de lecture, arrêt
 ├── docker.rs
 ├── systemd.rs
@@ -50,7 +56,12 @@ src-tauri/src/
 
 **stream** : flux de lignes, partagé par les logs et (au jalon 5) les scripts. Types `LogEvent` et `LogLine`, découpage des données reçues en lignes (une mémoire par flux de sortie, une ligne pouvant être coupée entre deux paquets SSH), regroupement par lots, limite de débit, boucle de lecture d'un canal et séquence d'arrêt. Construit le script de surveillance qui enveloppe la commande (voir « Arrêt des flux »). Le registre des flux en cours est dans `state.rs`. Sans dépendance à Tauri : les événements partent vers une fonction de rappel, que la couche `commands` relie au `Channel`.
 
-**sftp** : ouvre le sous-système SFTP sur un canal (`russh-sftp`) et réalise toutes les opérations sur les fichiers. Aucune commande shell. Une seule session SFTP est gardée ouverte sur la liaison (dans `Connection`) et recréée uniquement si elle s'est fermée : après une erreur de transport, la session est recréée et l'opération retentée une seule fois avant de remonter l'erreur. Toutes les opérations la partagent (lecture du dossier des unités systemd, explorateur).
+**sftp** : ouvre le sous-système SFTP sur un canal (`russh-sftp`) et réalise toutes les opérations sur les fichiers. Aucune commande shell. Une seule session SFTP est gardée ouverte sur la liaison (dans `Connection`) et recréée uniquement si elle s'est fermée : après une erreur de transport, la session est recréée et l'opération retentée une seule fois avant de remonter l'erreur. Toutes les opérations la partagent (lecture du dossier des unités systemd, explorateur, transferts).
+
+- Les opérations de l'explorateur et des transferts passent par le trait `RemoteFs` (`lstat`, `read_dir`, `rename`…), implémenté sur la session SFTP. Le parcours d'arborescence et les transferts sont ainsi testés sur un système de fichiers simulé en mémoire, sans réseau.
+- Les fonctions pures de `path.rs` (validation des chemins et des noms, jointure, chaîne de droits `drwxr-xr-x`, noms des temporaires, reconnaissance des résidus, chemins critiques pour l'accès SSH) sont couvertes par des tests unitaires.
+- Le parcours (`walk.rs`) lit toute l'arborescence avant de supprimer quoi que ce soit, n'entre jamais dans un lien symbolique (les attributs de `readdir` sont ceux de `lstat`), et limite les requêtes en parallèle à 16.
+- Les transferts (`transfer.rs`) copient par blocs entre un `AsyncRead` et un `AsyncWrite` (le `File` de russh-sftp envoie déjà plusieurs requêtes à la fois), avec un temporaire renommé à la fin. Chaque transfert est enregistré dans `state.rs` avec son signal d'annulation, comme un flux.
 
 **docker** : exécute `docker ps -a --no-trunc --format '{{json .}}'` et désérialise chaque ligne avec `serde`. Gère start, stop, restart, rm et le flux `docker logs -f`.
 
@@ -209,7 +220,7 @@ Les champs saisis dans le formulaire de création (`execStart`, `description`, e
 src/
 ├── bindings/          types générés par ts-rs (jamais modifiés à la main)
 ├── api/               une fonction typée par commande Tauri, regroupées par domaine
-├── stores/            Pinia : connection, profiles, files, services, scripts, ui
+├── stores/            Pinia : connection, profiles, files, transfers, services, scripts, ui
 ├── composables/       useLogStream, useConfirm, useAsyncAction, useVisiblePolling
 ├── router/            routes + garde « connexion requise »
 ├── styles/            tokens.css, base.css
@@ -223,7 +234,8 @@ src/
 
 - **Aucun `invoke()` en dehors de `api/`.** Stores et composants appellent des fonctions typées (`docker.list()`, etc.).
 - **`useLogStream(source)`** gère tout le cycle de vie d'un flux : démarrage, mémoire tampon limitée (5 000 lignes par défaut, les plus anciennes sont supprimées), appel automatique de `logs_stop` au démontage du composant. Aucun flux ne doit rester ouvert après un changement d'écran. Utilisé aussi pour l'exécution des scripts.
-- **Transferts** : file d'attente gérée dans le store `transfers`, un seul transfert actif à la fois. Chaque transfert a un identifiant et peut être annulé. « Afficher » ouvre le dossier local du fichier téléchargé via le plugin officiel opener de Tauri.
+- **Transferts** : file d'attente gérée dans le store `transfers`, un seul transfert actif à la fois. Chaque transfert a un identifiant et peut être annulé. « Afficher » ouvre le dossier local du fichier téléchargé via le plugin officiel opener de Tauri (`revealItemInDir`). Le store vit au-delà de l'écran Fichiers : un transfert continue pendant la navigation vers une autre section.
+- **Explorateur** : la liste est virtualisée (`@tanstack/vue-virtual`), triée côté Vue, dossiers (et liens vers un dossier) en premier. Les fenêtres de sélection de fichiers viennent du plugin officiel dialog (`open`, `save`). Avant une action qui peut couper l'accès SSH (`FileEntry.sshAccess`), le GO / NO GO affiche un avertissement et exige une case à cocher. Les résidus de transfert (`FileEntry.residue`) sont signalés dans la liste.
 - **Rafraîchissement des services** : toutes les 5 secondes uniquement quand le tableau de bord est affiché et la fenêtre visible : document visible (`document.visibilityState`) et fenêtre non réduite (`isMinimized` de Tauri, relu à chaque redimensionnement et changement de focus, car WebView2 ne masque pas le document quand la fenêtre est réduite), plus un bouton d'actualisation manuelle. Le rafraîchissement suivant est programmé 5 secondes après la fin du précédent, et un rafraîchissement manuel pendant qu'un autre est en cours réutilise celui-ci : deux rafraîchissements ne se chevauchent jamais. Docker et systemd sont appelés indépendamment : l'échec de l'un n'empêche pas l'affichage de l'autre.
 - **Sortie d'erreur ≠ erreur** : beaucoup de programmes écrivent tous leurs logs sur la sortie d'erreur (Caddy, le module `logging` de Python par défaut). Une ligne `stderr` est donc marquée de façon neutre (étiquette discrète, sans fond rouge). Le style d'erreur rouge est réservé aux messages systemd de priorité ≤ 3.
 - **Console** : un seul composant console, utilisé à l'identique dans la vue plein écran, le panneau ancré du tableau de bord et l'exécution des scripts (défilement automatique, indicateur de nouvelles lignes, bannière LOS). Le panneau ancré réduit la zone du tableau au-dessus de lui, il ne la recouvre pas.
@@ -237,6 +249,6 @@ src/
 |---|---|---|
 | `/connect` | ConnectView | non |
 | `/dashboard` | DashboardView (Docker + systemd) | oui |
-| `/files/:path*` | FilesView | oui |
+| `/files/:path*` | FilesView (chemin absolu ; `/files` = racine) | oui |
 | `/scripts` | ScriptsView | oui |
 | `/settings` | SettingsView (profils) | oui |
