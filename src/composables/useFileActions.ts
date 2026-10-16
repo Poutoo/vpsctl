@@ -99,6 +99,25 @@ export function useFileActions() {
   const { confirm } = useConfirm();
   const { notify } = useNotify();
 
+  /**
+   * Le dossier personnel et les dossiers qui le contiennent ne sont ni
+   * supprimés ni renommés : refus immédiat, sans décompte (le backend le
+   * vérifie aussi, chemins résolus compris).
+   */
+  function protectsHome(entry: FileEntry): boolean {
+    const home = files.home;
+    return (
+      home !== null &&
+      entry.kind === "dir" &&
+      (home === entry.path ||
+        home.startsWith(`${entry.path}/`) ||
+        entry.path === "/")
+    );
+  }
+
+  const HOME_PROTECTED =
+    "Le dossier personnel et les dossiers qui le contiennent ne peuvent pas être";
+
   function fail(title: string, detail: string, raw: unknown) {
     notify({
       tone: "error",
@@ -114,6 +133,15 @@ export function useFileActions() {
    */
   async function remove(entry: FileEntry) {
     if (files.busy[entry.path]) return;
+    if (protectsHome(entry)) {
+      notify({
+        tone: "error",
+        title: "Suppression refusée",
+        detail: entry.path,
+        message: `${HOME_PROTECTED} supprimés.`,
+      });
+      return;
+    }
     let summary: DirSummary | null = null;
     if (entry.kind === "dir") {
       files.markBusy(entry.path, "Décompte");
@@ -168,6 +196,7 @@ export function useFileActions() {
   /** Renomme dans le même dossier ; GO / NO GO si l'accès SSH est en jeu. */
   async function rename(entry: FileEntry, name: string): Promise<DraftOutcome> {
     const target = joinPath(parentPath(entry.path) ?? "/", name);
+    if (protectsHome(entry)) return { error: `${HOME_PROTECTED} renommés.` };
     if (entry.sshAccess) {
       const confirmed = await confirm({
         title: "Renommer ?",
