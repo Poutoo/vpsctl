@@ -1,7 +1,8 @@
 <script setup lang="ts">
-/** Conteneurs Docker, en lecture seule. */
+/** Conteneurs Docker et leurs actions. */
 import type { Container } from "../../bindings/Container";
 import DataTable from "../ui/DataTable.vue";
+import IconButton from "../ui/IconButton.vue";
 import RunStateLabel from "../ui/RunStateLabel.vue";
 
 defineProps<{
@@ -9,6 +10,8 @@ defineProps<{
   /** Premier chargement : registre tracé et vide. */
   loading?: boolean;
 }>();
+
+const emit = defineEmits<{ logs: [container: Container] }>();
 
 /** Lignes vides tracées pendant le premier chargement. */
 const PLACEHOLDER_ROWS = 3;
@@ -29,6 +32,7 @@ function exitDetail(container: Container): string | null {
       <col class="image" />
       <col class="state" />
       <col class="duration" />
+      <col class="actions" />
     </colgroup>
     <thead>
       <tr>
@@ -36,11 +40,13 @@ function exitDetail(container: Container): string | null {
         <th scope="col">Image</th>
         <th scope="col">État</th>
         <th scope="col">Durée</th>
+        <th scope="col" class="actions-head">Actions</th>
       </tr>
     </thead>
     <tbody v-if="loading">
       <tr v-for="n in PLACEHOLDER_ROWS" :key="n" class="placeholder">
         <td>—</td>
+        <td />
         <td />
         <td />
         <td />
@@ -66,26 +72,50 @@ function exitDetail(container: Container): string | null {
         <td class="truncate duration-cell" :title="container.status">
           {{ container.duration ?? "—" }}
         </td>
+        <td>
+          <div class="row-actions">
+            <IconButton
+              icon="logs"
+              :label="`Télémétrie de ${container.name}`"
+              @click="emit('logs', container)"
+            />
+          </div>
+        </td>
       </tr>
     </TransitionGroup>
   </DataTable>
 </template>
 
 <style scoped>
-.name {
-  width: 30%;
-}
-
+/* Le nom prend la largeur restante. */
 .image {
-  width: 28%;
+  width: 24%;
 }
 
 .state {
-  width: 22%;
+  width: 20%;
 }
 
 .duration {
-  width: 20%;
+  width: 18%;
+}
+
+/* Cinq actions, un séparateur, et la place d'un chrono T+. */
+.actions {
+  width: calc(
+    5 * var(--icon-button-size) + 2 * var(--sp-4) + var(--sp-3) + var(--sp-7)
+  );
+}
+
+.actions-head {
+  text-align: right;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-1);
 }
 
 .duration-cell {

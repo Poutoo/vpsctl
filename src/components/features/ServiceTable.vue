@@ -1,7 +1,8 @@
 <script setup lang="ts">
-/** Services systemd utilisateur, en lecture seule. */
+/** Services systemd utilisateur et leurs actions. */
 import type { Service } from "../../bindings/Service";
 import DataTable from "../ui/DataTable.vue";
+import IconButton from "../ui/IconButton.vue";
 import RunStateLabel from "../ui/RunStateLabel.vue";
 
 defineProps<{
@@ -9,6 +10,19 @@ defineProps<{
   /** Premier chargement : registre tracé et vide. */
   loading?: boolean;
 }>();
+
+const emit = defineEmits<{ logs: [service: Service] }>();
+
+/**
+ * Nom hors du format accepté (`^[a-zA-Z0-9@._-]+\.service$`) : le backend
+ * le refuse dans toute commande, logs compris. Une unité masquée, elle, garde
+ * ses logs.
+ */
+function logsUnavailable(service: Service): string | null {
+  return !service.controllable && !service.masked
+    ? "nom hors du format accepté"
+    : null;
+}
 
 /** Lignes vides tracées pendant le premier chargement. */
 const PLACEHOLDER_ROWS = 3;
@@ -24,17 +38,20 @@ function rawState(service: Service): string {
       <col class="unit" />
       <col class="state" />
       <col class="description" />
+      <col class="actions" />
     </colgroup>
     <thead>
       <tr>
         <th scope="col">Unité</th>
         <th scope="col">État</th>
         <th scope="col">Description</th>
+        <th scope="col" class="actions-head">Actions</th>
       </tr>
     </thead>
     <tbody v-if="loading">
       <tr v-for="n in PLACEHOLDER_ROWS" :key="n" class="placeholder">
         <td>—</td>
+        <td />
         <td />
         <td />
       </tr>
@@ -75,6 +92,16 @@ function rawState(service: Service): string {
           {{ service.description }}
         </td>
         <td v-else class="muted" title="Unité non chargée par systemd.">—</td>
+        <td>
+          <div class="row-actions">
+            <IconButton
+              icon="logs"
+              :label="`Télémétrie de ${service.unit}`"
+              :unavailable="logsUnavailable(service)"
+              @click="emit('logs', service)"
+            />
+          </div>
+        </td>
       </tr>
     </TransitionGroup>
   </DataTable>
@@ -82,15 +109,29 @@ function rawState(service: Service): string {
 
 <style scoped>
 .unit {
-  width: 35%;
+  width: 34%;
 }
 
 .state {
-  width: 22%;
+  width: 20%;
 }
 
-.description {
-  width: 43%;
+/* La description prend la largeur restante. */
+
+/* Quatre actions et la place d'un chrono T+. */
+.actions {
+  width: calc(4 * var(--icon-button-size) + 2 * var(--sp-4) + var(--sp-7));
+}
+
+.actions-head {
+  text-align: right;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-1);
 }
 
 .unit-cell {

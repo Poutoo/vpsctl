@@ -2,18 +2,25 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import ContainerTable from "../components/features/ContainerTable.vue";
 import DashboardSection from "../components/features/DashboardSection.vue";
+import DockedConsole from "../components/features/DockedConsole.vue";
 import ServiceTable from "../components/features/ServiceTable.vue";
 import PageHeader from "../components/layout/PageHeader.vue";
 import AppButton from "../components/ui/AppButton.vue";
 import AppIcon from "../components/ui/AppIcon.vue";
 import { formatElapsed, useElapsed } from "../composables/useElapsed";
 import { useVisiblePolling } from "../composables/useVisiblePolling";
+import {
+  containerLogTarget,
+  serviceLogTarget,
+  useConsoleStore,
+} from "../stores/console";
 import { useServicesStore } from "../stores/services";
 
 /** Rafraîchissement automatique, uniquement sur cet écran et fenêtre visible. */
 const REFRESH_INTERVAL_MS = 5_000;
 
 const store = useServicesStore();
+const consoleStore = useConsoleStore();
 const { trigger } = useVisiblePolling(
   () => store.refresh(),
   REFRESH_INTERVAL_MS,
@@ -75,54 +82,90 @@ const refreshedLabel = computed(() => {
 
 <template>
   <div class="dashboard">
-    <PageHeader section="dashboard" title="Tableau de bord">
-      <div class="refresh">
-        <span v-if="probing !== null" class="refreshed probing" aria-live="off">
-          Interrogation · {{ formatElapsed(probing, "ms") }}
-        </span>
-        <span v-else class="refreshed" aria-live="off">{{
-          refreshedLabel
-        }}</span>
-        <AppButton @click="refreshNow">
-          <AppIcon name="refresh" />
-          Actualiser
-        </AppButton>
-      </div>
-    </PageHeader>
+    <div class="content">
+      <PageHeader section="dashboard" title="Tableau de bord">
+        <div class="refresh">
+          <span
+            v-if="probing !== null"
+            class="refreshed probing"
+            aria-live="off"
+          >
+            Interrogation · {{ formatElapsed(probing, "ms") }}
+          </span>
+          <span v-else class="refreshed" aria-live="off">{{
+            refreshedLabel
+          }}</span>
+          <AppButton @click="refreshNow">
+            <AppIcon name="refresh" />
+            Actualiser
+          </AppButton>
+        </div>
+      </PageHeader>
 
-    <DashboardSection
-      v-slot="{ loading }"
-      title="Conteneurs Docker"
-      command="docker ps -a"
-      :section="store.containers"
-      empty-kicker="0 conteneur"
-      empty-detail="docker ps -a"
-      empty-title="Aucun conteneur"
-      empty-text="Aucun conteneur, même arrêté, sur ce serveur."
-    >
-      <ContainerTable :containers="store.containers.items" :loading="loading" />
-    </DashboardSection>
+      <DashboardSection
+        v-slot="{ loading }"
+        title="Conteneurs Docker"
+        command="docker ps -a"
+        :section="store.containers"
+        empty-kicker="0 conteneur"
+        empty-detail="docker ps -a"
+        empty-title="Aucun conteneur"
+        empty-text="Aucun conteneur, même arrêté, sur ce serveur."
+      >
+        <ContainerTable
+          :containers="store.containers.items"
+          :loading="loading"
+          @logs="(c) => consoleStore.open(containerLogTarget(c.id, c.name))"
+        />
+      </DashboardSection>
 
-    <DashboardSection
-      v-slot="{ loading }"
-      title="Services systemd"
-      command="systemctl --user list-units"
-      :section="store.services"
-      empty-kicker="0 unité gérée"
-      empty-detail="~/.config/systemd/user/"
-      empty-title="Aucun service utilisateur"
-      empty-text="Aucun service dans ~/.config/systemd/user/ sur ce serveur."
-    >
-      <ServiceTable :services="store.services.items" :loading="loading" />
-    </DashboardSection>
+      <DashboardSection
+        v-slot="{ loading }"
+        title="Services systemd"
+        command="systemctl --user list-units"
+        :section="store.services"
+        empty-kicker="0 unité gérée"
+        empty-detail="~/.config/systemd/user/"
+        empty-title="Aucun service utilisateur"
+        empty-text="Aucun service dans ~/.config/systemd/user/ sur ce serveur."
+      >
+        <ServiceTable
+          :services="store.services.items"
+          :loading="loading"
+          @logs="(s) => consoleStore.open(serviceLogTarget(s.unit))"
+        />
+      </DashboardSection>
+    </div>
+
+    <!-- Panneau ancré : réduit la zone au-dessus de lui, ne la recouvre pas. -->
+    <div v-if="consoleStore.target" class="dock">
+      <DockedConsole :target="consoleStore.target" />
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* Écran plein cadre : la zone des tableaux défile au-dessus de la console. */
 .dashboard {
   display: flex;
   flex-direction: column;
+  height: 100%;
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: var(--sp-6);
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-6);
+}
+
+.dock {
+  flex-shrink: 0;
+  height: var(--console-dock-height);
+  padding: 0 var(--sp-6) var(--sp-4);
 }
 
 /* Bloc d'actualisation : surface opaque, posé sur l'image de fond. */

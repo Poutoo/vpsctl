@@ -23,7 +23,8 @@ export const router = createRouter({
       path: "/dashboard",
       name: "dashboard",
       component: () => import("../views/DashboardView.vue"),
-      meta: { requiresConnection: true },
+      // Marges et défilement gérés par la vue (console ancrée en bas).
+      meta: { requiresConnection: true, fullBleed: true },
     },
     {
       path: "/files/:path*",
