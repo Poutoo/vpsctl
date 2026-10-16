@@ -11,8 +11,10 @@ import type { FileEntry } from "../bindings/FileEntry";
 import FileItinerary from "../components/features/FileItinerary.vue";
 import type { FileAction } from "../components/features/FileMenu.vue";
 import FileTable, { type Draft } from "../components/features/FileTable.vue";
+import TransferPanel from "../components/features/TransferPanel.vue";
 import PageHeader from "../components/layout/PageHeader.vue";
 import AppButton from "../components/ui/AppButton.vue";
+import AppIcon from "../components/ui/AppIcon.vue";
 import IconButton from "../components/ui/IconButton.vue";
 import StateMessage from "../components/ui/StateMessage.vue";
 import { formatElapsed, useElapsed } from "../composables/useElapsed";
@@ -21,10 +23,12 @@ import {
   type DraftOutcome,
 } from "../composables/useFileActions";
 import { useNotify } from "../composables/useNotify";
+import { useTransferActions } from "../composables/useTransferActions";
 import { isDirLike, parentPath, pathFromSegments } from "../remoteFiles";
 import { useConnectionStore } from "../stores/connection";
 import { filesRoute, useFilesStore } from "../stores/files";
 import { useProfilesStore } from "../stores/profiles";
+import { useTransfersStore } from "../stores/transfers";
 
 const route = useRoute();
 const router = useRouter();
@@ -33,6 +37,8 @@ const connection = useConnectionStore();
 const profiles = useProfilesStore();
 const { notify } = useNotify();
 const actions = useFileActions();
+const transferActions = useTransferActions();
+const transfers = useTransfersStore();
 
 const server = computed(
   () => profiles.byId(connection.profileId)?.name ?? "VPS",
@@ -162,7 +168,7 @@ function onAction(entry: FileEntry, action: FileAction) {
       void actions.remove(entry);
       break;
     case "download":
-      // Branché avec la file d'attente des transferts.
+      void transferActions.download(entry);
       break;
   }
 }
@@ -201,6 +207,14 @@ const errorTitle = computed(() => {
         @click="startDraft({ mode: 'create', kind: 'file' })"
       >
         Nouveau fichier
+      </AppButton>
+      <AppButton
+        variant="primary"
+        :disabled="!canCreate"
+        @click="transferActions.upload()"
+      >
+        <AppIcon name="upload" />
+        Téléverser
       </AppButton>
     </PageHeader>
 
@@ -283,6 +297,8 @@ const errorTitle = computed(() => {
         />
       </footer>
     </section>
+
+    <TransferPanel v-if="transfers.items.length > 0" />
   </div>
 </template>
 
