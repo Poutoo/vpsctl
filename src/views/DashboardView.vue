@@ -29,16 +29,40 @@ onBeforeUnmount(() => {
   if (clock) clearInterval(clock);
 });
 
+/** Au-delà, un rafraîchissement automatique est signalé comme lent. */
+const SLOW_REFRESH_MS = 500;
+
 // Chrono de l'interrogation en cours (pas de spinner).
 const refreshStartedAt = ref<number | null>(null);
+/** L'interrogation en cours a été demandée (ou rejointe) par le bouton. */
+const manual = ref(false);
 watch(
   () => store.refreshing,
   (refreshing) => {
     refreshStartedAt.value = refreshing ? performance.now() : null;
+    if (!refreshing) manual.value = false;
   },
   { immediate: true },
 );
 const refreshElapsed = useElapsed(refreshStartedAt);
+
+/**
+ * Les rafraîchissements automatiques sont silencieux : « Interrogation · T+ »
+ * n'apparaît qu'au premier chargement, sur actualisation manuelle, ou quand
+ * un rafraîchissement automatique dépasse `SLOW_REFRESH_MS`.
+ */
+const probing = computed(() => {
+  const elapsed = refreshElapsed.value;
+  if (elapsed === null) return null;
+  const shown =
+    store.refreshedAt === null || manual.value || elapsed >= SLOW_REFRESH_MS;
+  return shown ? elapsed : null;
+});
+
+function refreshNow() {
+  manual.value = true;
+  void trigger();
+}
 
 const refreshedLabel = computed(() => {
   const at = store.refreshedAt;
@@ -53,17 +77,13 @@ const refreshedLabel = computed(() => {
   <div class="dashboard">
     <PageHeader section="dashboard" title="Tableau de bord">
       <div class="refresh">
-        <span
-          v-if="refreshElapsed !== null"
-          class="refreshed probing"
-          aria-live="off"
-        >
-          Interrogation · {{ formatElapsed(refreshElapsed, "ms") }}
+        <span v-if="probing !== null" class="refreshed probing" aria-live="off">
+          Interrogation · {{ formatElapsed(probing, "ms") }}
         </span>
         <span v-else class="refreshed" aria-live="off">{{
           refreshedLabel
         }}</span>
-        <AppButton @click="trigger">
+        <AppButton @click="refreshNow">
           <AppIcon name="refresh" />
           Actualiser
         </AppButton>

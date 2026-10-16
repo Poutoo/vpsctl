@@ -143,7 +143,9 @@ Connexion :
 Tableau de bord :
 
 - [ ] Premier chargement : chaque section affiche « INTERROGATION · <commande> » avec un chrono et trois lignes vides, sans spinner.
-- [ ] Rafraîchissement : « Interrogation · T+… » en ambre à la place de « Actualisé à … » ; le bloc ne change pas de largeur.
+- [ ] Rafraîchissement automatique (toutes les 5 s) : silencieux, « Actualisé à … » reste affiché et se met à jour.
+- [ ] Clic sur « Actualiser » : « Interrogation · T+… » en ambre à la place de « Actualisé à … » le temps de la requête ; le bloc ne change pas de largeur.
+- [ ] Rafraîchissement automatique lent (plus de 500 ms, par exemple avec une liaison ralentie) : « Interrogation · T+… » apparaît à partir de T+00.500.
 - [ ] Compteurs avec formes : disque plein (nominal), cercle (arrêté), triangle (en échec), demi-disque (en transition).
 - [ ] Ligne en échec : fond teinté de rouge, triangle et « EN ÉCHEC ».
 - [ ] Section vide (aucun conteneur) et section en erreur (ex. utilisateur retiré du groupe `docker`) : message sur surface opaque ; l'erreur porte un triangle et un trait rouge à gauche.
