@@ -26,13 +26,14 @@ pub fn run() {
         })
         // Page (re)chargée : les canaux de l'ancienne page sont morts, mais
         // leur envoi ne signale pas toujours d'erreur. Leurs flux sont
-        // arrêtés pour ne pas occuper la liaison.
+        // arrêtés pour ne pas occuper la liaison, et leurs transferts annulés
+        // (plus personne ne les suit).
         .on_page_load(|webview, payload| {
             if payload.event() == PageLoadEvent::Started {
                 let app = webview.app_handle().clone();
                 tauri::async_runtime::spawn(async move {
                     if let Some(state) = app.try_state::<state::AppState>() {
-                        state.stop_all_streams().await;
+                        tokio::join!(state.stop_all_streams(), state.cancel_all_transfers());
                     }
                 });
             }
@@ -61,6 +62,9 @@ pub fn run() {
             commands::files::rename,
             commands::files::dir_summary,
             commands::files::delete_path,
+            commands::files::upload,
+            commands::files::download,
+            commands::files::transfer_cancel,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

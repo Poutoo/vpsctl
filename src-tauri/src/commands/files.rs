@@ -1,10 +1,14 @@
 //! Commandes Tauri : explorateur de fichiers (SFTP), progression via `Channel`.
 
+use std::sync::Arc;
+
+use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::error::AppError;
 use crate::sftp::fs::SftpFs;
 use crate::sftp::ops::{self, FileEntry};
+use crate::sftp::transfer::{Progress, ProgressSink};
 use crate::sftp::walk::DirSummary;
 use crate::state::AppState;
 
@@ -59,4 +63,38 @@ pub async fn delete_path(
 ) -> Result<(), AppError> {
     let fs = SftpFs::shared(state.connection().await?);
     ops::delete_path(&fs, &path, recursive).await
+}
+
+#[tauri::command]
+pub async fn upload(
+    state: State<'_, AppState>,
+    local_path: String,
+    remote_path: String,
+    overwrite: bool,
+    on_progress: Channel<Progress>,
+) -> Result<String, AppError> {
+    let sink: ProgressSink = Arc::new(move |event| on_progress.send(event).is_ok());
+    state
+        .upload(&local_path, &remote_path, overwrite, sink)
+        .await
+}
+
+#[tauri::command]
+pub async fn download(
+    state: State<'_, AppState>,
+    remote_path: String,
+    local_path: String,
+    on_progress: Channel<Progress>,
+) -> Result<String, AppError> {
+    let sink: ProgressSink = Arc::new(move |event| on_progress.send(event).is_ok());
+    state.download(&remote_path, &local_path, sink).await
+}
+
+#[tauri::command]
+pub async fn transfer_cancel(
+    state: State<'_, AppState>,
+    transfer_id: String,
+) -> Result<(), AppError> {
+    state.cancel_transfer(&transfer_id).await;
+    Ok(())
 }

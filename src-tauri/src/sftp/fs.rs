@@ -340,12 +340,16 @@ pub mod mem {
         pub unreadable: HashSet<String>,
         /// Suppression refusée de ces éléments.
         pub undeletable: HashSet<String>,
-        /// Renommage vers ce chemin en échec.
-        pub rename_to_fails: HashSet<String>,
+        /// Renommage d'un temporaire `.part` en échec.
+        pub rename_part_fails: bool,
         /// Écriture en échec au-delà de ce nombre d'octets par fichier.
         pub write_limit: Option<usize>,
         /// Lecture en échec au-delà de ce nombre d'octets par fichier.
         pub read_limit: Option<usize>,
+        /// Écriture bloquée (jamais terminée) au-delà de ce nombre d'octets.
+        pub write_stall: Option<usize>,
+        /// Lecture bloquée (jamais terminée) au-delà de ce nombre d'octets.
+        pub read_stall: Option<usize>,
         /// Espace libre annoncé.
         pub space: Option<u64>,
         /// Liaison perdue : toute opération échoue en `Network`.
@@ -503,6 +507,7 @@ pub mod mem {
     pub struct MemWriter {
         data: Data,
         limit: Option<usize>,
+        stall: Option<usize>,
     }
 
     impl AsyncWrite for MemWriter {
@@ -512,6 +517,9 @@ pub mod mem {
             buf: &[u8],
         ) -> Poll<io::Result<usize>> {
             let mut data = self.data.lock().unwrap();
+            if self.stall.is_some_and(|stall| data.len() >= stall) {
+                return Poll::Pending;
+            }
             if self
                 .limit
                 .is_some_and(|limit| data.len() + buf.len() > limit)
@@ -535,6 +543,7 @@ pub mod mem {
         data: Vec<u8>,
         position: usize,
         limit: Option<usize>,
+        stall: Option<usize>,
     }
 
     impl AsyncRead for MemReader {
@@ -544,6 +553,12 @@ pub mod mem {
             buf: &mut ReadBuf<'_>,
         ) -> Poll<io::Result<()>> {
             let mut end = (self.position + buf.remaining()).min(self.data.len());
+            if let Some(stall) = self.stall {
+                if self.position >= stall && self.position < self.data.len() {
+                    return Poll::Pending;
+                }
+                end = end.min(stall.max(self.position));
+            }
             if let Some(limit) = self.limit {
                 if self.position >= limit && self.position < self.data.len() {
                     return Poll::Ready(Err(io::Error::other("connection reset")));
@@ -640,9 +655,11 @@ pub mod mem {
                     mode: 0o100_664,
                 },
             );
+            let faults = self.faults.lock().unwrap();
             Ok(MemWriter {
                 data,
-                limit: self.faults.lock().unwrap().write_limit,
+                limit: faults.write_limit,
+                stall: faults.write_stall,
             })
         }
 
@@ -651,11 +668,16 @@ pub mod mem {
             let resolved = self
                 .resolve(file)
                 .ok_or_else(|| AppError::not_found(file, FileSide::Remote))?;
+            let (limit, stall) = {
+                let faults = self.faults.lock().unwrap();
+                (faults.read_limit, faults.read_stall)
+            };
             match self.nodes().get(&resolved) {
                 Some(Node::File { data, .. }) => Ok(MemReader {
                     data: data.lock().unwrap().clone(),
                     position: 0,
-                    limit: self.faults.lock().unwrap().read_limit,
+                    limit,
+                    stall,
                 }),
                 Some(_) => Err(failure()),
                 None => Err(AppError::not_found(file, FileSide::Remote)),
@@ -696,7 +718,10 @@ pub mod mem {
 
         async fn rename(&self, from: &str, to: &str) -> Result<(), AppError> {
             self.check_online()?;
-            if self.faults.lock().unwrap().rename_to_fails.contains(to) {
+            let is_part = path::split(from)
+                .and_then(|(_, name)| path::residue_of(name))
+                .is_some_and(|(kind, _)| kind == path::TempKind::Part);
+            if is_part && self.faults.lock().unwrap().rename_part_fails {
                 return Err(failure());
             }
             self.parent_is_dir(to)?;

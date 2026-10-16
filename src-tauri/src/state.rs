@@ -1,7 +1,8 @@
 //! État partagé de l'application (`AppState`) : profils, liaison SSH active
-//! (une seule à la fois), empreintes présentées par les serveurs et registre
-//! des flux en cours (logs, plus tard exécutions de scripts), chacun
-//! identifié par un id pour pouvoir être arrêté proprement.
+//! (une seule à la fois), empreintes présentées par les serveurs, registre
+//! des flux en cours (logs, plus tard exécutions de scripts) et registre des
+//! transferts de fichiers, chacun identifié par un id pour pouvoir être
+//! arrêté proprement.
 //!
 //! Ce module ne dépend pas de Tauri : la couche `commands` ne fait que
 //! transmettre les appels.
@@ -21,6 +22,8 @@ use zeroize::Zeroizing;
 use crate::config::{Profile, ProfileStore};
 use crate::error::AppError;
 use crate::secrets;
+use crate::sftp::fs::SftpFs;
+use crate::sftp::transfer::{self, CancelSignal, ProgressSink};
 use crate::ssh::{self, host_key, ConnectParams, Connection, Deadline, ServerInfo, StepSink};
 use crate::stream::{self, EventSink, LineParser, LogSource};
 use crate::{docker, systemd};
@@ -35,6 +38,9 @@ pub const MAX_STREAMS: usize = 4;
 const STREAM_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 /// Délai d'arrêt d'un flux : au-delà, sa tâche est abandonnée.
 const STREAM_STOP_TIMEOUT: Duration = Duration::from_secs(3);
+/// Délai d'annulation d'un transfert (nettoyage du temporaire compris) :
+/// au-delà, sa tâche est abandonnée.
+const TRANSFER_CANCEL_TIMEOUT: Duration = Duration::from_secs(5);
 /// Délai de fermeture de la liaison à la sortie de l'application.
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(4);
 
@@ -79,7 +85,7 @@ enum Link {
     Connected(Active),
 }
 
-/// Flux en cours : son signal d'arrêt et sa tâche de lecture.
+/// Flux ou transfert en cours : son signal d'arrêt et sa tâche.
 struct StreamEntry {
     stop: oneshot::Sender<()>,
     task: JoinHandle<()>,
@@ -100,6 +106,8 @@ pub struct AppState {
     streams: StreamRegistry,
     /// Sérialise les ouvertures de flux, pour respecter `MAX_STREAMS`.
     stream_start: tokio::sync::Mutex<()>,
+    /// Transferts en cours. Un transfert terminé s'en retire.
+    transfers: StreamRegistry,
 }
 
 impl AppState {
@@ -112,6 +120,7 @@ impl AppState {
             presented: Mutex::new(HashMap::new()),
             streams: Arc::new(Mutex::new(HashMap::new())),
             stream_start: tokio::sync::Mutex::new(()),
+            transfers: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -274,10 +283,11 @@ impl AppState {
         }
     }
 
-    /// Ferme la liaison, ou interrompt une connexion en cours. Les flux en
-    /// cours sont d'abord arrêtés.
+    /// Ferme la liaison, ou interrompt une connexion en cours. Les flux et
+    /// les transferts en cours sont d'abord arrêtés (les temporaires des
+    /// transferts sont supprimés tant que la liaison est ouverte).
     pub async fn disconnect(&self) {
-        self.stop_all_streams().await;
+        tokio::join!(self.stop_all_streams(), self.cancel_all_transfers());
         let previous = std::mem::replace(&mut *self.link.lock().await, Link::Idle);
         match previous {
             Link::Idle => {}
@@ -298,7 +308,7 @@ impl AppState {
                 close_active(active).await;
             }
             drop(link);
-            self.stop_all_streams().await;
+            tokio::join!(self.stop_all_streams(), self.cancel_all_transfers());
             return None;
         }
         match &*link {
@@ -395,7 +405,7 @@ impl AppState {
     pub async fn stop_stream(&self, id: &str) {
         let entry = lock_streams(&self.streams).remove(id);
         if let Some(entry) = entry {
-            stop_entry(entry).await;
+            stop_entry(entry, STREAM_STOP_TIMEOUT).await;
         }
     }
 
@@ -405,16 +415,83 @@ impl AppState {
 
     /// Arrête tous les flux en parallèle.
     pub async fn stop_all_streams(&self) {
-        let entries: Vec<StreamEntry> = lock_streams(&self.streams)
-            .drain()
-            .map(|(_, entry)| entry)
-            .collect();
-        let mut stopping = JoinSet::new();
-        for entry in entries {
-            stopping.spawn(stop_entry(entry));
-        }
-        while stopping.join_next().await.is_some() {}
+        stop_all(&self.streams, STREAM_STOP_TIMEOUT).await;
     }
+
+    // --- Transferts ----------------------------------------------------------
+
+    /// Vérifie puis lance un envoi. Renvoie l'identifiant du transfert.
+    pub async fn upload(
+        &self,
+        local: &str,
+        remote: &str,
+        overwrite: bool,
+        sink: ProgressSink,
+    ) -> Result<String, AppError> {
+        let fs = SftpFs::shared(self.connection().await?);
+        let upload = transfer::prepare_upload(&*fs, local, remote, overwrite).await?;
+        Ok(self.spawn_transfer(move |cancel| transfer::run_upload(fs, upload, cancel, sink)))
+    }
+
+    /// Vérifie puis lance un téléchargement. Renvoie l'identifiant du transfert.
+    pub async fn download(
+        &self,
+        remote: &str,
+        local: &str,
+        sink: ProgressSink,
+    ) -> Result<String, AppError> {
+        let fs = SftpFs::shared(self.connection().await?);
+        let download = transfer::prepare_download(&*fs, remote, local).await?;
+        Ok(self.spawn_transfer(move |cancel| transfer::run_download(fs, download, cancel, sink)))
+    }
+
+    fn spawn_transfer<Fut>(&self, start: impl FnOnce(CancelSignal) -> Fut) -> String
+    where
+        Fut: std::future::Future<Output = ()> + Send + 'static,
+    {
+        let id = uuid::Uuid::new_v4().to_string();
+        let (stop, stopped) = oneshot::channel();
+        // Verrou tenu jusqu'à l'insertion, comme pour les flux.
+        let mut transfers = lock_streams(&self.transfers);
+        let task = {
+            let registry = self.transfers.clone();
+            let id = id.clone();
+            let run = start(stopped);
+            tokio::spawn(async move {
+                run.await;
+                lock_streams(&registry).remove(&id);
+            })
+        };
+        transfers.insert(id.clone(), StreamEntry { stop, task });
+        id
+    }
+
+    /// Annule un transfert et attend la fin du nettoyage (5 s au plus). Un
+    /// identifiant inconnu (transfert terminé) est ignoré.
+    pub async fn cancel_transfer(&self, id: &str) {
+        let entry = lock_streams(&self.transfers).remove(id);
+        if let Some(entry) = entry {
+            stop_entry(entry, TRANSFER_CANCEL_TIMEOUT).await;
+        }
+    }
+
+    /// Annule tous les transferts en parallèle.
+    pub async fn cancel_all_transfers(&self) {
+        stop_all(&self.transfers, TRANSFER_CANCEL_TIMEOUT).await;
+    }
+}
+
+/// Arrête toutes les tâches d'un registre en parallèle.
+async fn stop_all(registry: &StreamRegistry, timeout: Duration) {
+    let entries: Vec<StreamEntry> = lock_streams(registry)
+        .drain()
+        .map(|(_, entry)| entry)
+        .collect();
+    let mut stopping = JoinSet::new();
+    for entry in entries {
+        stopping.spawn(stop_entry(entry, timeout));
+    }
+    while stopping.join_next().await.is_some() {}
 }
 
 fn lock_streams(
@@ -426,16 +503,13 @@ fn lock_streams(
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Demande l'arrêt d'un flux et attend sa tâche ; au-delà du délai, elle est
-/// abandonnée (le script de surveillance termine alors la commande distante
-/// à la fermeture du canal).
-async fn stop_entry(entry: StreamEntry) {
+/// Demande l'arrêt d'un flux ou d'un transfert et attend sa tâche ; au-delà
+/// du délai, elle est abandonnée (pour un flux, le script de surveillance
+/// termine alors la commande distante à la fermeture du canal).
+async fn stop_entry(entry: StreamEntry, timeout: Duration) {
     let StreamEntry { stop, mut task } = entry;
     let _ = stop.send(());
-    if tokio::time::timeout(STREAM_STOP_TIMEOUT, &mut task)
-        .await
-        .is_err()
-    {
+    if tokio::time::timeout(timeout, &mut task).await.is_err() {
         task.abort();
     }
 }

@@ -28,6 +28,7 @@ use crate::ssh::Connection;
 pub mod fs;
 pub mod ops;
 pub mod path;
+pub mod transfer;
 pub mod walk;
 
 /// Genre d'un élément, d'après `lstat` : un lien symbolique n'est pas suivi.
