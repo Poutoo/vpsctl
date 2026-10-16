@@ -29,6 +29,7 @@ src-tauri/src/
 │   ├── mod.rs        connect, exec, open_stream
 │   └── host_key.rs   vérification de l'empreinte de la clé hôte
 ├── sftp.rs
+├── stream.rs         flux de lignes : LogEvent, découpage, lots, boucle de lecture, arrêt
 ├── docker.rs
 ├── systemd.rs
 ├── scripts.rs
@@ -39,12 +40,15 @@ src-tauri/src/
     ├── files.rs
     ├── docker.rs
     ├── systemd.rs
+    ├── logs.rs
     └── scripts.rs
 ```
 
 ## Responsabilités
 
 **ssh** : ouvre et maintient une seule connexion SSH. Les autres modules ouvrent des canaux dessus. Expose deux primitives : exécuter une commande et récupérer sa sortie, ouvrir un canal en streaming. Implémente la vérification de la clé hôte. Une commande a une échéance : au-delà, elle est interrompue (SIGTERM si le serveur accepte les signaux) et son canal est fermé, pour qu'aucun canal abandonné ne s'accumule.
+
+**stream** : flux de lignes, partagé par les logs et (au jalon 5) les scripts. Types `LogEvent` et `LogLine`, découpage des données reçues en lignes (une mémoire par flux de sortie, une ligne pouvant être coupée entre deux paquets SSH), regroupement par lots, limite de débit, boucle de lecture d'un canal et séquence d'arrêt. Construit le script de surveillance qui enveloppe la commande (voir « Arrêt des flux »). Le registre des flux en cours est dans `state.rs`. Sans dépendance à Tauri : les événements partent vers une fonction de rappel, que la couche `commands` relie au `Channel`.
 
 **sftp** : ouvre le sous-système SFTP sur un canal (`russh-sftp`) et réalise toutes les opérations sur les fichiers. Aucune commande shell. Une seule session SFTP est gardée ouverte sur la liaison (dans `Connection`) et recréée uniquement si elle s'est fermée : après une erreur de transport, la session est recréée et l'opération retentée une seule fois avant de remonter l'erreur. Toutes les opérations la partagent (lecture du dossier des unités systemd, explorateur).
 
@@ -114,7 +118,8 @@ Toute valeur saisie dans l'interface et insérée dans une commande shell est va
 
 - `docker logs` et les scripts : SSH transmet séparément la sortie standard et la sortie d'erreur, on conserve donc l'origine `stdout` / `stderr`. Exception : un conteneur lancé avec un TTY mélange les deux flux.
 - `journalctl` : le journal ne conserve pas, par défaut, de quel flux vient une ligne. On récupère à la place la priorité syslog de chaque message (`journalctl --user -o json`, champ `PRIORITY`). L'interface affiche `ERR` pour une priorité inférieure ou égale à 3 (err, crit, alert, emerg).
-- Horodatages : `docker logs --timestamps` et le champ `__REALTIME_TIMESTAMP` du JSON de `journalctl`.
+- Horodatages : `docker logs --timestamps` et le champ `__REALTIME_TIMESTAMP` du JSON de `journalctl`. Tous deux sont normalisés en ISO 8601 UTC à la milliseconde (`2026-10-16T09:13:46.900Z`) : Docker en donne 9 décimales, que `Date.parse` ne garantit pas sous WebKitGTK.
+- Champ `MESSAGE` de `journalctl -o json` : chaîne, tableau d'octets (message non UTF-8, décodé avec remplacement), `null` (champ trop long sans `--all` ; l'option est passée) ou absent (« [sans message] », affiché en texte discret). Un message sur plusieurs lignes donne plusieurs lignes de console.
 
 ### Vérification après une action sur un service
 
@@ -125,9 +130,34 @@ Après un démarrage ou un redémarrage :
 2. Son état est relu après un court délai (2 à 3 secondes).
 3. Seulement alors, l'état réel est affiché, avec une notification d'échec si besoin.
 
+Mise en œuvre (store `services`) :
+
+- Pendant l'action, la ligne est marquée « en attente » dans le store. Elle s'affiche « En transition » avec le chrono de l'action, quel que soit l'état renvoyé par les rafraîchissements automatiques : seule la vérification lève cette marque.
+- Relecture à 2,5 s après toute action systemd (`--no-block` rend la main avant le résultat) et après un démarrage ou redémarrage Docker. L'arrêt Docker est synchrone : relecture immédiate. La suppression retire la ligne à la relecture suivante.
+- Démarrage ou redémarrage : « Nominal » à la relecture donne une notification de succès ; « Arrêté » ou « En échec » une notification d'erreur persistante avec « Voir la télémétrie », qui ouvre les logs du service. Encore « En transition » (service lent) : l'état réel est affiché sans verdict.
+- L'animation de changement d'état n'est jouée qu'à cette relecture, jamais lors d'un rafraîchissement automatique.
+
 ### Arrêt des flux
 
-Chaque flux (logs, exécution de script) reçoit un identifiant et est enregistré dans `state.rs`. Une commande d'arrêt ferme le canal correspondant, ce qui termine le processus distant. Sans cela, les canaux s'accumulent.
+Chaque flux (logs, exécution de script) reçoit un identifiant et est enregistré dans `state.rs` (4 au maximum). Il est arrêté par `logs_stop`, à la déconnexion, à la fermeture de l'application, et de lui-même si l'interface n'écoute plus (envoi vers le `Channel` en échec, après un rechargement de la page).
+
+Fermer le canal ne suffit pas à terminer le processus distant. Dans OpenSSH (`session.c`), une session sans terminal n'est pas tuée à la fermeture de son canal : sshd ferme seulement ses tubes, et le processus ne meurt qu'à sa prochaine écriture (SIGPIPE). `docker logs -f` sur un conteneur silencieux ou `journalctl -f` sur un service calme survivraient indéfiniment. Un terminal (PTY) réglerait la question par SIGHUP, mais il fusionne stdout et stderr : exclu.
+
+Deux mécanismes complémentaires :
+
+1. **Arrêt demandé** : requête SSH `signal` TERM (`Channel::signal` de russh), puis fin d'émission et fermeture du canal, en 3 s au plus. sshd crée une nouvelle session pour la commande (`setsid()` dans `do_exec_no_pty`) et transmet le signal à tout son groupe de processus (`killpg`) : le shell et la commande le reçoivent.
+2. **Filet de sécurité côté serveur**, pour un signal refusé, une liaison coupée ou une application tuée. La commande est enveloppée dans un script POSIX dont le texte est fixe (seuls les arguments validés et échappés y entrent) :
+
+   ```sh
+   exec 3<&0 </dev/null; <commande> 3<&- & p=$!; { while read -r l; do :; done; kill -TERM 0; } <&3 >/dev/null 2>&1 & w=$!; exec 3<&-; wait "$p"; s=$?; kill "$w" 2>/dev/null; exit "$s"
+   ```
+
+   - La commande tourne en arrière-plan, l'entrée standard sur `/dev/null`.
+   - Le surveillant lit l'entrée standard du canal (gardée sur le descripteur 3, car une commande en arrière-plan reçoit `/dev/null`). Quand sshd ferme le canal, il ferme ce tube : la lecture se termine et `kill -TERM 0` arrête tout le groupe de processus de la session.
+   - `kill 0` vise le groupe de processus, pas un PID : ce groupe existe tant que le surveillant en fait partie, son identifiant ne peut donc pas être réattribué. Aucun processus étranger ne peut être atteint.
+   - Le surveillant est un seul processus : la lecture utilise `read`, intégré au shell, et non `cat`. Quand la commande se termine d'elle-même, `kill "$w"` le termine entièrement ; `$w` est un enfant non encore attendu du shell principal, son PID ne peut pas être réattribué. Le code de sortie de la commande est remonté.
+   - Application tuée : le système ferme la connexion TCP, sshd ferme le canal aussitôt et le surveillant se déclenche. Après une coupure réseau sans fermeture, le délai dépend de `ClientAliveInterval` côté serveur.
+   - Hypothèse : le shell de connexion du compte est compatible POSIX (bash, dash, zsh).
 
 ### Vérification de la clé hôte en deux temps
 

@@ -95,6 +95,19 @@ docker_action(id: string, action: "start" | "stop" | "restart"): void
 docker_remove(id: string): void
 ```
 
+`id` est l'ID complet : exactement 64 caractères hexadécimaux minuscules, sinon `InvalidInput`.
+
+| Commande | Commande distante | Délai maximal |
+|---|---|---|
+| `docker_action` start | `docker start '<id>'` | 20 s |
+| `docker_action` stop | `docker stop '<id>'` | 45 s |
+| `docker_action` restart | `docker restart '<id>'` | 45 s |
+| `docker_remove` | `docker rm '<id>'` | 20 s |
+
+- `stop` et `restart` n'imposent pas de délai d'arrêt (`-t`) : celui du conteneur est respecté (10 s par défaut, `stop_grace_period` de compose). Un conteneur dont le délai dépasse 45 s fait échouer la commande (`Network`), mais le daemon termine l'arrêt.
+- `docker_remove` n'utilise jamais `-f` ni `-v` : un conteneur en marche n'est pas supprimé (`Remote`), ses volumes et son image sont conservés.
+- Erreurs : comme `docker_list` (`DockerNotInstalled`, `DockerPermissionDenied`, sinon `Remote`).
+
 ## Systemd
 
 ```ts
@@ -106,6 +119,12 @@ service_delete(unit: string): void
 
 Les deux listes sont des commandes indépendantes : l'interface les appelle séparément, et l'échec de l'une n'empêche pas l'affichage de l'autre. Les états d'interface (`RunState`), le code de sortie et la règle de filtrage des services sont calculés dans le backend (voir `docs/03-architecture.md`).
 
+`service_action` (délai maximal 20 s pour l'ensemble) :
+
+1. `unit` doit respecter `^[a-zA-Z0-9@._-]+\.service$`, sinon `InvalidInput`.
+2. La liste des services est relue (mêmes commandes que `services_list`) : l'unité doit y figurer et être pilotable (`controllable`, donc non masquée), sinon `InvalidInput`.
+3. `systemctl --user --no-block <start|stop|restart> -- '<unit>'` : la commande rend la main dès que la tâche est mise en file. Le résultat réel est vérifié ensuite par l'interface (voir « Vérification après une action » dans `docs/03-architecture.md`).
+
 ## Logs (Docker et systemd)
 
 ```ts
@@ -113,6 +132,20 @@ type LogSource = { docker: string } | { systemd: string }
 logs_start(source: LogSource, tail: number, onEvent: Channel<LogEvent>): string  // streamId
 logs_stop(streamId: string): void
 ```
+
+- `source` : ID complet du conteneur (64 caractères hexadécimaux) ou nom d'unité pilotable, validés comme pour les actions.
+- `tail` : nombre de lignes d'historique, de 0 à 5 000 (taille de la mémoire tampon de la console), sinon `InvalidInput`.
+- 4 flux simultanés au maximum (logs et scripts confondus) ; au-delà, `InvalidInput`. OpenSSH limite une connexion à 10 canaux par défaut (`MaxSessions`) : il en reste pour la session SFTP, la mesure de latence et les listes.
+- `logs_start` : délai maximal de 10 s pour ouvrir le canal et lancer la commande ; le flux lui-même n'a pas d'échéance.
+- `logs_stop` rend la main une fois le processus distant arrêté, au plus tard après 3 s. Un identifiant inconnu (flux déjà terminé) est ignoré.
+- Commandes distantes :
+  - Docker : `docker logs -f --tail <N> --timestamps '<id>'`
+  - systemd : `journalctl --user --unit='<unit>' -f -n <N> -o json --output-fields=MESSAGE,PRIORITY --all --quiet --no-pager`
+
+  Chacune est enveloppée dans un script de surveillance qui la termine quand le canal se ferme (voir « Arrêt des flux » dans `docs/03-architecture.md`).
+- Événements : des lots de lignes (`lines`), puis au plus un événement final. `ended` n'est émis que si la commande se termine d'elle-même (conteneur arrêté, par exemple), `error` si la liaison est perdue. Après `logs_stop`, aucun événement n'est garanti : l'interface sait qu'elle a demandé l'arrêt.
+- Regroupement : un lot part toutes les 50 ms, ou dès 500 lignes. Au-delà de 5 000 lignes par seconde, les lignes en excès sont écartées et comptées dans `dropped` du lot suivant.
+- Toutes les lignes sont des `LogLine` : les lignes trop longues sont tronquées à 16 Kio, l'UTF-8 invalide est remplacé.
 
 ## Scripts
 
@@ -203,14 +236,16 @@ interface Script {
   lastRun: { at: number; exitCode: number | null } | null   // mis à jour par le backend à la fin de chaque exécution
 }
 
+interface LogLine {
+  text: string
+  timestamp: string | null          // ISO 8601 en UTC, à la milliseconde : 2026-10-16T09:13:46.900Z
+  origin: "stdout" | "stderr" | "journal"
+  priority: number | null           // priorité syslog 0-7, uniquement pour origin = "journal"
+  missing: boolean                  // entrée du journal sans MESSAGE : text vaut "[sans message]"
+}
+
 type LogEvent =
-  | {
-      type: "line"
-      text: string
-      timestamp: string | null          // ISO 8601
-      origin: "stdout" | "stderr" | "journal"
-      priority: number | null           // priorité syslog 0-7, uniquement pour origin = "journal"
-    }
+  | { type: "lines"; lines: LogLine[]; dropped: number }   // dropped : lignes écartées depuis le lot précédent (débit trop élevé)
   | { type: "ended"; exitCode: number | null }
   | { type: "error"; message: string }
 
