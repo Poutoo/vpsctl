@@ -20,6 +20,8 @@ export interface ConfirmOptions {
   danger?: boolean;
   /** Case à cocher qui doit l'être pour activer GO. */
   acknowledge?: string;
+  /** Avertissement mis en évidence avant la case à cocher. */
+  warning?: string;
 }
 
 interface ConfirmState extends ConfirmOptions {
@@ -36,6 +38,7 @@ const state = reactive<ConfirmState>({
   confirmLabel: "",
   danger: false,
   acknowledge: undefined,
+  warning: undefined,
   resolve: null,
 });
 
@@ -51,6 +54,7 @@ export function useConfirm() {
       checks: [],
       danger: false,
       acknowledge: undefined,
+      warning: undefined,
       ...options,
       open: true,
     });

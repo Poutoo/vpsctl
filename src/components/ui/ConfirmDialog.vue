@@ -82,6 +82,10 @@ function focusNoGo(event: Event) {
               <span>{{ item }}</span>
             </li>
           </AlertDialogDescription>
+          <p v-if="state.warning" class="warning" role="alert">
+            <StatusIcon class="warning-shape" name="triangle" />
+            <strong>{{ state.warning }}</strong>
+          </p>
           <label v-if="state.acknowledge" class="acknowledge">
             <input v-model="acknowledged" type="checkbox" />
             {{ state.acknowledge }}
@@ -210,6 +214,24 @@ function focusNoGo(event: Event) {
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
+}
+
+/* Avertissement : triangle (forme rouge) et trait à gauche, texte lisible. */
+.warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--color-danger-tint);
+  box-shadow: inset var(--border-width-accent) 0 0 var(--color-danger);
+  color: var(--color-danger-text);
+  font-size: var(--fs-md);
+}
+
+.warning-shape {
+  flex-shrink: 0;
+  margin-top: var(--sp-1);
+  color: var(--color-danger);
 }
 
 .acknowledge {

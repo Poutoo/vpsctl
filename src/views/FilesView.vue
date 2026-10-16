@@ -2,21 +2,26 @@
 /**
  * Explorateur de fichiers du VPS (SFTP). Le chemin affiché est porté par la
  * route (`/files/home/deploy` ; `/files` = racine) ; la première visite part
- * du dossier personnel.
+ * du dossier personnel. Création et renommage se saisissent dans la liste.
  */
-import { computed, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { errorMessage, toAppError } from "../api/errors";
 import type { FileEntry } from "../bindings/FileEntry";
 import FileItinerary from "../components/features/FileItinerary.vue";
-import FileTable from "../components/features/FileTable.vue";
+import type { FileAction } from "../components/features/FileMenu.vue";
+import FileTable, { type Draft } from "../components/features/FileTable.vue";
 import PageHeader from "../components/layout/PageHeader.vue";
 import AppButton from "../components/ui/AppButton.vue";
 import IconButton from "../components/ui/IconButton.vue";
 import StateMessage from "../components/ui/StateMessage.vue";
 import { formatElapsed, useElapsed } from "../composables/useElapsed";
+import {
+  useFileActions,
+  type DraftOutcome,
+} from "../composables/useFileActions";
 import { useNotify } from "../composables/useNotify";
-import { parentPath, pathFromSegments } from "../remoteFiles";
+import { isDirLike, parentPath, pathFromSegments } from "../remoteFiles";
 import { useConnectionStore } from "../stores/connection";
 import { filesRoute, useFilesStore } from "../stores/files";
 import { useProfilesStore } from "../stores/profiles";
@@ -27,6 +32,7 @@ const files = useFilesStore();
 const connection = useConnectionStore();
 const profiles = useProfilesStore();
 const { notify } = useNotify();
+const actions = useFileActions();
 
 const server = computed(
   () => profiles.byId(connection.profileId)?.name ?? "VPS",
@@ -84,6 +90,83 @@ function goUp() {
   navigate(parent);
 }
 
+// --- Saisie d'un nom (création, renommage) -------------------------------------
+
+const draft = ref<Draft | null>(null);
+const draftError = ref<string | null>(null);
+const draftBusy = ref(false);
+
+function startDraft(next: Draft) {
+  if (draftBusy.value) return;
+  draftError.value = null;
+  draft.value = next;
+}
+
+function cancelDraft() {
+  if (draftBusy.value) return;
+  draft.value = null;
+  draftError.value = null;
+}
+
+async function commitDraft(name: string) {
+  const current = draft.value;
+  if (!current || draftBusy.value) return;
+  draftBusy.value = true;
+  draftError.value = null;
+  let outcome: DraftOutcome;
+  try {
+    if (current.mode === "create") {
+      outcome = await actions.create(current.kind, name);
+    } else {
+      const entry = files.entries.find((e) => e.path === current.path);
+      outcome = entry
+        ? await actions.rename(entry, name)
+        : { error: "Cet élément n'existe plus." };
+    }
+  } finally {
+    draftBusy.value = false;
+  }
+  if (outcome === "done" || outcome === "cancelled") draft.value = null;
+  else draftError.value = outcome.error;
+}
+
+// Changement de dossier : une saisie en cours n'a plus d'objet.
+watch(
+  () => files.path,
+  () => {
+    draft.value = null;
+    draftError.value = null;
+  },
+);
+
+/** Le dossier affiché accepte une création. */
+const canCreate = computed(
+  () => files.path !== null && files.error === null && !files.loading,
+);
+
+// --- Actions d'une entrée ------------------------------------------------------
+
+function onAction(entry: FileEntry, action: FileAction) {
+  if (files.busy[entry.path] && action !== "copyPath") return;
+  switch (action) {
+    case "open":
+      if (isDirLike(entry)) openEntry(entry);
+      break;
+    case "rename":
+      startDraft({ mode: "rename", path: entry.path });
+      break;
+    case "copyPath":
+      void actions.copyPath(entry);
+      break;
+    case "delete":
+      void actions.remove(entry);
+      break;
+    case "download":
+      // Branché avec la file d'attente des transferts.
+      break;
+  }
+}
+
 const loadingElapsed = useElapsed(computed(() => files.loadingSince));
 
 const countLabel = computed(() => {
@@ -106,7 +189,20 @@ const errorTitle = computed(() => {
 
 <template>
   <div class="files">
-    <PageHeader section="files" title="Fichiers" />
+    <PageHeader section="files" title="Fichiers">
+      <AppButton
+        :disabled="!canCreate"
+        @click="startDraft({ mode: 'create', kind: 'dir' })"
+      >
+        Nouveau dossier
+      </AppButton>
+      <AppButton
+        :disabled="!canCreate"
+        @click="startDraft({ mode: 'create', kind: 'file' })"
+      >
+        Nouveau fichier
+      </AppButton>
+    </PageHeader>
 
     <FileItinerary
       v-if="files.path !== null"
@@ -137,7 +233,9 @@ const errorTitle = computed(() => {
       </StateMessage>
 
       <StateMessage
-        v-else-if="files.loadedPath !== null && files.entries.length === 0"
+        v-else-if="
+          files.loadedPath !== null && files.entries.length === 0 && !draft
+        "
         kicker="0 entrée"
         :kicker-detail="files.loadedPath"
         title="Dossier vide"
@@ -155,10 +253,17 @@ const errorTitle = computed(() => {
         :sort="files.sort"
         :busy="files.busy"
         :list-key="files.loadedPath ?? ''"
+        :draft="draft"
+        :draft-error="draftError"
+        :draft-busy="draftBusy"
         @select="(path) => (files.selected = path)"
         @open="openEntry"
         @up="goUp"
         @sort="files.setSort"
+        @action="onAction"
+        @commit-draft="commitDraft"
+        @cancel-draft="cancelDraft"
+        @edit-draft="draftError = null"
       />
 
       <footer class="status">
