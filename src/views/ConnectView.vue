@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { errorMessage, toAppError } from "../api/errors";
 import ConnectRadar from "../components/features/ConnectRadar.vue";
@@ -87,6 +87,30 @@ const radarTarget = computed(() =>
     : null,
 );
 
+/** Liste des profils, pour y placer le focus clavier. */
+const list = ref<HTMLFieldSetElement | null>(null);
+
+/**
+ * Place le focus sur le profil sélectionné (les flèches changent alors de
+ * profil, Entrée établit la liaison), sauf si un autre élément l'a déjà.
+ */
+async function focusSelectedProfile() {
+  await nextTick();
+  const active = document.activeElement;
+  if (active && active !== document.body) return;
+  const radio =
+    list.value?.querySelector<HTMLInputElement>("input:checked") ??
+    list.value?.querySelector<HTMLInputElement>("input");
+  radio?.focus();
+}
+
+/** Un clic sur une ligne donne aussi le focus (WebKitGTK ne le fait pas). */
+function focusRow(event: MouseEvent) {
+  (event.currentTarget as HTMLElement)
+    .querySelector<HTMLInputElement>("input")
+    ?.focus();
+}
+
 onMounted(async () => {
   try {
     await profiles.ensureLoaded();
@@ -94,19 +118,34 @@ onMounted(async () => {
     loadError.value = errorMessage(toAppError(error));
   }
   selectedId.value = connection.profileId ?? profiles.preferred?.id ?? null;
+  void focusSelectedProfile();
 });
 
-// Après la connexion : redirection automatique vers le tableau de bord.
 watch(
   () => connection.phase,
   (phase) => {
+    // Après la connexion : redirection automatique vers le tableau de bord.
     if (phase === "connected") void router.push({ name: "dashboard" });
+    // Retour en attente (échec, interruption, refus) : le bouton ou le
+    // panneau qui avait le focus a disparu, on le rend à la liste.
+    if (phase === "idle" || phase === "failed") void focusSelectedProfile();
   },
   { immediate: true },
 );
 
+/** Mêmes conditions que le bouton « Établir la liaison ». */
+const canConnect = computed(
+  () =>
+    selectedId.value !== null &&
+    !busy.value &&
+    !connecting.value &&
+    connection.phase !== "connected",
+);
+
 function connect() {
-  if (selectedId.value) void connection.connect(selectedId.value);
+  if (canConnect.value && selectedId.value) {
+    void connection.connect(selectedId.value);
+  }
 }
 
 async function withBusy(action: () => Promise<void>) {
@@ -167,7 +206,13 @@ function fingerprintPreview(fingerprint: string | null): string {
       >
         Créez un profil pour établir une première liaison.
       </StateMessage>
-      <fieldset v-else class="list" :disabled="connecting">
+      <fieldset
+        v-else
+        ref="list"
+        class="list"
+        :disabled="connecting"
+        @keydown.enter.prevent="connect"
+      >
         <legend class="caps legend">
           <span>Profils</span>
           <span>{{ profiles.profiles.length }}</span>
@@ -177,6 +222,7 @@ function fingerprintPreview(fingerprint: string | null): string {
           :key="p.id"
           class="profile"
           :class="{ selected: p.id === selectedId }"
+          @click="focusRow"
         >
           <input
             v-model="selectedId"
@@ -217,7 +263,7 @@ function fingerprintPreview(fingerprint: string | null): string {
         <AppButton
           v-else-if="connection.phase !== 'connected'"
           variant="primary"
-          :disabled="!selectedId || busy"
+          :disabled="!canConnect"
           @click="connect"
         >
           Établir la liaison
