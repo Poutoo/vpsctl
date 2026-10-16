@@ -315,9 +315,15 @@ function swallowNextContextMenu() {
   );
 }
 
-/** Pas de menu du navigateur dans la grille, sauf dans un champ de saisie. */
+/**
+ * Pas de menu du navigateur dans la grille (en-tête), sauf dans un champ de
+ * saisie. La zone des lignes est laissée au menu contextuel : Reka UI ne
+ * l'ouvre que si l'événement n'a pas été annulé (`onContextCapture` décide).
+ */
 function onGridContextMenu(event: MouseEvent) {
-  if (!(event.target as HTMLElement).closest("input")) event.preventDefault();
+  const target = event.target as HTMLElement;
+  if (target.closest("input") || target.closest(".scroller-wrap")) return;
+  event.preventDefault();
 }
 
 function choose(entry: FileEntry, action: FileAction) {
@@ -739,6 +745,7 @@ function onDraftBlur() {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
   background: var(--color-surface);
   font-family: var(--font-mono);
   font-size: var(--fs-data);
@@ -800,7 +807,12 @@ function onDraftBlur() {
   color: var(--color-action);
 }
 
-.scroller-wrap {
+/*
+ * Déclencheur du menu contextuel : Reka UI le rend dans un fragment, qui ne
+ * reçoit pas l'attribut de portée du composant. Sans :deep, ce style ne
+ * s'appliquait pas et la liste débordait sur le pied de liste.
+ */
+.grid :deep(.scroller-wrap) {
   display: flex;
   flex: 1;
   flex-direction: column;
