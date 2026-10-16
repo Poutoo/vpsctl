@@ -1,20 +1,66 @@
 <script setup lang="ts">
 /** Conteneurs Docker et leurs actions. */
+import { computed } from "vue";
 import type { Container } from "../../bindings/Container";
+import type { RunState } from "../../bindings/RunState";
+import {
+  containerTarget,
+  targetKey,
+  useServicesStore,
+  type Operation,
+} from "../../stores/services";
 import DataTable from "../ui/DataTable.vue";
 import IconButton from "../ui/IconButton.vue";
 import RunStateLabel from "../ui/RunStateLabel.vue";
+import { containerAvailability, OPERATION_PROGRESS } from "./availability";
 
-defineProps<{
+const props = defineProps<{
   containers: Container[];
   /** Premier chargement : registre tracé et vide. */
   loading?: boolean;
 }>();
 
-const emit = defineEmits<{ logs: [container: Container] }>();
+const emit = defineEmits<{
+  logs: [container: Container];
+  operate: [container: Container, operation: Operation];
+}>();
+
+const store = useServicesStore();
 
 /** Lignes vides tracées pendant le premier chargement. */
 const PLACEHOLDER_ROWS = 3;
+
+/** Démarrer, arrêter, redémarrer : icône et libellé. */
+const RUN_ACTIONS = [
+  { operation: "start", icon: "play", label: "Démarrer" },
+  { operation: "stop", icon: "stop", label: "Arrêter" },
+  { operation: "restart", icon: "refresh", label: "Redémarrer" },
+] as const;
+
+/**
+ * Affichage d'une ligne : pendant une action, « en transition » avec le
+ * libellé et le chrono de l'action, et toutes les actions indisponibles
+ * sauf les logs.
+ */
+function view(container: Container) {
+  const key = targetKey(containerTarget(container));
+  const pending = store.pending[key] ?? null;
+  const state: RunState = pending ? "transition" : container.state;
+  const reasons = containerAvailability(container);
+  return {
+    state,
+    pending,
+    arrival: store.arrivals[key] ?? null,
+    reason: (operation: Operation) =>
+      pending ? "action en cours" : reasons[operation],
+    busySince: (operation: Operation) =>
+      pending?.operation === operation ? pending.since : null,
+  };
+}
+
+const rows = computed(() =>
+  props.containers.map((container) => ({ container, row: view(container) })),
+);
 
 /** Code de sortie, affiché quand le conteneur est arrêté ou en échec. */
 function exitDetail(container: Container): string | null {
@@ -54,9 +100,9 @@ function exitDetail(container: Container): string | null {
     </tbody>
     <TransitionGroup v-else name="row-in" tag="tbody" appear>
       <tr
-        v-for="container in containers"
+        v-for="{ container, row } in rows"
         :key="container.id"
-        :class="{ failed: container.state === 'failed' }"
+        :class="{ failed: row.state === 'failed' }"
       >
         <td class="truncate" :title="container.name">{{ container.name }}</td>
         <td class="truncate muted" :title="container.image">
@@ -64,9 +110,14 @@ function exitDetail(container: Container): string | null {
         </td>
         <td>
           <RunStateLabel
-            :state="container.state"
+            :state="row.state"
             :detail="exitDetail(container)"
             :raw="`${container.dockerState} · ${container.status}`"
+            :label="
+              row.pending ? OPERATION_PROGRESS[row.pending.operation] : null
+            "
+            :since="row.pending?.since ?? null"
+            :arrival="row.arrival"
           />
         </td>
         <td class="truncate duration-cell" :title="container.status">
@@ -75,9 +126,27 @@ function exitDetail(container: Container): string | null {
         <td>
           <div class="row-actions">
             <IconButton
+              v-for="action in RUN_ACTIONS"
+              :key="action.operation"
+              :icon="action.icon"
+              :label="`${action.label} ${container.name}`"
+              :unavailable="row.reason(action.operation)"
+              :busy-since="row.busySince(action.operation)"
+              @click="emit('operate', container, action.operation)"
+            />
+            <IconButton
               icon="logs"
               :label="`Télémétrie de ${container.name}`"
               @click="emit('logs', container)"
+            />
+            <span class="separator" aria-hidden="true" />
+            <IconButton
+              icon="trash"
+              tone="danger"
+              :label="`Supprimer ${container.name}`"
+              :unavailable="row.reason('remove')"
+              :busy-since="row.busySince('remove')"
+              @click="emit('operate', container, 'remove')"
             />
           </div>
         </td>
@@ -116,6 +185,13 @@ function exitDetail(container: Container): string | null {
   align-items: center;
   justify-content: flex-end;
   gap: var(--sp-1);
+}
+
+/* Isole la suppression des autres actions. */
+.separator {
+  align-self: stretch;
+  margin: var(--sp-1) var(--sp-1);
+  border-left: var(--border-width) solid var(--color-border-strong);
 }
 
 .duration-cell {

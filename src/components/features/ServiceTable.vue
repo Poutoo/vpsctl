@@ -1,17 +1,67 @@
 <script setup lang="ts">
 /** Services systemd utilisateur et leurs actions. */
+import { computed } from "vue";
+import type { RunState } from "../../bindings/RunState";
 import type { Service } from "../../bindings/Service";
+import {
+  serviceTarget,
+  targetKey,
+  useServicesStore,
+} from "../../stores/services";
 import DataTable from "../ui/DataTable.vue";
 import IconButton from "../ui/IconButton.vue";
 import RunStateLabel from "../ui/RunStateLabel.vue";
+import {
+  OPERATION_PROGRESS,
+  serviceAvailability,
+  type ServiceOperation,
+} from "./availability";
 
-defineProps<{
+const props = defineProps<{
   services: Service[];
   /** Premier chargement : registre tracé et vide. */
   loading?: boolean;
 }>();
 
-const emit = defineEmits<{ logs: [service: Service] }>();
+const emit = defineEmits<{
+  logs: [service: Service];
+  operate: [service: Service, operation: ServiceOperation];
+}>();
+
+const store = useServicesStore();
+
+/** Démarrer, arrêter, redémarrer : icône et libellé. */
+const RUN_ACTIONS = [
+  { operation: "start", icon: "play", label: "Démarrer" },
+  { operation: "stop", icon: "stop", label: "Arrêter" },
+  { operation: "restart", icon: "refresh", label: "Redémarrer" },
+] as const;
+
+/**
+ * Affichage d'une ligne : pendant une action, « en transition » avec le
+ * libellé et le chrono de l'action, et toutes les actions indisponibles
+ * sauf les logs. Une unité masquée ou non pilotable n'a que les logs.
+ */
+function view(service: Service) {
+  const key = targetKey(serviceTarget(service));
+  const pending = store.pending[key] ?? null;
+  const state: RunState = pending ? "transition" : service.state;
+  const reasons = serviceAvailability(service);
+  return {
+    state,
+    pending,
+    arrival: store.arrivals[key] ?? null,
+    controllable: service.controllable && !service.masked,
+    reason: (operation: ServiceOperation) =>
+      pending ? "action en cours" : reasons[operation],
+    busySince: (operation: ServiceOperation) =>
+      pending?.operation === operation ? pending.since : null,
+  };
+}
+
+const rows = computed(() =>
+  props.services.map((service) => ({ service, row: view(service) })),
+);
 
 /**
  * Nom hors du format accepté (`^[a-zA-Z0-9@._-]+\.service$`) : le backend
@@ -58,9 +108,9 @@ function rawState(service: Service): string {
     </tbody>
     <TransitionGroup v-else name="row-in" tag="tbody" appear>
       <tr
-        v-for="service in services"
+        v-for="{ service, row } in rows"
         :key="service.unit"
-        :class="{ failed: service.state === 'failed' }"
+        :class="{ failed: row.state === 'failed' }"
       >
         <td>
           <div class="unit-cell">
@@ -82,7 +132,15 @@ function rawState(service: Service): string {
           </div>
         </td>
         <td>
-          <RunStateLabel :state="service.state" :raw="rawState(service)" />
+          <RunStateLabel
+            :state="row.state"
+            :raw="rawState(service)"
+            :label="
+              row.pending ? OPERATION_PROGRESS[row.pending.operation] : null
+            "
+            :since="row.pending?.since ?? null"
+            :arrival="row.arrival"
+          />
         </td>
         <td
           v-if="service.description !== null"
@@ -94,6 +152,17 @@ function rawState(service: Service): string {
         <td v-else class="muted" title="Unité non chargée par systemd.">—</td>
         <td>
           <div class="row-actions">
+            <template v-if="row.controllable">
+              <IconButton
+                v-for="action in RUN_ACTIONS"
+                :key="action.operation"
+                :icon="action.icon"
+                :label="`${action.label} ${service.unit}`"
+                :unavailable="row.reason(action.operation)"
+                :busy-since="row.busySince(action.operation)"
+                @click="emit('operate', service, action.operation)"
+              />
+            </template>
             <IconButton
               icon="logs"
               :label="`Télémétrie de ${service.unit}`"

@@ -8,6 +8,7 @@ import PageHeader from "../components/layout/PageHeader.vue";
 import AppButton from "../components/ui/AppButton.vue";
 import AppIcon from "../components/ui/AppIcon.vue";
 import { formatElapsed, useElapsed } from "../composables/useElapsed";
+import { useServiceActions } from "../composables/useServiceActions";
 import { useVisiblePolling } from "../composables/useVisiblePolling";
 import {
   containerLogTarget,
@@ -21,6 +22,7 @@ const REFRESH_INTERVAL_MS = 5_000;
 
 const store = useServicesStore();
 const consoleStore = useConsoleStore();
+const { onContainer, onService } = useServiceActions();
 const { trigger } = useVisiblePolling(
   () => store.refresh(),
   REFRESH_INTERVAL_MS,
@@ -116,6 +118,7 @@ const refreshedLabel = computed(() => {
           :containers="store.containers.items"
           :loading="loading"
           @logs="(c) => consoleStore.open(containerLogTarget(c.id, c.name))"
+          @operate="onContainer"
         />
       </DashboardSection>
 
@@ -133,6 +136,7 @@ const refreshedLabel = computed(() => {
           :services="store.services.items"
           :loading="loading"
           @logs="(s) => consoleStore.open(serviceLogTarget(s.unit))"
+          @operate="onService"
         />
       </DashboardSection>
     </div>

@@ -68,6 +68,15 @@ function focusNoGo(event: Event) {
           <AlertDialogTitle class="title">{{ state.title }}</AlertDialogTitle>
           <p v-if="state.subject" class="subject">{{ state.subject }}</p>
           <AlertDialogDescription as="ul" class="consequences">
+            <li v-for="check in state.checks" :key="check.label" class="check">
+              <StatusIcon class="check-shape" name="check" />
+              <span>
+                <strong>{{ check.label }}</strong>
+                <span v-if="check.detail" class="check-detail">{{
+                  check.detail
+                }}</span>
+              </span>
+            </li>
             <li v-for="item in state.consequences" :key="item">
               <span class="dash" aria-hidden="true">—</span>
               <span>{{ item }}</span>
@@ -185,6 +194,22 @@ function focusNoGo(event: Event) {
 
 .dash {
   color: var(--color-text-muted);
+}
+
+/* Condition vérifiée : coche (forme) et libellé, puis la donnée brute. */
+.check {
+  align-items: center;
+}
+
+.check-shape {
+  color: var(--color-success);
+}
+
+.check-detail {
+  margin-left: var(--sp-2);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
 }
 
 .acknowledge {

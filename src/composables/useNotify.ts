@@ -15,6 +15,8 @@ export interface NotifyOptions {
   title: string;
   /** Objet et complément en monospace, ex. « bot.service · 0,8 s ». */
   detail?: string;
+  /** Explication en texte courant, ex. le message d'erreur du serveur. */
+  message?: string;
   /** Lien d'action, ex. « Voir la télémétrie ». */
   action?: NotifyAction;
 }

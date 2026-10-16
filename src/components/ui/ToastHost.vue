@@ -34,7 +34,10 @@ function runAction(item: Notification) {
             {{ item.tone === "error" ? "Erreur" : "Succès" }}
           </p>
           <p class="title">{{ item.title }}</p>
-          <p v-if="item.detail" class="detail">{{ item.detail }}</p>
+          <p v-if="item.detail" class="detail" :title="item.detail">
+            {{ item.detail }}
+          </p>
+          <p v-if="item.message" class="message">{{ item.message }}</p>
           <button
             v-if="item.action"
             type="button"
@@ -140,6 +143,11 @@ function runAction(item: Notification) {
   font-size: var(--fs-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.message {
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
 }
 
 .action {

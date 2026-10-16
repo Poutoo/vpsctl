@@ -1,9 +1,17 @@
 import { reactive } from "vue";
 
+export interface ConfirmCheck {
+  label: string;
+  /** Donnée brute en monospace, ex. « Exited (137) 4 days ago ». */
+  detail?: string;
+}
+
 export interface ConfirmOptions {
   title: string;
   /** Objet de l'action (nom, chemin), affiché sous le titre. */
   subject?: string;
+  /** Conditions vérifiées, listées avant les conséquences (ex. « Conteneur arrêté »). */
+  checks?: ConfirmCheck[];
   /** Conséquences de l'action, listées dans la fenêtre. */
   consequences: string[];
   /** Libellé du bouton GO, ex. « Supprimer ». */
@@ -23,6 +31,7 @@ const state = reactive<ConfirmState>({
   open: false,
   title: "",
   subject: undefined,
+  checks: [],
   consequences: [],
   confirmLabel: "",
   danger: false,
@@ -39,6 +48,7 @@ export function useConfirm() {
     state.resolve?.(false);
     Object.assign(state, {
       subject: undefined,
+      checks: [],
       danger: false,
       acknowledge: undefined,
       ...options,
