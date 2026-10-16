@@ -22,7 +22,8 @@ use crate::config::{Profile, ProfileStore};
 use crate::error::AppError;
 use crate::secrets;
 use crate::ssh::{self, host_key, ConnectParams, Connection, Deadline, ServerInfo, StepSink};
-use crate::stream::{self, EventSink, LineParser};
+use crate::stream::{self, EventSink, LineParser, LogSource};
+use crate::{docker, systemd};
 
 /// Intervalle de mesure de la latence.
 const LATENCY_INTERVAL: Duration = Duration::from_secs(30);
@@ -327,6 +328,28 @@ impl AppState {
     }
 
     // --- Flux ----------------------------------------------------------------
+
+    /// Ouvre le flux de logs d'un conteneur ou d'un service. Les arguments
+    /// sont validés et échappés par `docker` et `systemd`.
+    pub async fn start_logs(
+        &self,
+        source: &LogSource,
+        tail: u32,
+        sink: EventSink,
+    ) -> Result<String, AppError> {
+        match source {
+            LogSource::Docker(id) => {
+                let command = docker::logs_command(id, tail)?;
+                self.start_stream(&command, docker::DockerLogParser, sink)
+                    .await
+            }
+            LogSource::Systemd(unit) => {
+                let command = systemd::logs_command(unit, tail)?;
+                self.start_stream(&command, systemd::JournalParser, sink)
+                    .await
+            }
+        }
+    }
 
     /// Lance `command` (enveloppée dans le script de surveillance) et lit sa
     /// sortie avec `parser`. Renvoie l'identifiant du flux.

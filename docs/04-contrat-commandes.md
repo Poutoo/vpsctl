@@ -133,7 +133,7 @@ logs_start(source: LogSource, tail: number, onEvent: Channel<LogEvent>): string 
 logs_stop(streamId: string): void
 ```
 
-- `source` : ID complet du conteneur (64 caractères hexadécimaux) ou nom d'unité pilotable, validés comme pour les actions.
+- `source` : ID complet du conteneur (64 caractères hexadécimaux) ou nom d'unité respectant `^[a-zA-Z0-9@._-]+\.service$`, sinon `InvalidInput`. Une unité masquée est acceptée : ses logs restent consultables. Une unité dont le nom ne respecte pas la regex n'a donc pas de logs dans l'appli.
 - `tail` : nombre de lignes d'historique, de 0 à 5 000 (taille de la mémoire tampon de la console), sinon `InvalidInput`.
 - 4 flux simultanés au maximum (logs et scripts confondus) ; au-delà, `InvalidInput`. OpenSSH limite une connexion à 10 canaux par défaut (`MaxSessions`) : il en reste pour la session SFTP, la mesure de latence et les listes.
 - `logs_start` : délai maximal de 10 s pour ouvrir le canal et lancer la commande ; le flux lui-même n'a pas d'échéance.

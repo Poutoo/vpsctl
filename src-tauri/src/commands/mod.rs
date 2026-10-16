@@ -4,5 +4,6 @@
 pub mod connection;
 pub mod docker;
 pub mod files;
+pub mod logs;
 pub mod scripts;
 pub mod systemd;

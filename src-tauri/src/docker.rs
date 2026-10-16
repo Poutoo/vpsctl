@@ -10,6 +10,7 @@ use ts_rs::TS;
 use crate::error::AppError;
 use crate::run_state::{Action, RunState};
 use crate::ssh::{shell, Connection, Deadline, ExecOutput};
+use crate::stream::{self, LineParser, LogLine, Raw};
 
 /// `--no-trunc` : ID complet, utilisé pour les actions.
 const LIST_COMMAND: &str = "docker ps -a --no-trunc --format '{{json .}}'";
@@ -217,6 +218,52 @@ pub fn action_command(id: &str, action: Action) -> Result<String, AppError> {
 pub fn remove_command(id: &str) -> Result<String, AppError> {
     let id = checked_id(id)?;
     Ok(format!("docker rm {}", shell::quote(id)))
+}
+
+/// `docker logs -f --tail <N> --timestamps '<id>'`, à envelopper dans le
+/// script de surveillance (`stream::guarded_command`, fait par `state`).
+pub fn logs_command(id: &str, tail: u32) -> Result<String, AppError> {
+    let id = checked_id(id)?;
+    let tail = stream::checked_tail(tail)?;
+    Ok(format!(
+        "docker logs -f --tail {tail} --timestamps {}",
+        shell::quote(id)
+    ))
+}
+
+/// Lignes de `docker logs --timestamps` : `<RFC 3339> <message>`. L'origine
+/// vient du flux du canal SSH (un conteneur lancé avec un TTY mélange les
+/// deux sur la sortie standard).
+pub struct DockerLogParser;
+
+impl LineParser for DockerLogParser {
+    /// Ligne affichée plus l'horodatage qui la précède.
+    fn max_raw_line(&self) -> usize {
+        stream::MAX_LINE_BYTES + 64
+    }
+
+    fn parse(&mut self, raw: Raw, line: String, out: &mut Vec<LogLine>) {
+        out.push(parse_log_line(raw, line));
+    }
+}
+
+/// Sépare l'horodatage du message. Sans horodatage reconnu (message
+/// d'erreur de `docker logs` lui-même, par exemple), la ligne est gardée
+/// entière.
+pub fn parse_log_line(raw: Raw, line: String) -> LogLine {
+    let (stamp, text) = match line.split_once(' ') {
+        Some((stamp, text)) => (stamp, text),
+        None => (line.as_str(), ""),
+    };
+    let mut parsed = LogLine::plain(raw, String::new());
+    match stream::normalize_utc_timestamp(stamp) {
+        Some(timestamp) => {
+            parsed.timestamp = Some(timestamp);
+            parsed.text = stream::truncate_line(text.to_owned());
+        }
+        None => parsed.text = stream::truncate_line(line),
+    }
+    parsed
 }
 
 /// Premier nom qui n'est pas un alias `--link` (`autre/alias`). Avec
@@ -536,6 +583,96 @@ mod tests {
                 "{hostile:?}"
             );
         }
+    }
+
+    // --- Logs -------------------------------------------------------------
+
+    #[test]
+    fn logs_command_follows_with_timestamps() {
+        assert_eq!(
+            logs_command(ID_WEB, 200).unwrap(),
+            format!("docker logs -f --tail 200 --timestamps '{ID_WEB}'")
+        );
+        assert_eq!(
+            logs_command(ID_WEB, 0).unwrap(),
+            format!("docker logs -f --tail 0 --timestamps '{ID_WEB}'")
+        );
+    }
+
+    #[test]
+    fn logs_command_refuses_hostile_ids_and_long_history() {
+        for hostile in HOSTILE {
+            assert!(
+                matches!(
+                    logs_command(hostile, 200),
+                    Err(AppError::InvalidInput { .. })
+                ),
+                "{hostile:?}"
+            );
+        }
+        assert!(matches!(
+            logs_command(ID_WEB, stream::MAX_TAIL + 1),
+            Err(AppError::InvalidInput { .. })
+        ));
+    }
+
+    #[test]
+    fn log_lines_are_split_into_timestamp_and_message() {
+        use crate::stream::Origin;
+
+        let line = parse_log_line(
+            Raw::Stdout,
+            "2026-10-16T09:13:46.900123456Z GET /api/health 200 · 3 ms".into(),
+        );
+        assert_eq!(line.timestamp.as_deref(), Some("2026-10-16T09:13:46.900Z"));
+        assert_eq!(line.text, "GET /api/health 200 · 3 ms");
+        assert_eq!(line.origin, Origin::Stdout);
+        assert_eq!(line.priority, None);
+        assert!(!line.missing);
+
+        let err = parse_log_line(
+            Raw::Stderr,
+            "2026-10-16T09:13:47.000000000Z slow query  812 ms".into(),
+        );
+        assert_eq!(err.origin, Origin::Stderr);
+        // Espaces du message conservés.
+        assert_eq!(err.text, "slow query  812 ms");
+    }
+
+    #[test]
+    fn empty_messages_keep_their_timestamp() {
+        let line = parse_log_line(Raw::Stdout, "2026-10-16T09:13:46.900123456Z ".into());
+        assert_eq!(line.timestamp.as_deref(), Some("2026-10-16T09:13:46.900Z"));
+        assert_eq!(line.text, "");
+        let bare = parse_log_line(Raw::Stdout, "2026-10-16T09:13:46.900123456Z".into());
+        assert_eq!(bare.text, "");
+        assert!(bare.timestamp.is_some());
+    }
+
+    #[test]
+    fn lines_without_timestamp_are_kept_whole() {
+        let line = parse_log_line(
+            Raw::Stderr,
+            "Error response from daemon: No such container: abc".into(),
+        );
+        assert_eq!(line.timestamp, None);
+        assert_eq!(
+            line.text,
+            "Error response from daemon: No such container: abc"
+        );
+    }
+
+    #[test]
+    fn long_log_messages_are_truncated() {
+        let line = parse_log_line(
+            Raw::Stdout,
+            format!(
+                "2026-10-16T09:13:46.900123456Z {}",
+                "x".repeat(stream::MAX_LINE_BYTES + 10)
+            ),
+        );
+        assert!(line.text.ends_with('…'));
+        assert!(line.text.len() <= stream::MAX_LINE_BYTES + '…'.len_utf8());
     }
 
     #[test]

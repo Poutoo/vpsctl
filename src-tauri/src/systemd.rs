@@ -18,6 +18,7 @@ use crate::error::AppError;
 use crate::run_state::{Action, RunState};
 use crate::sftp::{self, DirEntry, EntryKind};
 use crate::ssh::{self, shell, Connection, Deadline};
+use crate::stream::{self, LineParser, LogLine, Origin, Raw};
 
 const LIST_COMMAND: &str =
     "systemctl --user list-units --type=service --all --output=json --no-pager";
@@ -284,6 +285,129 @@ pub(crate) fn checked_unit(unit: &str) -> Result<&str, AppError> {
             "nom de service invalide : {unit:?}"
         )))
     }
+}
+
+/// `journalctl --user --unit='<unit>' -f -n <N> -o json …`, à envelopper
+/// dans le script de surveillance (`stream::guarded_command`, fait par
+/// `state`). Le nom doit respecter la regex des services, mais une unité
+/// masquée est acceptée : ses logs restent consultables.
+///
+/// - `--unit=` plutôt que `-u` : un nom autorisé peut commencer par `-`.
+/// - `--output-fields` : seuls `MESSAGE` et `PRIORITY` (plus les champs
+///   toujours présents, dont `__REALTIME_TIMESTAMP`).
+/// - `--all` : sans lui, un champ de plus de 4 096 octets sort en `null`.
+pub fn logs_command(unit: &str, tail: u32) -> Result<String, AppError> {
+    let unit = checked_unit(unit)?;
+    let tail = stream::checked_tail(tail)?;
+    Ok(format!(
+        "journalctl --user --unit={} -f -n {tail} -o json \
+         --output-fields=MESSAGE,PRIORITY --all --quiet --no-pager",
+        shell::quote(unit)
+    ))
+}
+
+/// Texte affiché pour une entrée du journal sans `MESSAGE`.
+pub const MISSING_MESSAGE: &str = "[sans message]";
+
+/// Entrées de `journalctl -o json` (une par ligne de la sortie standard).
+/// La sortie d'erreur de `journalctl` lui-même est affichée telle quelle.
+pub struct JournalParser;
+
+impl LineParser for JournalParser {
+    /// Une entrée JSON peut dépasser largement la ligne affichée (message
+    /// long, octets encodés en tableau) : elle est tronquée après analyse.
+    fn max_raw_line(&self) -> usize {
+        1024 * 1024
+    }
+
+    fn parse(&mut self, raw: Raw, line: String, out: &mut Vec<LogLine>) {
+        match raw {
+            Raw::Stdout => out.extend(parse_journal_entry(&line)),
+            Raw::Stderr => out.push(LogLine::plain(raw, stream::truncate_line(line))),
+        }
+    }
+}
+
+/// Une entrée du journal en lignes de console : une par ligne du message.
+///
+/// `MESSAGE` peut être une chaîne, un tableau d'octets (message non UTF-8,
+/// décodé avec remplacement), `null` (champ trop long sans `--all`) ou
+/// absent : les deux derniers cas donnent « [sans message] ». `PRIORITY`
+/// absente ou illisible donne `None`. Une ligne qui n'est pas du JSON est
+/// affichée telle quelle.
+pub fn parse_journal_entry(line: &str) -> Vec<LogLine> {
+    let entry = match serde_json::from_str::<serde_json::Value>(line) {
+        Ok(serde_json::Value::Object(entry)) => entry,
+        _ => {
+            return vec![journal_line(
+                stream::truncate_line(line.to_owned()),
+                None,
+                None,
+            )]
+        }
+    };
+    let timestamp = entry
+        .get("__REALTIME_TIMESTAMP")
+        .and_then(json_u64)
+        .map(stream::iso_from_micros);
+    let priority = entry
+        .get("PRIORITY")
+        .and_then(json_u64)
+        .and_then(|p| u8::try_from(p).ok())
+        .filter(|p| *p <= 7);
+
+    let message = match entry.get("MESSAGE") {
+        Some(serde_json::Value::String(text)) => Some(text.clone()),
+        Some(serde_json::Value::Array(bytes)) => message_bytes(bytes),
+        Some(serde_json::Value::Number(n)) => Some(n.to_string()),
+        _ => None,
+    };
+    let Some(message) = message else {
+        let mut line = journal_line(MISSING_MESSAGE.to_owned(), timestamp, priority);
+        line.missing = true;
+        return vec![line];
+    };
+
+    let message = message.strip_suffix('\n').unwrap_or(&message);
+    message
+        .split('\n')
+        .map(|part| {
+            let part = part.strip_suffix('\r').unwrap_or(part);
+            journal_line(
+                stream::truncate_line(part.to_owned()),
+                timestamp.clone(),
+                priority,
+            )
+        })
+        .collect()
+}
+
+fn journal_line(text: String, timestamp: Option<String>, priority: Option<u8>) -> LogLine {
+    LogLine {
+        text,
+        timestamp,
+        origin: Origin::Journal,
+        priority,
+        missing: false,
+    }
+}
+
+/// Le journal écrit les nombres en chaînes (`"6"`, `"1792142026900123"`).
+fn json_u64(value: &serde_json::Value) -> Option<u64> {
+    match value {
+        serde_json::Value::String(text) => text.parse().ok(),
+        other => other.as_u64(),
+    }
+}
+
+/// Message non UTF-8 : tableau d'octets. `None` si un élément n'est pas un
+/// octet.
+fn message_bytes(values: &[serde_json::Value]) -> Option<String> {
+    let bytes = values
+        .iter()
+        .map(|v| v.as_u64().and_then(|b| u8::try_from(b).ok()))
+        .collect::<Option<Vec<u8>>>()?;
+    Some(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 /// `systemctl --user --no-block start|stop|restart -- '<unit>'`.
@@ -661,6 +785,163 @@ mod tests {
             action_command("-x.service", Action::Start).unwrap(),
             "systemctl --user --no-block start -- '-x.service'"
         );
+    }
+
+    // --- Logs (journalctl -o json) --------------------------------------
+
+    #[test]
+    fn logs_command_reads_the_user_journal_in_json() {
+        assert_eq!(
+            logs_command("bot.service", 200).unwrap(),
+            "journalctl --user --unit='bot.service' -f -n 200 -o json \
+             --output-fields=MESSAGE,PRIORITY --all --quiet --no-pager"
+        );
+        assert_eq!(
+            logs_command("-x.service", 0).unwrap(),
+            "journalctl --user --unit='-x.service' -f -n 0 -o json \
+             --output-fields=MESSAGE,PRIORITY --all --quiet --no-pager"
+        );
+    }
+
+    #[test]
+    fn logs_command_refuses_hostile_names_and_long_history() {
+        for hostile in HOSTILE {
+            assert!(
+                matches!(
+                    logs_command(hostile, 200),
+                    Err(AppError::InvalidInput { .. })
+                ),
+                "{hostile:?}"
+            );
+        }
+        assert!(matches!(
+            logs_command("bot.service", stream::MAX_TAIL + 1),
+            Err(AppError::InvalidInput { .. })
+        ));
+    }
+
+    /// Entrée réelle de `journalctl --user -o json --output-fields=MESSAGE,PRIORITY`.
+    /// `message` à `None` : champ absent.
+    fn journal_json(message: Option<serde_json::Value>, priority: Option<&str>) -> String {
+        let mut entry = json!({
+            "__CURSOR": "s=4b1f;i=1a2;b=9c;m=1f;t=6413;x=7e",
+            "__REALTIME_TIMESTAMP": "1792142026900123",
+            "__MONOTONIC_TIMESTAMP": "123456789",
+            "_BOOT_ID": "9c0f6d2e8b3a4f1c9e7d5b3a1f0e2d4c",
+        });
+        if let Some(message) = message {
+            entry["MESSAGE"] = message;
+        }
+        if let Some(priority) = priority {
+            entry["PRIORITY"] = json!(priority);
+        }
+        entry.to_string()
+    }
+
+    #[test]
+    fn string_message_with_priority_and_timestamp() {
+        let lines = parse_journal_entry(&journal_json(
+            Some(json!("[bot] heartbeat ack · 41 ms")),
+            Some("6"),
+        ));
+        assert_eq!(
+            lines,
+            vec![LogLine {
+                text: "[bot] heartbeat ack · 41 ms".into(),
+                timestamp: Some("2026-10-16T09:13:46.900Z".into()),
+                origin: Origin::Journal,
+                priority: Some(6),
+                missing: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn byte_array_message_is_decoded_with_replacement() {
+        // « caf\xe9 » : Latin-1, invalide en UTF-8.
+        let lines = parse_journal_entry(&journal_json(Some(json!([99, 97, 102, 233])), Some("3")));
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "caf\u{fffd}");
+        assert_eq!(lines[0].priority, Some(3));
+        assert!(!lines[0].missing);
+        // UTF-8 valide transmis en octets : décodé normalement.
+        let lines = parse_journal_entry(&journal_json(
+            Some(json!([99, 97, 102, 195, 169])),
+            Some("6"),
+        ));
+        assert_eq!(lines[0].text, "café");
+    }
+
+    #[test]
+    fn missing_message_is_shown_as_such() {
+        let lines = parse_journal_entry(&journal_json(None, Some("5")));
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, MISSING_MESSAGE);
+        assert!(lines[0].missing);
+        assert_eq!(lines[0].priority, Some(5));
+        assert!(lines[0].timestamp.is_some());
+    }
+
+    #[test]
+    fn null_message_is_shown_as_missing() {
+        let lines = parse_journal_entry(&journal_json(Some(serde_json::Value::Null), Some("6")));
+        assert!(lines[0].missing);
+        assert_eq!(lines[0].text, MISSING_MESSAGE);
+    }
+
+    #[test]
+    fn invalid_byte_array_is_shown_as_missing() {
+        let lines = parse_journal_entry(&journal_json(Some(json!([99, 300, "a"])), Some("6")));
+        assert!(lines[0].missing);
+    }
+
+    #[test]
+    fn absent_or_invalid_priority_is_none() {
+        let lines = parse_journal_entry(&journal_json(Some(json!("sans priorité")), None));
+        assert_eq!(lines[0].priority, None);
+        assert_eq!(lines[0].text, "sans priorité");
+        for invalid in ["9", "err", ""] {
+            let lines = parse_journal_entry(&journal_json(Some(json!("x")), Some(invalid)));
+            assert_eq!(lines[0].priority, None, "{invalid}");
+        }
+    }
+
+    #[test]
+    fn multiline_message_gives_one_line_per_line() {
+        let lines = parse_journal_entry(&journal_json(
+            Some(json!("Traceback:\r\n  File x\n  boom\n")),
+            Some("3"),
+        ));
+        let texts: Vec<_> = lines.iter().map(|l| l.text.as_str()).collect();
+        assert_eq!(texts, vec!["Traceback:", "  File x", "  boom"]);
+        assert!(lines
+            .iter()
+            .all(|l| l.priority == Some(3) && l.timestamp.is_some()));
+    }
+
+    #[test]
+    fn empty_message_is_one_empty_line() {
+        let lines = parse_journal_entry(&journal_json(Some(json!("")), Some("6")));
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "");
+        assert!(!lines[0].missing);
+    }
+
+    #[test]
+    fn non_json_output_is_kept_as_is() {
+        let lines = parse_journal_entry("-- No entries --");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "-- No entries --");
+        assert_eq!(lines[0].timestamp, None);
+        assert_eq!(lines[0].priority, None);
+    }
+
+    #[test]
+    fn journalctl_stderr_is_shown_as_stderr() {
+        let mut out = Vec::new();
+        JournalParser.parse(Raw::Stderr, "No journal files were found.".into(), &mut out);
+        assert_eq!(out[0].origin, Origin::Stderr);
+        assert_eq!(out[0].text, "No journal files were found.");
     }
 
     #[test]

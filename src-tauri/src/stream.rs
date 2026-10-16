@@ -17,11 +17,12 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tokio::time::{Instant, MissedTickBehavior};
 use ts_rs::TS;
 
+use crate::error::AppError;
 use crate::ssh::{StreamChannel, StreamChunk};
 
 /// Intervalle d'envoi des lots.
@@ -226,6 +227,93 @@ pub fn truncate_line(mut text: String) -> String {
     text.truncate(end);
     text.push('…');
     text
+}
+
+// ---------------------------------------------------------------------------
+// Source, historique et horodatages
+// ---------------------------------------------------------------------------
+
+/// Source d'un flux de logs (contrat : `{ docker: id } | { systemd: unit }`).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum LogSource {
+    /// ID complet du conteneur.
+    Docker(String),
+    /// Nom de l'unité.
+    Systemd(String),
+}
+
+/// Lignes d'historique au maximum : la taille de la mémoire tampon de la
+/// console.
+pub const MAX_TAIL: u32 = 5_000;
+
+/// Nombre de lignes d'historique validé.
+pub fn checked_tail(tail: u32) -> Result<u32, AppError> {
+    if tail <= MAX_TAIL {
+        Ok(tail)
+    } else {
+        Err(AppError::invalid_input(format!(
+            "historique trop long : {MAX_TAIL} lignes au maximum"
+        )))
+    }
+}
+
+/// Horodatage RFC 3339 en UTC (`2026-10-16T09:13:46.900123456Z`, fraction
+/// facultative et de longueur quelconque) ramené à la milliseconde :
+/// `2026-10-16T09:13:46.900Z`. `None` pour toute autre forme.
+pub fn normalize_utc_timestamp(text: &str) -> Option<String> {
+    let rest = text.strip_suffix('Z')?;
+    let (base, fraction) = match rest.split_once('.') {
+        Some((base, fraction)) => (base, fraction),
+        None => (rest, ""),
+    };
+    let shape_ok = base.len() == 19
+        && base.bytes().enumerate().all(|(i, b)| match i {
+            4 | 7 => b == b'-',
+            10 => b == b'T',
+            13 | 16 => b == b':',
+            _ => b.is_ascii_digit(),
+        });
+    if !shape_ok || !fraction.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    if rest.contains('.') && fraction.is_empty() {
+        return None;
+    }
+    let millis: String = fraction.chars().chain("000".chars()).take(3).collect();
+    Some(format!("{base}.{millis}Z"))
+}
+
+/// Microsecondes depuis l'epoch Unix (`__REALTIME_TIMESTAMP` du journal)
+/// en ISO 8601 UTC à la milliseconde.
+pub fn iso_from_micros(micros: u64) -> String {
+    let millis = micros / 1_000;
+    let seconds = millis / 1_000;
+    let (year, month, day) = civil_from_days(seconds / 86_400);
+    let in_day = seconds % 86_400;
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
+        in_day / 3_600,
+        in_day / 60 % 60,
+        in_day % 60,
+        millis % 1_000
+    )
+}
+
+/// Date du calendrier grégorien d'un nombre de jours depuis le 1970-01-01
+/// (algorithme « civil_from_days » de Howard Hinnant).
+fn civil_from_days(days: u64) -> (u64, u64, u64) {
+    let z = days + 719_468;
+    let era = z / 146_097;
+    let doe = z % 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + u64::from(month <= 2);
+    (year, month, day)
 }
 
 // ---------------------------------------------------------------------------
@@ -649,6 +737,72 @@ mod tests {
         assert!(truncated.ends_with('…'));
         assert!(truncated.len() <= MAX_LINE_BYTES + '…'.len_utf8());
         assert_eq!(truncate_line("court".into()), "court");
+    }
+
+    // --- Source, historique, horodatages ---------------------------------
+
+    #[test]
+    fn log_source_deserializes_per_contract() {
+        assert_eq!(
+            serde_json::from_value::<LogSource>(json!({ "docker": "abc" })).unwrap(),
+            LogSource::Docker("abc".into())
+        );
+        assert_eq!(
+            serde_json::from_value::<LogSource>(json!({ "systemd": "bot.service" })).unwrap(),
+            LogSource::Systemd("bot.service".into())
+        );
+        assert!(serde_json::from_value::<LogSource>(json!({ "shell": "id" })).is_err());
+    }
+
+    #[test]
+    fn tail_is_bounded_by_the_console_buffer() {
+        assert_eq!(checked_tail(0).unwrap(), 0);
+        assert_eq!(checked_tail(MAX_TAIL).unwrap(), MAX_TAIL);
+        assert!(matches!(
+            checked_tail(MAX_TAIL + 1),
+            Err(AppError::InvalidInput { .. })
+        ));
+    }
+
+    #[test]
+    fn utc_timestamps_are_cut_to_the_millisecond() {
+        assert_eq!(
+            normalize_utc_timestamp("2026-10-16T09:13:46.900123456Z").as_deref(),
+            Some("2026-10-16T09:13:46.900Z")
+        );
+        assert_eq!(
+            normalize_utc_timestamp("2026-10-16T09:13:46.9Z").as_deref(),
+            Some("2026-10-16T09:13:46.900Z")
+        );
+        assert_eq!(
+            normalize_utc_timestamp("2026-10-16T09:13:46Z").as_deref(),
+            Some("2026-10-16T09:13:46.000Z")
+        );
+        for invalid in [
+            "",
+            "GET /api",
+            "2026-10-16T09:13:46.900+02:00",
+            "2026-10-16 09:13:46Z",
+            "2026-10-16T09:13:46.Z",
+            "2026-10-16T09:13:4x.900Z",
+        ] {
+            assert_eq!(normalize_utc_timestamp(invalid), None, "{invalid}");
+        }
+    }
+
+    #[test]
+    fn journal_microseconds_become_iso_dates() {
+        assert_eq!(iso_from_micros(0), "1970-01-01T00:00:00.000Z");
+        // 2026-10-16T09:13:46.900123Z
+        assert_eq!(
+            iso_from_micros(1_792_142_026_900_123),
+            "2026-10-16T09:13:46.900Z"
+        );
+        // Jour bissextile.
+        assert_eq!(
+            iso_from_micros(1_709_208_000_000_000),
+            "2024-02-29T12:00:00.000Z"
+        );
     }
 
     // --- Lots ------------------------------------------------------------
