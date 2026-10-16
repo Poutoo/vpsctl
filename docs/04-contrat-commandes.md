@@ -115,7 +115,7 @@ Toutes les opérations passent par la session SFTP partagée : aucune commande s
 
 - `upload` et `download` vérifient leurs arguments, puis renvoient aussitôt le `transferId` ; la copie se poursuit en tâche de fond et sa progression arrive par `onProgress` (au plus un événement toutes les 200 ms, puis un événement final). Une erreur détectée avant le début (fichier local absent, cible existante…) est renvoyée par la commande elle-même.
 - Lecture et écriture par blocs de 256 Kio : un fichier n'est jamais chargé entier en mémoire.
-- Fichiers uniquement : un dossier, local ou distant, est refusé (`InvalidInput`).
+- Fichiers uniquement : un dossier à envoyer ou à télécharger est refusé (`InvalidInput`).
 - **Envoi** : écriture dans un temporaire `.<nom>.atlas-<8 hex>.part` du dossier de destination, renommé à la fin seulement.
   - Cible absente : `rename` du temporaire.
   - Cible existante : refusée (`AlreadyExists`) si `overwrite` vaut `false`. Avec `overwrite`, en trois étapes, pour que le contenu complet existe toujours sous un nom : la cible est renommée en `.<nom>.atlas-<hex>.old`, le temporaire prend sa place, puis le `.old` est supprimé. Si la deuxième étape échoue, le `.old` reprend sa place. Les droits du fichier remplacé sont recopiés sur le nouveau.

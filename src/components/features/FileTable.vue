@@ -291,6 +291,33 @@ let pending: { entry: FileEntry; action: FileAction } | null = null;
 function openMenu(entry: FileEntry, index: number) {
   virtualizer.value.scrollToIndex(index, { align: "auto" });
   menuOpen.value = entry.path;
+  swallowNextContextMenu();
+}
+
+/**
+ * La touche Menu (et Maj+F10) émet aussi un `contextmenu`, au relâchement
+ * sous Windows : il est ignoré une fois, le menu de la ligne étant déjà
+ * ouvert. Sinon le menu du navigateur s'afficherait par-dessus.
+ */
+function swallowNextContextMenu() {
+  const swallow = (event: Event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  document.addEventListener("contextmenu", swallow, {
+    capture: true,
+    once: true,
+  });
+  setTimeout(
+    () =>
+      document.removeEventListener("contextmenu", swallow, { capture: true }),
+    1000,
+  );
+}
+
+/** Pas de menu du navigateur dans la grille, sauf dans un champ de saisie. */
+function onGridContextMenu(event: MouseEvent) {
+  if (!(event.target as HTMLElement).closest("input")) event.preventDefault();
 }
 
 function choose(entry: FileEntry, action: FileAction) {
@@ -477,6 +504,7 @@ function onDraftBlur() {
     :aria-rowcount="entries.length + 1"
     :aria-activedescendant="activeDescendant"
     @keydown="onKeydown"
+    @contextmenu="onGridContextMenu"
   >
     <div class="row head" role="row" aria-rowindex="1">
       <div
