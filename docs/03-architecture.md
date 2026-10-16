@@ -153,7 +153,7 @@ Deux mécanismes complémentaires :
    ```
 
    - La commande tourne en arrière-plan, l'entrée standard sur `/dev/null`.
-   - Le surveillant lit l'entrée standard du canal (gardée sur le descripteur 3, car une commande en arrière-plan reçoit `/dev/null`). Quand sshd ferme le canal, il ferme ce tube : la lecture se termine et `kill -TERM 0` arrête tout le groupe de processus de la session.
+   - Le surveillant lit l'entrée standard du canal (gardée sur le descripteur 3, car une commande en arrière-plan reçoit `/dev/null`). Quand sshd ferme le canal, il ferme ce tube : la lecture se termine et `kill -TERM 0` arrête tout le groupe de processus de la session. `read` est dans une boucle : une ligne reçue sur l'entrée relance la lecture, seule la fin de l'entrée déclenche l'arrêt. La variable s'appelle `l` et non `_`, paramètre spécial de bash et de zsh.
    - `kill 0` vise le groupe de processus, pas un PID : ce groupe existe tant que le surveillant en fait partie, son identifiant ne peut donc pas être réattribué. Aucun processus étranger ne peut être atteint.
    - Le surveillant est un seul processus : la lecture utilise `read`, intégré au shell, et non `cat`. Quand la commande se termine d'elle-même, `kill "$w"` le termine entièrement ; `$w` est un enfant non encore attendu du shell principal, son PID ne peut pas être réattribué. Le code de sortie de la commande est remonté.
    - Application tuée : le système ferme la connexion TCP, sshd ferme le canal aussitôt et le surveillant se déclenche. Après une coupure réseau sans fermeture, le délai dépend de `ClientAliveInterval` côté serveur.

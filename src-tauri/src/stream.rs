@@ -579,6 +579,19 @@ mod tests {
     }
 
     #[test]
+    fn watchdog_only_stops_at_the_end_of_its_input() {
+        let script = guarded_command(LOGS);
+        // `read` seul se terminerait à la première ligne reçue : il est dans
+        // une boucle qui ne sort qu'à la fin de l'entrée (fermeture du canal).
+        // Variable nommée `l`, pas `_` : `_` est un paramètre spécial de bash
+        // et de zsh, une erreur de `read` sortirait de la boucle à l'ouverture.
+        let watcher = "{ while read -r l; do :; done; kill -TERM 0; }";
+        assert!(script.contains(watcher));
+        assert_eq!(script.matches("read").count(), 1);
+        assert!(!script.contains("read -r _"));
+    }
+
+    #[test]
     fn watchdog_keeps_the_channel_away_from_the_command() {
         let script = guarded_command(LOGS);
         // La commande n'hérite ni de l'entrée du canal ni du descripteur 3.
@@ -659,6 +672,22 @@ mod tests {
             // l'aurait gardée ouverte.
             assert_group_empty(pgid);
             assert!(stdin.write_all(b"x\n").and_then(|_| stdin.flush()).is_err());
+        }
+
+        #[test]
+        fn received_lines_do_not_stop_the_command() {
+            let mut child = spawn("sleep 30");
+            let pgid = child.id();
+            let mut stdin = child.stdin.take().unwrap();
+            std::thread::sleep(Duration::from_millis(200));
+            stdin.write_all(b"une ligne\nune autre\n").unwrap();
+            stdin.flush().unwrap();
+            std::thread::sleep(Duration::from_millis(500));
+            assert!(child.try_wait().unwrap().is_none(), "arrêté par une ligne");
+            // Seule la fermeture de l'entrée arrête la commande.
+            drop(stdin);
+            wait_exit(&mut child);
+            assert_group_empty(pgid);
         }
 
         #[test]
