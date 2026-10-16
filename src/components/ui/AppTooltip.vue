@@ -29,15 +29,22 @@ withDefaults(
     </TooltipTrigger>
     <TooltipPortal>
       <!-- Décalage en px imposé par Reka UI (nombre) : égal à --sp-1. -->
-      <TooltipContent class="tooltip" :side="side" :side-offset="4">
+      <TooltipContent class="app-tooltip" :side="side" :side-offset="4">
         {{ text }}
       </TooltipContent>
     </TooltipPortal>
   </TooltipRoot>
 </template>
 
-<style scoped>
-.tooltip {
+<!--
+  Style non scoped : Reka UI rend le contenu dans un conteneur positionné et
+  Vue pose l'attribut de portée sur ce conteneur, pas sur l'élément qui reçoit
+  la classe. En scoped, rien ne s'appliquait (ni fond, ni z-index : le
+  conteneur recopie le z-index calculé du contenu). Classe préfixée pour
+  éviter toute collision.
+-->
+<style>
+.app-tooltip {
   z-index: var(--z-tooltip);
   max-width: calc(5 * var(--sp-8));
   padding: var(--sp-1) var(--sp-2);
@@ -48,10 +55,10 @@ withDefaults(
   color: var(--color-text);
   font-family: var(--font-ui);
   font-size: var(--fs-sm);
-  animation: tooltip-in var(--dur-fast) var(--ease-out);
+  animation: app-tooltip-in var(--dur-fast) var(--ease-out);
 }
 
-@keyframes tooltip-in {
+@keyframes app-tooltip-in {
   from {
     opacity: 0;
   }
