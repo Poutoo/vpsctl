@@ -103,77 +103,77 @@ Par défaut, `SyslogLevelPrefix=` vaut `true` pour un service dont la sortie va 
 journalctl --user -u vpsctl-t-prio.service -n 6 -o json --output-fields=MESSAGE,PRIORITY --no-pager
 ```
 
-- [ ] `erreur, priorité 3` a `"PRIORITY":"3"`, `avertissement, priorité 4` a `"4"`, `information, priorité 6` a `"6"`, sans le préfixe dans `MESSAGE`.
-- [ ] `sans préfixe` et `sortie d erreur sans préfixe` ont `"6"` : journald ne distingue pas la sortie d'erreur (elle partage le flux de la sortie standard).
-- [ ] La ligne `latin-1 : caf\351` a un `MESSAGE` en tableau d'octets (`[108,97,…,233]`).
+- [y] `erreur, priorité 3` a `"PRIORITY":"3"`, `avertissement, priorité 4` a `"4"`, `information, priorité 6` a `"6"`, sans le préfixe dans `MESSAGE`.
+- [y] `sans préfixe` et `sortie d erreur sans préfixe` ont `"6"` : journald ne distingue pas la sortie d'erreur (elle partage le flux de la sortie standard).
+- [y] La ligne `latin-1 : caf\351` a un `MESSAGE` en tableau d'octets (`[108,97,…,233]`).
 
 Si le préfixe n'était pas interprété : vérifier que l'unité ne contient ni `SyslogLevelPrefix=no` ni `StandardOutput=` autre que `journal`. Méthode de repli : `systemd-cat -p err echo …` dans `ExecStart`.
 
 ## 1. Actions sur les conteneurs
 
-- [ ] Chaque ligne a une colonne Actions : Démarrer, Arrêter, Redémarrer, Logs, puis, isolée par un séparateur, Supprimer (icône corbeille rouge).
-- [ ] Chaque icône a une infobulle au survol **et** au focus clavier (Tab). Une action indisponible est grisée et son infobulle en donne la raison (« Démarrer vpsctl-t-run : déjà en marche »). Elle reste focalisable mais un clic n'a aucun effet.
-- [ ] Lecteur d'écran (Narrateur ou Orca), ou outils de développement : chaque bouton a un `aria-label` avec l'action et le nom du conteneur. Un bouton indisponible porte `aria-disabled="true"` et est annoncé comme indisponible.
-- [ ] Bouton indisponible (Démarrer sur `vpsctl-t-run`, Supprimer sur `vpsctl-t-run`), avec l'onglet Réseau des outils de développement ouvert :
+- [y] Chaque ligne a une colonne Actions : Démarrer, Arrêter, Redémarrer, Logs, puis, isolée par un séparateur, Supprimer (icône corbeille rouge).
+- [y] Chaque icône a une infobulle au survol **et** au focus clavier (Tab). Une action indisponible est grisée et son infobulle en donne la raison (« Démarrer vpsctl-t-run : déjà en marche »). Elle reste focalisable mais un clic n'a aucun effet.
+- [y] Lecteur d'écran (Narrateur ou Orca), ou outils de développement : chaque bouton a un `aria-label` avec l'action et le nom du conteneur. Un bouton indisponible porte `aria-disabled="true"` et est annoncé comme indisponible.
+- [y] Bouton indisponible (Démarrer sur `vpsctl-t-run`, Supprimer sur `vpsctl-t-run`), avec l'onglet Réseau des outils de développement ouvert :
   - au survol, le curseur est le symbole d'interdiction, **pas** la main, et le fond ne change pas ;
   - un clic ne fait rien : pas de fenêtre GO / NO GO, aucun appel `docker_action` ni `docker_remove` ;
   - le focus clavier (Tab) l'atteint et affiche son infobulle ; Entrée puis Espace ne font rien, aucun appel.
-- [ ] Bouton en cours (pendant l'arrêt de `vpsctl-t-run`, le bouton Arrêter avec son chrono) : curseur d'attente, pas la main ; clic, Entrée et Espace ne relancent pas l'action (un seul `docker_action` dans l'onglet Réseau).
-- [ ] `vpsctl-t-run` (en marche) : Démarrer et Supprimer indisponibles ; Arrêter, Redémarrer, Logs disponibles.
-- [ ] `vpsctl-t-rm` (sorti) : Arrêter indisponible ; Démarrer, Redémarrer, Logs, Supprimer disponibles.
-- [ ] **Démarrer** `vpsctl-t-crash` : aucune confirmation. La ligne passe aussitôt en « Démarrage · T+00 » (demi-disque), le bouton Démarrer affiche son chrono, les autres actions sauf Logs sont indisponibles.
-- [ ] **Arrêter** `vpsctl-t-run` : fenêtre GO / NO GO « Arrêter le conteneur ? » avec ses trois conséquences. Le focus est sur NO GO ; Échap ferme sans rien faire. GO : « Arrêt · T+… » pendant environ 10 s, sans erreur de délai. Puis « Arrêté · code 137 » et la notification « Conteneur arrêté · vpsctl-t-run · 10,… s ».
-- [ ] **Redémarrer** `vpsctl-t-run` (le redémarrer d'abord s'il est arrêté) : GO / NO GO « Redémarrer le conteneur ? », puis « Redémarrage · T+… » environ 13 s (arrêt de 10 s, puis relecture à 2,5 s), puis « Nominal » et « Conteneur redémarré ».
-- [ ] **Supprimer** `vpsctl-t-rm` : GO / NO GO « Supprimer le conteneur ? », mention « Irréversible », coche « Conteneur arrêté » suivie du statut brut (`Exited (0) …`), puis « Les volumes sont conservés. » et « L'image est conservée : alpine. ». GO est rouge et à droite.
-- [ ] Après GO : la ligne disparaît, notification « Conteneur supprimé ». Sur le VPS, `docker volume ls` liste toujours `vpsctl-t-vol` **et** le volume anonyme noté en préparation ; `docker image ls alpine` liste toujours l'image.
-- [ ] Supprimer un conteneur en marche est impossible depuis l'appli (bouton indisponible). Côté serveur, `docker rm` sans `-f` le refuserait de toute façon.
+- [y] Bouton en cours (pendant l'arrêt de `vpsctl-t-run`, le bouton Arrêter avec son chrono) : curseur d'attente, pas la main ; clic, Entrée et Espace ne relancent pas l'action (un seul `docker_action` dans l'onglet Réseau).
+- [y] `vpsctl-t-run` (en marche) : Démarrer et Supprimer indisponibles ; Arrêter, Redémarrer, Logs disponibles.
+- [y] `vpsctl-t-rm` (sorti) : Arrêter indisponible ; Démarrer, Redémarrer, Logs, Supprimer disponibles.
+- [y] **Démarrer** `vpsctl-t-crash` : aucune confirmation. La ligne passe aussitôt en « Démarrage · T+00 » (demi-disque), le bouton Démarrer affiche son chrono, les autres actions sauf Logs sont indisponibles.
+- [y] **Arrêter** `vpsctl-t-run` : fenêtre GO / NO GO « Arrêter le conteneur ? » avec ses trois conséquences. Le focus est sur NO GO ; Échap ferme sans rien faire. GO : « Arrêt · T+… » pendant environ 10 s, sans erreur de délai. Puis « Arrêté · code 137 » et la notification « Conteneur arrêté · vpsctl-t-run · 10,… s ».
+- [y] **Redémarrer** `vpsctl-t-run` (le redémarrer d'abord s'il est arrêté) : GO / NO GO « Redémarrer le conteneur ? », puis « Redémarrage · T+… » environ 13 s (arrêt de 10 s, puis relecture à 2,5 s), puis « Nominal » et « Conteneur redémarré ».
+- [y] **Supprimer** `vpsctl-t-rm` : GO / NO GO « Supprimer le conteneur ? », mention « Irréversible », coche « Conteneur arrêté » suivie du statut brut (`Exited (0) …`), puis « Les volumes sont conservés. » et « L'image est conservée : alpine. ». GO est rouge et à droite.
+- [y] Après GO : la ligne disparaît, notification « Conteneur supprimé ». Sur le VPS, `docker volume ls` liste toujours `vpsctl-t-vol` **et** le volume anonyme noté en préparation ; `docker image ls alpine` liste toujours l'image.
+- [y] Supprimer un conteneur en marche est impossible depuis l'appli (bouton indisponible). Côté serveur, `docker rm` sans `-f` le refuserait de toute façon.
 
 ## 2. Actions sur les services
 
-- [ ] Colonne Actions : Démarrer, Arrêter, Redémarrer, Logs. Pas de suppression (jalon 6).
-- [ ] `vpsctl-t-masked.service` (« masqué ») et `vpsctl-t\x2descaped.service` (« non pilotable ») n'ont **que** le bouton Logs. Pour l'unité masquée, Logs fonctionne ; pour le nom échappé, Logs est indisponible (« nom hors du format accepté »).
-- [ ] Logs indisponible de `vpsctl-t\x2descaped.service` et Démarrer indisponible d'un service nominal : curseur d'interdiction, pas la main ; clic, Entrée et Espace ne font rien (aucun `logs_start` ni `service_action` dans l'onglet Réseau).
-- [ ] **Arrêter** `vpsctl-t-svc.service` : GO / NO GO « Arrêter le service ? » avec ses deux conséquences ; GO : « Arrêt · T+… » environ 2,5 s, puis « Arrêté » et « Service arrêté ».
-- [ ] **Redémarrer** `vpsctl-t-svc.service` : GO / NO GO, puis « Nominal » et « Service redémarré ».
-- [ ] **Démarrer** `vpsctl-t-slow.service` : direct. La commande rend la main tout de suite (`--no-block`) : « Démarrage · T+… » pendant 2,5 s, puis la ligne reste « En transition » (état réel `activating`), **sans notification**. Elle passe « Nominal » à un rafraîchissement suivant, environ 8 s après le clic.
-- [ ] Sur le VPS, pendant ce temps, `systemctl --user is-active vpsctl-t-slow.service` répond `activating`.
+- [y] Colonne Actions : Démarrer, Arrêter, Redémarrer, Logs. Pas de suppression (jalon 6).
+- [y] `vpsctl-t-masked.service` (« masqué ») et `vpsctl-t\x2descaped.service` (« non pilotable ») n'ont **que** le bouton Logs. Pour l'unité masquée, Logs fonctionne ; pour le nom échappé, Logs est indisponible (« nom hors du format accepté »).
+- [y] Logs indisponible de `vpsctl-t\x2descaped.service` et Démarrer indisponible d'un service nominal : curseur d'interdiction, pas la main ; clic, Entrée et Espace ne font rien (aucun `logs_start` ni `service_action` dans l'onglet Réseau).
+- [y] **Arrêter** `vpsctl-t-svc.service` : GO / NO GO « Arrêter le service ? » avec ses deux conséquences ; GO : « Arrêt · T+… » environ 2,5 s, puis « Arrêté » et « Service arrêté ».
+- [y] **Redémarrer** `vpsctl-t-svc.service` : GO / NO GO, puis « Nominal » et « Service redémarré ».
+- [y] **Démarrer** `vpsctl-t-slow.service` : direct. La commande rend la main tout de suite (`--no-block`) : « Démarrage · T+… » pendant 2,5 s, puis la ligne reste « En transition » (état réel `activating`), **sans notification**. Elle passe « Nominal » à un rafraîchissement suivant, environ 8 s après le clic.
+- [y] Sur le VPS, pendant ce temps, `systemctl --user is-active vpsctl-t-slow.service` répond `activating`.
 
 ## 3. Vérification différée
 
-- [ ] **Docker** : après Démarrer sur `vpsctl-t-crash`, la ligne reste « Démarrage · T+… » environ 2,5 s, même si un rafraîchissement automatique passe entre-temps (le noter avec l'onglet Réseau : un `docker_list` pendant la transition ne change pas la ligne).
-- [ ] Puis « En échec · code 1 » et une notification d'**erreur** « Échec du démarrage · vpsctl-t-crash · code 1 », qui reste affichée tant qu'on ne la ferme pas.
-- [ ] Le lien « Voir la télémétrie » (avec une flèche dessinée, pas un caractère) ouvre la console ancrée sur `vpsctl-t-crash` : on y voit `démarrage` en `out` puis `plantage` en `err`. Le conteneur étant déjà arrêté, `docker logs -f` se termine aussitôt : bannière « LOS · Fin du flux · code 0 » (code de `docker logs`, pas du conteneur). La notification se ferme.
-- [ ] **systemd** : même test avec Démarrer sur `vpsctl-t-crash.service` : « Échec du démarrage · vpsctl-t-crash.service · failed/failed », et dans la console `plantage` en **ERR rouge** (priorité 3). `journalctl -f` continue de suivre le journal : pas de bannière LOS.
-- [ ] Erreur de commande (facultatif) : sur le VPS, `docker rm -f vpsctl-t-run` puis, sans attendre le rafraîchissement, cliquer Arrêter sur sa ligne et GO. Notification d'erreur « Échec de l'arrêt » avec le message de Docker (« No such container »), et la ligne disparaît au rafraîchissement. Recréer ensuite `vpsctl-t-run`.
+- [y] **Docker** : après Démarrer sur `vpsctl-t-crash`, la ligne reste « Démarrage · T+… » environ 2,5 s, même si un rafraîchissement automatique passe entre-temps (le noter avec l'onglet Réseau : un `docker_list` pendant la transition ne change pas la ligne).
+- [y] Puis « En échec · code 1 » et une notification d'**erreur** « Échec du démarrage · vpsctl-t-crash · code 1 », qui reste affichée tant qu'on ne la ferme pas.
+- [y] Le lien « Voir la télémétrie » (avec une flèche dessinée, pas un caractère) ouvre la console ancrée sur `vpsctl-t-crash` : on y voit `démarrage` en `out` puis `plantage` en `err`. Le conteneur étant déjà arrêté, `docker logs -f` se termine aussitôt : bannière « LOS · Fin du flux · code 0 » (code de `docker logs`, pas du conteneur). La notification se ferme.
+- [y] **systemd** : même test avec Démarrer sur `vpsctl-t-crash.service` : « Échec du démarrage · vpsctl-t-crash.service · failed/failed », et dans la console `plantage` en **ERR rouge** (priorité 3). `journalctl -f` continue de suivre le journal : pas de bannière LOS.
+- [y] Erreur de commande (facultatif) : sur le VPS, `docker rm -f vpsctl-t-run` puis, sans attendre le rafraîchissement, cliquer Arrêter sur sa ligne et GO. Notification d'erreur « Échec de l'arrêt » avec le message de Docker (« No such container »), et la ligne disparaît au rafraîchissement. Recréer ensuite `vpsctl-t-run`.
 
 ## 4. Animation de changement d'état
 
-- [ ] Après une action vérifiée qui change l'état (Démarrer `vpsctl-t-svc.service` arrêté, Arrêter `vpsctl-t-run`) : la forme de l'état joue **une fois** une courte trajectoire (arrivée en arc pour l'allumage, contraction pour l'extinction), en environ 300 ms.
-- [ ] Changement fait depuis le VPS (`docker stop -t 2 vpsctl-t-run`, `systemctl --user stop vpsctl-t-svc.service`) : la ligne change au rafraîchissement automatique **sans** animation.
-- [ ] Les rafraîchissements suivants ne rejouent pas l'animation.
-- [ ] Avec le mouvement réduit activé (Windows : Paramètres → Accessibilité → Effets visuels → Effets d'animation désactivés ; GNOME : Accessibilité → Réduire les animations), l'état change sans animation visible.
+- [y] Après une action vérifiée qui change l'état (Démarrer `vpsctl-t-svc.service` arrêté, Arrêter `vpsctl-t-run`) : la forme de l'état joue **une fois** une courte trajectoire (arrivée en arc pour l'allumage, contraction pour l'extinction), en environ 300 ms.
+- [y] Changement fait depuis le VPS (`docker stop -t 2 vpsctl-t-run`, `systemctl --user stop vpsctl-t-svc.service`) : la ligne change au rafraîchissement automatique **sans** animation.
+- [y] Les rafraîchissements suivants ne rejouent pas l'animation.
+- [y] Avec le mouvement réduit activé (Windows : Paramètres → Accessibilité → Effets visuels → Effets d'animation désactivés ; GNOME : Accessibilité → Réduire les animations), l'état change sans animation visible.
 
 ## 5. Console ancrée
 
-- [ ] Logs sur `vpsctl-t-logs` : un panneau s'ouvre en bas du tableau de bord. La zone des tableaux **rétrécit** au-dessus et défile seule ; le panneau ne recouvre aucune ligne (faire défiler jusqu'au bas des services pour le vérifier).
-- [ ] En-tête : « CONTENEUR vpsctl-t-logs docker logs -f vpsctl-t-logs », interrupteur « Défilement auto », Effacer, Interrompre le flux, Fermer.
-- [ ] Pendant l'ouverture, « Acquisition du flux · T+… » s'affiche brièvement (pas de spinner). Puis les 200 dernières lignes, et une paire `out` / `err` par seconde, avec l'heure locale à la milliseconde.
-- [ ] `err` est neutre : même couleur de texte que `out`, sans fond rouge. Légende : « out sortie standard », « err sortie d'erreur, sans gravité implicite ». Compteur « N lignes · M sur stderr ».
-- [ ] Logs sur `vpsctl-t-prio.service` : la console remplace la précédente. En-tête « SERVICE … journalctl --user -fu vpsctl-t-prio.service ». `erreur, priorité 3` en **ERR** rouge sur fond teinté ; `avertissement, priorité 4` en `wrn` ; les autres en `inf`. La ligne latin-1 s'affiche `latin-1 : caf` suivi du caractère de remplacement. Légende « inf · wrn · ERR priorité 0 à 3 » ; compteur « N lignes · M ERR ».
-- [ ] Remonter dans l'historique (molette) : l'interrupteur « Défilement auto » se désactive, la vue ne bouge plus, et un bouton « N nouvelles lignes » (avec une flèche dessinée) apparaît et compte les lignes. Un clic revient en bas et réactive le défilement.
-- [ ] Désactiver puis réactiver l'interrupteur à la main : retour en bas.
-- [ ] Effacer : la console se vide, le compteur repasse à 0, les nouvelles lignes continuent d'arriver.
-- [ ] Interrompre le flux : bannière « LOS · Arrêt propre · HH:MM:SS » ; le bouton devient « Rejouer », qui rouvre le flux avec l'historique.
-- [ ] Fin d'elle-même : flux ouvert sur `vpsctl-t-logs`, puis sur le VPS `docker stop -t 1 vpsctl-t-logs`. Bannière « LOS · Fin du flux · code 0 » (ou un autre code). Redémarrer le conteneur depuis l'appli pour la suite.
-- [ ] Mémoire bornée (facultatif, charge le VPS quelques secondes) : `docker run -d --name vpsctl-t-loud alpine sh -c 'while :; do echo ligne; done'`, ouvrir ses logs pendant 10 s, puis l'arrêter (`docker rm -f vpsctl-t-loud`). Le compteur plafonne à « 5000 lignes », l'interface reste fluide (défilement, boutons), et des avis « N lignes non affichées : débit trop élevé » apparaissent en texte discret.
-- [ ] Défilement horizontal : une ligne plus large que le panneau se lit en faisant défiler horizontalement (pas de retour à la ligne).
+- [y] Logs sur `vpsctl-t-logs` : un panneau s'ouvre en bas du tableau de bord. La zone des tableaux **rétrécit** au-dessus et défile seule ; le panneau ne recouvre aucune ligne (faire défiler jusqu'au bas des services pour le vérifier).
+- [y] En-tête : « CONTENEUR vpsctl-t-logs docker logs -f vpsctl-t-logs », interrupteur « Défilement auto », Effacer, Interrompre le flux, Fermer.
+- [y] Pendant l'ouverture, « Acquisition du flux · T+… » s'affiche brièvement (pas de spinner). Puis les 200 dernières lignes, et une paire `out` / `err` par seconde, avec l'heure locale à la milliseconde.
+- [y] `err` est neutre : même couleur de texte que `out`, sans fond rouge. Légende : « out sortie standard », « err sortie d'erreur, sans gravité implicite ». Compteur « N lignes · M sur stderr ».
+- [y] Logs sur `vpsctl-t-prio.service` : la console remplace la précédente. En-tête « SERVICE … journalctl --user -fu vpsctl-t-prio.service ». `erreur, priorité 3` en **ERR** rouge sur fond teinté ; `avertissement, priorité 4` en `wrn` ; les autres en `inf`. La ligne latin-1 s'affiche `latin-1 : caf` suivi du caractère de remplacement. Légende « inf · wrn · ERR priorité 0 à 3 » ; compteur « N lignes · M ERR ».
+- [y] Remonter dans l'historique (molette) : l'interrupteur « Défilement auto » se désactive, la vue ne bouge plus, et un bouton « N nouvelles lignes » (avec une flèche dessinée) apparaît et compte les lignes. Un clic revient en bas et réactive le défilement.
+- [y] Désactiver puis réactiver l'interrupteur à la main : retour en bas.
+- [y] Effacer : la console se vide, le compteur repasse à 0, les nouvelles lignes continuent d'arriver.
+- [y] Interrompre le flux : bannière « LOS · Arrêt propre · HH:MM:SS » ; le bouton devient « Rejouer », qui rouvre le flux avec l'historique.
+- [y] Fin d'elle-même : flux ouvert sur `vpsctl-t-logs`, puis sur le VPS `docker stop -t 1 vpsctl-t-logs`. Bannière « LOS · Fin du flux · code 0 » (ou un autre code). Redémarrer le conteneur depuis l'appli pour la suite.
+- [y] Mémoire bornée (facultatif, charge le VPS quelques secondes) : `docker run -d --name vpsctl-t-loud alpine sh -c 'while :; do echo ligne; done'`, ouvrir ses logs pendant 10 s, puis l'arrêter (`docker rm -f vpsctl-t-loud`). Le compteur plafonne à « 5000 lignes », l'interface reste fluide (défilement, boutons), et des avis « N lignes non affichées : débit trop élevé » apparaissent en texte discret.
+- [y] Défilement horizontal : une ligne plus large que le panneau se lit en faisant défiler horizontalement (pas de retour à la ligne).
 
 ## 6. Notifications
 
-- [ ] Succès : cercle avec coche, « SUCCÈS », titre, nom et durée ; fermée seule après 5 s.
-- [ ] Erreur : carré avec croix, bordure rouge, « ERREUR » ; reste jusqu'au clic sur la croix (« Fermer la notification »).
-- [ ] Enchaîner quatre actions rapides (par exemple Démarrer puis Arrêter deux services) : jamais plus de trois notifications à l'écran, la plus ancienne disparaît.
-- [ ] Console ancrée ouverte, fenêtre réduite en hauteur (environ 600 px) : les notifications, en haut à droite, ne recouvrent jamais le panneau.
+- [y] Succès : cercle avec coche, « SUCCÈS », titre, nom et durée ; fermée seule après 5 s.
+- [y] Erreur : carré avec croix, bordure rouge, « ERREUR » ; reste jusqu'au clic sur la croix (« Fermer la notification »).
+- [y] Enchaîner quatre actions rapides (par exemple Démarrer puis Arrêter deux services) : jamais plus de trois notifications à l'écran, la plus ancienne disparaît.
+- [y] Console ancrée ouverte, fenêtre réduite en hauteur (environ 600 px) : les notifications, en haut à droite, ne recouvrent jamais le panneau.
 
 ## 7. Aucun processus laissé sur le serveur
 
@@ -187,23 +187,23 @@ pgrep -u "$USER" -af 'docker logs|journalctl|exec 3<&0'
 
 Utiliser `vpsctl-t-quiet` (silencieux) : c'est le cas où un processus survivrait si l'arrêt reposait sur sa prochaine écriture.
 
-- [ ] Flux ouvert sur `vpsctl-t-quiet` : la commande liste les processus du flux.
-- [ ] Bouton **Interrompre le flux** : plus rien.
-- [ ] **Fermer** le panneau : plus rien.
-- [ ] **Changer de source** (Logs sur une autre ligne) : seul le nouveau flux est listé.
-- [ ] **Quitter le tableau de bord** (Fichiers) : plus rien. En revenant, la console se rouvre sur la même source, avec un nouveau flux.
-- [ ] **Déconnexion** (« Couper la liaison ») : plus rien.
-- [ ] **Fermeture de l'application** (bouton Fermer de la barre de titre) : plus rien.
-- [ ] **Application tuée** (Windows : gestionnaire des tâches, fin de tâche ; Linux : `kill -9` sur le processus `vpsctl`) : plus rien. Ici, seul le script de surveillance agit : la connexion est coupée sans signal SSH.
-- [ ] **Rechargement de l'interface** (Ctrl+R ou F5 dans la fenêtre en développement) : plus rien, puis le tableau de bord revient sans flux ouvert.
-- [ ] **Fin d'elle-même** : flux ouvert sur `vpsctl-t-logs`, puis `docker stop -t 1 vpsctl-t-logs` sur le VPS. Après la bannière LOS : plus rien, **y compris aucun shell `exec 3<&0`**. Le surveillant ne survit pas à la commande.
-- [ ] Même série avec un service calme (`vpsctl-t-slow.service`, qui n'écrit rien) : Interrompre, Fermer, Déconnexion, application tuée. Plus rien après chacun.
+- [y] Flux ouvert sur `vpsctl-t-quiet` : la commande liste les processus du flux.
+- [y] Bouton **Interrompre le flux** : plus rien.
+- [y] **Fermer** le panneau : plus rien.
+- [y] **Changer de source** (Logs sur une autre ligne) : seul le nouveau flux est listé.
+- [y] **Quitter le tableau de bord** (Fichiers) : plus rien. En revenant, la console se rouvre sur la même source, avec un nouveau flux.
+- [y] **Déconnexion** (« Couper la liaison ») : plus rien.
+- [y] **Fermeture de l'application** (bouton Fermer de la barre de titre) : plus rien.
+- [y] **Application tuée** (Windows : gestionnaire des tâches, fin de tâche ; Linux : `kill -9` sur le processus `vpsctl`) : plus rien. Ici, seul le script de surveillance agit : la connexion est coupée sans signal SSH.
+- [y] **Rechargement de l'interface** (Ctrl+R ou F5 dans la fenêtre en développement) : plus rien, puis le tableau de bord revient sans flux ouvert.
+- [y] **Fin d'elle-même** : flux ouvert sur `vpsctl-t-logs`, puis `docker stop -t 1 vpsctl-t-logs` sur le VPS. Après la bannière LOS : plus rien, **y compris aucun shell `exec 3<&0`**. Le surveillant ne survit pas à la commande.
+- [y] Même série avec un service calme (`vpsctl-t-slow.service`, qui n'écrit rien) : Interrompre, Fermer, Déconnexion, application tuée. Plus rien après chacun.
 
 ## 8. Rendu Windows et Linux
 
-- [ ] Windows (WebView2) et Linux (WebKitGTK) : colonne d'actions alignée, infobulles, fenêtre GO / NO GO, notifications et console identiques aux captures (`docs/design/ecran/dashboard/`, `telemetrie/`, `go-no-go.png`, `notifications.png`, `interrupteur.png`).
-- [ ] Les heures de la console sont correctes sous WebKitGTK (horodatage à la milliseconde, pas de case vide).
-- [ ] Défilement fluide de la console sous WebKitGTK avec 5 000 lignes.
+- [y] Windows (WebView2) et Linux (WebKitGTK) : colonne d'actions alignée, infobulles, fenêtre GO / NO GO, notifications et console identiques aux captures (`docs/design/ecran/dashboard/`, `telemetrie/`, `go-no-go.png`, `notifications.png`, `interrupteur.png`).
+- [y] Les heures de la console sont correctes sous WebKitGTK (horodatage à la milliseconde, pas de case vide).
+- [y] Défilement fluide de la console sous WebKitGTK avec 5 000 lignes.
 
 ## 9. Sécurité (contrôle rapide)
 
@@ -215,7 +215,7 @@ await window.__TAURI_INTERNALS__.invoke("docker_remove", { id: "$(touch /tmp/vps
 await window.__TAURI_INTERNALS__.invoke("logs_start", { source: { systemd: "a\nb.service" }, tail: 10, onEvent: null })
 ```
 
-- [ ] Chaque appel est refusé avec `InvalidInput` (le dernier peut échouer avant, sur `onEvent`). Sur le VPS, `ls /tmp/vpsctl-pwned` : fichier absent.
+- [y] Chaque appel est refusé avec `InvalidInput` (le dernier peut échouer avant, sur `onEvent`). Sur le VPS, `ls /tmp/vpsctl-pwned` : fichier absent.
 
 ## 10. Nettoyage
 
@@ -247,4 +247,4 @@ ls ~/.config/systemd/user/ | grep vpsctl-t-
 pgrep -u "$USER" -af 'docker logs|journalctl|exec 3<&0'
 ```
 
-- [ ] Après le nettoyage, l'appli n'affiche plus aucun objet `vpsctl-t-`, et les compteurs reviennent à l'état de départ noté en préparation.
+- [y] Après le nettoyage, l'appli n'affiche plus aucun objet `vpsctl-t-`, et les compteurs reviennent à l'état de départ noté en préparation.
