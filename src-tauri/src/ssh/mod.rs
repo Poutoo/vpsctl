@@ -1,9 +1,9 @@
 //! Connexion SSH unique (russh) partagée par toute l'application.
 //!
 //! Expose deux primitives sur cette connexion : exécuter une commande et
-//! récupérer sa sortie (`Connection::exec`), et plus tard ouvrir un canal en
-//! streaming. Chaque opération ouvre son propre canal. La session SFTP, elle,
-//! est partagée (`Connection::sftp`).
+//! récupérer sa sortie (`Connection::exec`), et ouvrir un canal en streaming
+//! (`Connection::open_stream`). Chaque opération ouvre son propre canal. La
+//! session SFTP, elle, est partagée (`Connection::sftp`).
 //!
 //! Séquence de `connect`, émise étape par étape (`ConnectStep`) :
 //! tcp → ssh (négociation) → hostKey → auth → aos.
@@ -368,6 +368,37 @@ impl Connection {
         run_command(channel, command, deadline).await
     }
 
+    /// Lance une commande longue (flux de logs) et renvoie son canal, dont la
+    /// sortie est lue au fil de l'eau. L'échéance ne couvre que l'ouverture du
+    /// canal et l'envoi de la commande : le flux lui-même n'en a pas.
+    pub async fn open_stream(
+        &self,
+        command: &str,
+        deadline: Deadline,
+    ) -> Result<StreamChannel, AppError> {
+        let handle = self.handle()?;
+        let channel = within(deadline, async {
+            handle
+                .channel_open_session()
+                .await
+                .map_err(|e| AppError::network(format!("ouverture d'un canal impossible : {e}")))
+        })
+        .await?;
+        let mut stream = StreamChannel { channel };
+        let started = tokio::time::timeout_at(deadline.at, stream.channel.start(command)).await;
+        match started {
+            Ok(Ok(())) => Ok(stream),
+            Ok(Err(error)) => {
+                stream.stop().await;
+                Err(error)
+            }
+            Err(_) => {
+                stream.stop().await;
+                Err(deadline.error())
+            }
+        }
+    }
+
     /// Durée d'un aller-retour SSH : ouverture d'un canal de session jusqu'à
     /// sa confirmation par le serveur, sans exécuter de commande. Le canal
     /// est refermé aussitôt.
@@ -512,6 +543,62 @@ impl CommandChannel for russh::Channel<client::Msg> {
             let _ = self.signal(russh::Sig::TERM).await;
             let _ = self.eof().await;
             let _ = self.close().await;
+        })
+        .await;
+    }
+}
+
+/// Délai accordé à l'arrêt d'un flux (signal, fin d'émission, fermeture).
+const STREAM_STOP_TIMEOUT: Duration = Duration::from_millis(2500);
+
+/// Morceau reçu sur le canal d'un flux.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamChunk {
+    Stdout(Vec<u8>),
+    Stderr(Vec<u8>),
+    /// Fin de la commande : son code, ou `None` si un signal l'a tuée.
+    Exited(Option<i32>),
+    /// Le serveur a refusé d'exécuter la commande.
+    Refused,
+}
+
+/// Canal d'une commande longue, ouvert par `Connection::open_stream`.
+pub struct StreamChannel {
+    channel: russh::Channel<client::Msg>,
+}
+
+impl StreamChannel {
+    /// Prochain morceau utile, ou `None` quand le canal est fermé.
+    pub async fn recv(&mut self) -> Option<StreamChunk> {
+        loop {
+            match self.channel.wait().await? {
+                ChannelMsg::Data { data } => return Some(StreamChunk::Stdout(data.to_vec())),
+                ChannelMsg::ExtendedData { data, ext: 1 } => {
+                    return Some(StreamChunk::Stderr(data.to_vec()))
+                }
+                ChannelMsg::ExitStatus { exit_status } => {
+                    return Some(StreamChunk::Exited(i32::try_from(exit_status).ok()))
+                }
+                ChannelMsg::ExitSignal { .. } => return Some(StreamChunk::Exited(None)),
+                ChannelMsg::Failure => return Some(StreamChunk::Refused),
+                _ => {}
+            }
+        }
+    }
+
+    /// Arrête la commande distante puis ferme le canal, en 2,5 s au plus.
+    ///
+    /// Fermer le canal ne suffit pas : sshd ne tue pas le processus d'une
+    /// session sans terminal à la fermeture de son canal. La requête
+    /// `signal` est transmise par sshd à tout le groupe de processus de la
+    /// session (`killpg`) : le shell et la commande reçoivent SIGTERM. Si le
+    /// serveur la refuse, le script de surveillance (`stream::guarded_command`)
+    /// termine la commande à la fermeture du canal.
+    pub async fn stop(self) {
+        let _ = tokio::time::timeout(STREAM_STOP_TIMEOUT, async {
+            let _ = self.channel.signal(russh::Sig::TERM).await;
+            let _ = self.channel.eof().await;
+            let _ = self.channel.close().await;
         })
         .await;
     }

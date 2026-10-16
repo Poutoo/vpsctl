@@ -1,8 +1,7 @@
 //! État partagé de l'application (`AppState`) : profils, liaison SSH active
-//! (une seule à la fois) et empreintes présentées par les serveurs.
-//!
-//! Plus tard : registre des flux en cours (logs, exécutions de scripts),
-//! chacun identifié par un id pour pouvoir être arrêté proprement.
+//! (une seule à la fois), empreintes présentées par les serveurs et registre
+//! des flux en cours (logs, plus tard exécutions de scripts), chacun
+//! identifié par un id pour pouvoir être arrêté proprement.
 //!
 //! Ce module ne dépend pas de Tauri : la couche `commands` ne fait que
 //! transmettre les appels.
@@ -14,17 +13,29 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
-use tokio::task::{AbortHandle, JoinHandle};
+use tokio::sync::oneshot;
+use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use ts_rs::TS;
 use zeroize::Zeroizing;
 
 use crate::config::{Profile, ProfileStore};
 use crate::error::AppError;
 use crate::secrets;
-use crate::ssh::{self, host_key, ConnectParams, Connection, ServerInfo, StepSink};
+use crate::ssh::{self, host_key, ConnectParams, Connection, Deadline, ServerInfo, StepSink};
+use crate::stream::{self, EventSink, LineParser};
 
 /// Intervalle de mesure de la latence.
 const LATENCY_INTERVAL: Duration = Duration::from_secs(30);
+/// Flux simultanés au maximum (logs et scripts). OpenSSH limite une
+/// connexion à 10 canaux par défaut (`MaxSessions`) : il en reste pour la
+/// session SFTP, la mesure de latence et les listes.
+pub const MAX_STREAMS: usize = 4;
+/// Délai d'ouverture d'un flux (canal et envoi de la commande).
+const STREAM_OPEN_TIMEOUT: Duration = Duration::from_secs(10);
+/// Délai d'arrêt d'un flux : au-delà, sa tâche est abandonnée.
+const STREAM_STOP_TIMEOUT: Duration = Duration::from_secs(3);
+/// Délai de fermeture de la liaison à la sortie de l'application.
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +78,14 @@ enum Link {
     Connected(Active),
 }
 
+/// Flux en cours : son signal d'arrêt et sa tâche de lecture.
+struct StreamEntry {
+    stop: oneshot::Sender<()>,
+    task: JoinHandle<()>,
+}
+
+type StreamRegistry = Arc<Mutex<HashMap<String, StreamEntry>>>;
+
 pub struct AppState {
     profiles: ProfileStore,
     /// Sérialise les lectures-modifications du fichier des profils.
@@ -76,6 +95,10 @@ pub struct AppState {
     /// Dernière empreinte présentée par le serveur de chaque profil, lors
     /// d'une connexion refusée. `trust_host_key` n'accepte que celle-ci.
     presented: Mutex<HashMap<String, String>>,
+    /// Flux en cours. Un flux terminé de lui-même s'en retire.
+    streams: StreamRegistry,
+    /// Sérialise les ouvertures de flux, pour respecter `MAX_STREAMS`.
+    stream_start: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -86,6 +109,8 @@ impl AppState {
             link: tokio::sync::Mutex::new(Link::Idle),
             attempts: AtomicU64::new(0),
             presented: Mutex::new(HashMap::new()),
+            streams: Arc::new(Mutex::new(HashMap::new())),
+            stream_start: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -248,8 +273,10 @@ impl AppState {
         }
     }
 
-    /// Ferme la liaison, ou interrompt une connexion en cours.
+    /// Ferme la liaison, ou interrompt une connexion en cours. Les flux en
+    /// cours sont d'abord arrêtés.
     pub async fn disconnect(&self) {
+        self.stop_all_streams().await;
         let previous = std::mem::replace(&mut *self.link.lock().await, Link::Idle);
         match previous {
             Link::Idle => {}
@@ -269,6 +296,8 @@ impl AppState {
             if let Link::Connected(active) = std::mem::replace(&mut *link, Link::Idle) {
                 close_active(active).await;
             }
+            drop(link);
+            self.stop_all_streams().await;
             return None;
         }
         match &*link {
@@ -289,6 +318,102 @@ impl AppState {
     pub async fn server_info(&self) -> Result<ServerInfo, AppError> {
         let connection = self.connection().await?;
         Ok(ssh::server_info(&connection).await)
+    }
+
+    /// Sortie de l'application : flux arrêtés et liaison fermée, en temps
+    /// limité.
+    pub async fn shutdown(&self) {
+        let _ = tokio::time::timeout(SHUTDOWN_TIMEOUT, self.disconnect()).await;
+    }
+
+    // --- Flux ----------------------------------------------------------------
+
+    /// Lance `command` (enveloppée dans le script de surveillance) et lit sa
+    /// sortie avec `parser`. Renvoie l'identifiant du flux.
+    pub async fn start_stream(
+        &self,
+        command: &str,
+        parser: impl LineParser,
+        sink: EventSink,
+    ) -> Result<String, AppError> {
+        let _start = self.stream_start.lock().await;
+        if self.stream_count() >= MAX_STREAMS {
+            return Err(AppError::invalid_input(format!(
+                "{MAX_STREAMS} flux au maximum : fermez-en un avant d'en ouvrir un autre"
+            )));
+        }
+        let connection = self.connection().await?;
+        let channel = connection
+            .open_stream(
+                &stream::guarded_command(command),
+                Deadline::after(STREAM_OPEN_TIMEOUT),
+            )
+            .await?;
+
+        let id = uuid::Uuid::new_v4().to_string();
+        let (stop, stopped) = oneshot::channel();
+        // Verrou tenu jusqu'à l'insertion : la tâche, qui se retire du
+        // registre à sa fin, ne peut pas le faire avant d'y figurer.
+        let mut streams = lock_streams(&self.streams);
+        let task = {
+            let registry = self.streams.clone();
+            let id = id.clone();
+            tokio::spawn(async move {
+                stream::run(channel, parser, sink, stopped).await;
+                lock_streams(&registry).remove(&id);
+            })
+        };
+        streams.insert(id.clone(), StreamEntry { stop, task });
+        Ok(id)
+    }
+
+    /// Arrête un flux et attend que la commande distante soit arrêtée (3 s
+    /// au plus). Un identifiant inconnu (flux déjà terminé) est ignoré.
+    pub async fn stop_stream(&self, id: &str) {
+        let entry = lock_streams(&self.streams).remove(id);
+        if let Some(entry) = entry {
+            stop_entry(entry).await;
+        }
+    }
+
+    pub fn stream_count(&self) -> usize {
+        lock_streams(&self.streams).len()
+    }
+
+    /// Arrête tous les flux en parallèle.
+    async fn stop_all_streams(&self) {
+        let entries: Vec<StreamEntry> = lock_streams(&self.streams)
+            .drain()
+            .map(|(_, entry)| entry)
+            .collect();
+        let mut stopping = JoinSet::new();
+        for entry in entries {
+            stopping.spawn(stop_entry(entry));
+        }
+        while stopping.join_next().await.is_some() {}
+    }
+}
+
+fn lock_streams(
+    registry: &StreamRegistry,
+) -> std::sync::MutexGuard<'_, HashMap<String, StreamEntry>> {
+    // Un verrou empoisonné ne protège qu'une table : elle reste utilisable.
+    registry
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Demande l'arrêt d'un flux et attend sa tâche ; au-delà du délai, elle est
+/// abandonnée (le script de surveillance termine alors la commande distante
+/// à la fermeture du canal).
+async fn stop_entry(entry: StreamEntry) {
+    let StreamEntry { stop, mut task } = entry;
+    let _ = stop.send(());
+    if tokio::time::timeout(STREAM_STOP_TIMEOUT, &mut task)
+        .await
+        .is_err()
+    {
+        task.abort();
     }
 }
 

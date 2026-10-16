@@ -10,9 +10,10 @@ pub mod secrets;
 pub mod sftp;
 pub mod ssh;
 pub mod state;
+pub mod stream;
 pub mod systemd;
 
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,6 +39,15 @@ pub fn run() {
             commands::systemd::services_list,
             commands::systemd::service_action,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            // Fermeture de l'application : les flux sont arrêtés (aucun
+            // processus ne reste sur le serveur) et la liaison fermée.
+            if let RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<state::AppState>() {
+                    tauri::async_runtime::block_on(state.shutdown());
+                }
+            }
+        });
 }
