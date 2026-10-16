@@ -24,7 +24,7 @@ Chaque jalon doit produire quelque chose d'utilisable.
 
 - [x] Jalon 1 : connexion SSH avec vérification de la clé hôte et passphrase dans le keyring
 - [x] Jalon 2 : lister les services Docker et systemd (lecture seule)
-- [] Jalon 3 : piloter les services (start/stop/restart avec confirmation) et logs en direct
+- [x] Jalon 3 : piloter les services (start/stop/restart avec confirmation) et logs en direct
 - [ ] Jalon 4 : explorateur SFTP
 - [ ] Jalon 5 : scripts personnalisés
 - [ ] Jalon 6 : créer et supprimer des services systemd
@@ -40,3 +40,4 @@ Chaque jalon doit produire quelque chose d'utilisable.
 - Terminal intégré
 - Monitoring
 - Détection immédiate d'une perte de liaison (événement émis par le backend au lieu du polling de 30 s)
+- Glisser/Déposer de dossiers entier dans le gestionnaire
