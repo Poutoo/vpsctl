@@ -404,7 +404,7 @@ impl AppState {
     }
 
     /// Arrête tous les flux en parallèle.
-    async fn stop_all_streams(&self) {
+    pub async fn stop_all_streams(&self) {
         let entries: Vec<StreamEntry> = lock_streams(&self.streams)
             .drain()
             .map(|(_, entry)| entry)

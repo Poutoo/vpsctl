@@ -13,6 +13,7 @@ pub mod state;
 pub mod stream;
 pub mod systemd;
 
+use tauri::webview::PageLoadEvent;
 use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,6 +23,19 @@ pub fn run() {
             let config_dir = app.path().app_config_dir()?;
             app.manage(state::AppState::new(&config_dir));
             Ok(())
+        })
+        // Page (re)chargée : les canaux de l'ancienne page sont morts, mais
+        // leur envoi ne signale pas toujours d'erreur. Leurs flux sont
+        // arrêtés pour ne pas occuper la liaison.
+        .on_page_load(|webview, payload| {
+            if payload.event() == PageLoadEvent::Started {
+                let app = webview.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Some(state) = app.try_state::<state::AppState>() {
+                        state.stop_all_streams().await;
+                    }
+                });
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::connection::list_profiles,

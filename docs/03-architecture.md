@@ -139,7 +139,7 @@ Mise en œuvre (store `services`) :
 
 ### Arrêt des flux
 
-Chaque flux (logs, exécution de script) reçoit un identifiant et est enregistré dans `state.rs` (4 au maximum). Il est arrêté par `logs_stop`, à la déconnexion, à la fermeture de l'application, et de lui-même si l'interface n'écoute plus (envoi vers le `Channel` en échec, après un rechargement de la page).
+Chaque flux (logs, exécution de script) reçoit un identifiant et est enregistré dans `state.rs` (4 au maximum). Il est arrêté par `logs_stop`, à la déconnexion, à la fermeture de l'application, au chargement d'une page (rechargement de l'interface : les `Channel` de l'ancienne page sont morts, sans que leur envoi échoue forcément), et de lui-même si un envoi vers son `Channel` échoue.
 
 Fermer le canal ne suffit pas à terminer le processus distant. Dans OpenSSH (`session.c`), une session sans terminal n'est pas tuée à la fermeture de son canal : sshd ferme seulement ses tubes, et le processus ne meurt qu'à sa prochaine écriture (SIGPIPE). `docker logs -f` sur un conteneur silencieux ou `journalctl -f` sur un service calme survivraient indéfiniment. Un terminal (PTY) réglerait la question par SIGHUP, mais il fusionne stdout et stderr : exclu.
 
