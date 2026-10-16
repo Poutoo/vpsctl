@@ -21,7 +21,14 @@ export type AppIconName =
   | "arrow-down"
   | "arrow-right"
   | "success"
-  | "failure";
+  | "failure"
+  | "folder"
+  | "file"
+  | "link"
+  | "special"
+  | "more"
+  | "download"
+  | "upload";
 
 defineProps<{
   name: AppIconName;
@@ -121,6 +128,35 @@ defineProps<{
     <g v-else-if="name === 'failure'" stroke-width="1">
       <rect x="1.5" y="1.5" width="13" height="13" />
       <path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke-width="1.5" />
+    </g>
+    <!-- Explorateur : genres d'entrée et actions. -->
+    <path v-else-if="name === 'folder'" d="M2 4h4.5l1.5 1.5H14V13H2z" />
+    <g v-else-if="name === 'file'">
+      <path d="M4 2h5l3 3v9H4z" />
+      <path d="M9 2v3h3" />
+    </g>
+    <g v-else-if="name === 'link'">
+      <path d="M6.5 9.5l3-3" />
+      <path d="M7.5 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1" />
+      <path d="M8.5 11.5l-1 1A2.5 2.5 0 0 1 4 9l1-1" />
+    </g>
+    <g v-else-if="name === 'special'">
+      <rect x="3" y="3" width="10" height="10" />
+      <circle cx="8" cy="8" r="2" />
+    </g>
+    <g v-else-if="name === 'more'" fill="currentColor" stroke="none">
+      <circle cx="3.5" cy="8" r="1.1" />
+      <circle cx="8" cy="8" r="1.1" />
+      <circle cx="12.5" cy="8" r="1.1" />
+    </g>
+    <g v-else-if="name === 'download'">
+      <path d="M8 2.5v8" />
+      <path d="M4.5 7l3.5 3.5L11.5 7" />
+      <path d="M3 13.5h10" />
+    </g>
+    <g v-else-if="name === 'upload'">
+      <path d="M8 13V3" />
+      <path d="M4 7l4-4 4 4" />
     </g>
     <!-- Signal perdu : antenne barrée. -->
     <g v-else>

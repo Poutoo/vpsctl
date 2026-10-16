@@ -10,6 +10,7 @@ import { formatClock, useElapsed } from "../../composables/useElapsed";
 import { NARROW_QUERY, useMediaQuery } from "../../composables/useMediaQuery";
 import { SECTIONS, sectionOf } from "../../navigation";
 import { useConnectionStore } from "../../stores/connection";
+import { useFilesStore } from "../../stores/files";
 import { useProfilesStore } from "../../stores/profiles";
 import AppButton from "../ui/AppButton.vue";
 import AppIcon from "../ui/AppIcon.vue";
@@ -18,6 +19,7 @@ import AppTooltip from "../ui/AppTooltip.vue";
 const route = useRoute();
 const connection = useConnectionStore();
 const profiles = useProfilesStore();
+const files = useFilesStore();
 const narrow = useMediaQuery(NARROW_QUERY);
 
 const profile = computed(() => profiles.byId(connection.profileId));
@@ -46,7 +48,11 @@ async function disconnect() {
       <li v-for="section in SECTIONS" :key="section.route">
         <AppTooltip :text="section.label" side="right" :disabled="!narrow">
           <RouterLink
-            :to="{ name: section.route }"
+            :to="
+              section.route === 'files'
+                ? files.entryRoute
+                : { name: section.route }
+            "
             class="item"
             :class="{ active: active === section.route }"
             :aria-current="active === section.route ? 'page' : undefined"

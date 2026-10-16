@@ -30,7 +30,8 @@ export const router = createRouter({
       path: "/files/:path*",
       name: "files",
       component: () => import("../views/FilesView.vue"),
-      meta: { requiresConnection: true },
+      // Marges et défilement gérés par la vue (liste virtualisée).
+      meta: { requiresConnection: true, fullBleed: true },
     },
     {
       path: "/scripts",
