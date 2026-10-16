@@ -113,7 +113,12 @@ Si le préfixe n'était pas interprété : vérifier que l'unité ne contient ni
 
 - [ ] Chaque ligne a une colonne Actions : Démarrer, Arrêter, Redémarrer, Logs, puis, isolée par un séparateur, Supprimer (icône corbeille rouge).
 - [ ] Chaque icône a une infobulle au survol **et** au focus clavier (Tab). Une action indisponible est grisée et son infobulle en donne la raison (« Démarrer vpsctl-t-run : déjà en marche »). Elle reste focalisable mais un clic n'a aucun effet.
-- [ ] Lecteur d'écran (Narrateur ou Orca), ou outils de développement : chaque bouton a un `aria-label` avec l'action et le nom du conteneur.
+- [ ] Lecteur d'écran (Narrateur ou Orca), ou outils de développement : chaque bouton a un `aria-label` avec l'action et le nom du conteneur. Un bouton indisponible porte `aria-disabled="true"` et est annoncé comme indisponible.
+- [ ] Bouton indisponible (Démarrer sur `vpsctl-t-run`, Supprimer sur `vpsctl-t-run`), avec l'onglet Réseau des outils de développement ouvert :
+  - au survol, le curseur est le symbole d'interdiction, **pas** la main, et le fond ne change pas ;
+  - un clic ne fait rien : pas de fenêtre GO / NO GO, aucun appel `docker_action` ni `docker_remove` ;
+  - le focus clavier (Tab) l'atteint et affiche son infobulle ; Entrée puis Espace ne font rien, aucun appel.
+- [ ] Bouton en cours (pendant l'arrêt de `vpsctl-t-run`, le bouton Arrêter avec son chrono) : curseur d'attente, pas la main ; clic, Entrée et Espace ne relancent pas l'action (un seul `docker_action` dans l'onglet Réseau).
 - [ ] `vpsctl-t-run` (en marche) : Démarrer et Supprimer indisponibles ; Arrêter, Redémarrer, Logs disponibles.
 - [ ] `vpsctl-t-rm` (sorti) : Arrêter indisponible ; Démarrer, Redémarrer, Logs, Supprimer disponibles.
 - [ ] **Démarrer** `vpsctl-t-crash` : aucune confirmation. La ligne passe aussitôt en « Démarrage · T+00 » (demi-disque), le bouton Démarrer affiche son chrono, les autres actions sauf Logs sont indisponibles.
@@ -127,6 +132,7 @@ Si le préfixe n'était pas interprété : vérifier que l'unité ne contient ni
 
 - [ ] Colonne Actions : Démarrer, Arrêter, Redémarrer, Logs. Pas de suppression (jalon 6).
 - [ ] `vpsctl-t-masked.service` (« masqué ») et `vpsctl-t\x2descaped.service` (« non pilotable ») n'ont **que** le bouton Logs. Pour l'unité masquée, Logs fonctionne ; pour le nom échappé, Logs est indisponible (« nom hors du format accepté »).
+- [ ] Logs indisponible de `vpsctl-t\x2descaped.service` et Démarrer indisponible d'un service nominal : curseur d'interdiction, pas la main ; clic, Entrée et Espace ne font rien (aucun `logs_start` ni `service_action` dans l'onglet Réseau).
 - [ ] **Arrêter** `vpsctl-t-svc.service` : GO / NO GO « Arrêter le service ? » avec ses deux conséquences ; GO : « Arrêt · T+… » environ 2,5 s, puis « Arrêté » et « Service arrêté ».
 - [ ] **Redémarrer** `vpsctl-t-svc.service` : GO / NO GO, puis « Nominal » et « Service redémarré ».
 - [ ] **Démarrer** `vpsctl-t-slow.service` : direct. La commande rend la main tout de suite (`--no-block`) : « Démarrage · T+… » pendant 2,5 s, puis la ligne reste « En transition » (état réel `activating`), **sans notification**. Elle passe « Nominal » à un rafraîchissement suivant, environ 8 s après le clic.
