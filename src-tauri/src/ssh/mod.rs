@@ -11,6 +11,7 @@
 //! authentification et `connect` échoue (`UnknownHostKey` / `HostKeyMismatch`).
 
 pub mod host_key;
+pub mod shell;
 
 use std::future::Future;
 use std::path::{Path, PathBuf};

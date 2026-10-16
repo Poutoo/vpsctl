@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::AppError;
-use crate::run_state::RunState;
+use crate::run_state::{Action, RunState};
 use crate::sftp::{self, DirEntry, EntryKind};
-use crate::ssh::{self, Connection, Deadline};
+use crate::ssh::{self, shell, Connection, Deadline};
 
 const LIST_COMMAND: &str =
     "systemctl --user list-units --type=service --all --output=json --no-pager";
@@ -235,6 +235,30 @@ pub fn is_valid_unit_name(unit: &str) -> bool {
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'@' | b'.' | b'_' | b'-'))
     })
+}
+
+/// Le nom validé, à échapper avant de l'insérer dans une commande.
+pub(crate) fn checked_unit(unit: &str) -> Result<&str, AppError> {
+    if is_valid_unit_name(unit) {
+        Ok(unit)
+    } else {
+        Err(AppError::invalid_input(format!(
+            "nom de service invalide : {unit:?}"
+        )))
+    }
+}
+
+/// `systemctl --user --no-block start|stop|restart -- '<unit>'`.
+/// `--no-block` : la commande rend la main dès que la tâche est mise en file,
+/// l'état réel est vérifié ensuite par l'interface. `--` : un nom autorisé
+/// peut commencer par `-`.
+pub fn action_command(unit: &str, action: Action) -> Result<String, AppError> {
+    let unit = checked_unit(unit)?;
+    Ok(format!(
+        "systemctl --user --no-block {} -- {}",
+        action.verb(),
+        shell::quote(unit)
+    ))
 }
 
 #[cfg(test)]
@@ -543,6 +567,62 @@ mod tests {
         ] {
             assert!(!is_valid_unit_name(invalid), "{invalid}");
         }
+    }
+
+    /// Valeurs hostiles qui ne doivent jamais atteindre une commande.
+    const HOSTILE: &[&str] = &[
+        "x; rm -rf ~",
+        "x; rm -rf ~.service",
+        "$(rm -rf ~).service",
+        "`id`.service",
+        "'; rm -rf ~; '.service",
+        "\"; rm -rf ~; \".service",
+        "a\nb.service",
+        "bot.service\nrm -rf ~",
+        "bot*.service",
+        "bot?.service",
+        "[ab].service",
+        "a b.service",
+        "~/x.service",
+        "../x.service",
+        "",
+    ];
+
+    #[test]
+    fn hostile_unit_names_are_refused() {
+        for hostile in HOSTILE {
+            assert!(!is_valid_unit_name(hostile), "{hostile:?}");
+            for action in [Action::Start, Action::Stop, Action::Restart] {
+                assert!(
+                    matches!(
+                        action_command(hostile, action),
+                        Err(AppError::InvalidInput { .. })
+                    ),
+                    "{hostile:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn action_commands_are_non_blocking_and_quoted() {
+        assert_eq!(
+            action_command("bot@1.service", Action::Start).unwrap(),
+            "systemctl --user --no-block start -- 'bot@1.service'"
+        );
+        assert_eq!(
+            action_command("api.service", Action::Stop).unwrap(),
+            "systemctl --user --no-block stop -- 'api.service'"
+        );
+        assert_eq!(
+            action_command("api.service", Action::Restart).unwrap(),
+            "systemctl --user --no-block restart -- 'api.service'"
+        );
+        // Un nom qui commence par « - » reste un argument, pas une option.
+        assert_eq!(
+            action_command("-x.service", Action::Start).unwrap(),
+            "systemctl --user --no-block start -- '-x.service'"
+        );
     }
 
     #[test]

@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::error::AppError;
-use crate::run_state::RunState;
-use crate::ssh::{Connection, Deadline, ExecOutput};
+use crate::run_state::{Action, RunState};
+use crate::ssh::{shell, Connection, Deadline, ExecOutput};
 
 /// `--no-trunc` : ID complet, utilisé pour les actions.
 const LIST_COMMAND: &str = "docker ps -a --no-trunc --format '{{json .}}'";
@@ -136,6 +136,37 @@ fn parse_ps_line(line: &str) -> Option<Container> {
 /// ID de conteneur : hexadécimal uniquement.
 pub fn is_container_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// ID complet, seul accepté pour une action ou un flux de logs : exactement
+/// 64 caractères hexadécimaux minuscules, comme les donne `docker ps --no-trunc`.
+pub fn is_full_container_id(id: &str) -> bool {
+    id.len() == 64 && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// L'ID validé, à échapper avant de l'insérer dans une commande.
+fn checked_id(id: &str) -> Result<&str, AppError> {
+    if is_full_container_id(id) {
+        Ok(id)
+    } else {
+        Err(AppError::invalid_input(
+            "identifiant de conteneur invalide : 64 caractères hexadécimaux attendus",
+        ))
+    }
+}
+
+/// `docker start|stop|restart '<id>'`. Pas de `-t` : le délai d'arrêt propre
+/// au conteneur est respecté.
+pub fn action_command(id: &str, action: Action) -> Result<String, AppError> {
+    let id = checked_id(id)?;
+    Ok(format!("docker {} {}", action.verb(), shell::quote(id)))
+}
+
+/// `docker rm '<id>'` : jamais `-f` (un conteneur en marche est refusé) ni
+/// `-v` (les volumes sont conservés).
+pub fn remove_command(id: &str) -> Result<String, AppError> {
+    let id = checked_id(id)?;
+    Ok(format!("docker rm {}", shell::quote(id)))
 }
 
 /// Premier nom qui n'est pas un alias `--link` (`autre/alias`). Avec
@@ -388,6 +419,80 @@ mod tests {
         assert!(!is_container_id(""));
         assert!(!is_container_id("web-nginx-1"));
         assert!(!is_container_id(&format!("{ID_WEB}0")));
+    }
+
+    /// Valeurs hostiles qui ne doivent jamais atteindre une commande.
+    const HOSTILE: &[&str] = &[
+        "x; rm -rf ~",
+        "$(rm -rf ~)",
+        "`id`",
+        "'; rm -rf ~; '",
+        "\"; rm -rf ~; \"",
+        "abc\nrm -rf ~",
+        "-f",
+        "web-nginx-1",
+        "",
+    ];
+
+    #[test]
+    fn full_container_ids_are_64_lowercase_hex() {
+        assert!(is_full_container_id(ID_WEB));
+        assert!(!is_full_container_id("3f4e8a1c9b2d"));
+        assert!(!is_full_container_id(&ID_WEB.to_uppercase()));
+        assert!(!is_full_container_id(&format!("{ID_WEB}0")));
+        assert!(!is_full_container_id(&format!("{}\n", &ID_WEB[..63])));
+        assert!(!is_full_container_id(&format!("{}g", &ID_WEB[..63])));
+        for hostile in HOSTILE {
+            assert!(!is_full_container_id(hostile), "{hostile:?}");
+        }
+    }
+
+    #[test]
+    fn action_commands_quote_the_validated_id() {
+        let quoted = format!("'{ID_WEB}'");
+        assert_eq!(
+            action_command(ID_WEB, Action::Start).unwrap(),
+            format!("docker start {quoted}")
+        );
+        assert_eq!(
+            action_command(ID_WEB, Action::Stop).unwrap(),
+            format!("docker stop {quoted}")
+        );
+        assert_eq!(
+            action_command(ID_WEB, Action::Restart).unwrap(),
+            format!("docker restart {quoted}")
+        );
+        assert_eq!(
+            remove_command(ID_WEB).unwrap(),
+            format!("docker rm {quoted}")
+        );
+    }
+
+    #[test]
+    fn hostile_ids_are_refused_before_any_command() {
+        let shortened = &ID_WEB[..12];
+        for hostile in HOSTILE.iter().copied().chain([shortened]) {
+            for action in [Action::Start, Action::Stop, Action::Restart] {
+                assert!(
+                    matches!(
+                        action_command(hostile, action),
+                        Err(AppError::InvalidInput { .. })
+                    ),
+                    "{hostile:?}"
+                );
+            }
+            assert!(
+                matches!(remove_command(hostile), Err(AppError::InvalidInput { .. })),
+                "{hostile:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn remove_never_forces_nor_deletes_volumes() {
+        let command = remove_command(ID_WEB).unwrap();
+        assert!(!command.contains(" -f") && !command.contains("--force"));
+        assert!(!command.contains(" -v") && !command.contains("--volumes"));
     }
 
     #[test]
