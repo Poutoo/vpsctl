@@ -19,6 +19,10 @@ use tauri::{Manager, RunEvent};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Fenêtres de sélection de fichiers (envoi, téléchargement) et
+        // « Afficher » dans l'explorateur local.
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             app.manage(state::AppState::new(&config_dir));
