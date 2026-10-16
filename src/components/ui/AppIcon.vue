@@ -13,7 +13,15 @@ export type AppIconName =
   | "refresh"
   | "signal"
   | "dish"
-  | "signal-lost";
+  | "signal-lost"
+  | "play"
+  | "stop"
+  | "logs"
+  | "trash"
+  | "arrow-down"
+  | "arrow-right"
+  | "success"
+  | "failure";
 
 defineProps<{
   name: AppIconName;
@@ -73,6 +81,46 @@ defineProps<{
       <path d="M6.2 9.8l4.3-4.3" />
       <circle cx="11.2" cy="4.8" r="1" />
       <path d="M5 13.5h4" />
+    </g>
+    <!-- Actions sur un conteneur ou un service. -->
+    <path
+      v-else-if="name === 'play'"
+      d="M5 3.5l7.5 4.5L5 12.5z"
+      fill="currentColor"
+    />
+    <rect
+      v-else-if="name === 'stop'"
+      x="4"
+      y="4"
+      width="8"
+      height="8"
+      fill="currentColor"
+      stroke="none"
+    />
+    <!-- Télémétrie : lignes de journal. -->
+    <path v-else-if="name === 'logs'" d="M3 4.5h10M3 8h10M3 11.5h6" />
+    <g v-else-if="name === 'trash'">
+      <path d="M2.5 4.5h11" />
+      <path d="M6 4.5V3h4v1.5" />
+      <path d="M4 4.5l.7 8.5h6.6l.7-8.5" />
+      <path d="M6.7 7v3.5M9.3 7v3.5" />
+    </g>
+    <g v-else-if="name === 'arrow-down'">
+      <path d="M8 3v10" />
+      <path d="M4 9l4 4 4-4" />
+    </g>
+    <g v-else-if="name === 'arrow-right'">
+      <path d="M3 8h10" />
+      <path d="M9 4l4 4-4 4" />
+    </g>
+    <!-- Notifications : succès dans un cercle, erreur dans un carré. -->
+    <g v-else-if="name === 'success'" stroke-width="1">
+      <circle cx="8" cy="8" r="7" />
+      <path d="M5 8.2l2 2 4-4.4" stroke-width="1.5" />
+    </g>
+    <g v-else-if="name === 'failure'" stroke-width="1">
+      <rect x="1.5" y="1.5" width="13" height="13" />
+      <path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke-width="1.5" />
     </g>
     <!-- Signal perdu : antenne barrée. -->
     <g v-else>

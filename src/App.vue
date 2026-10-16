@@ -7,6 +7,7 @@ import BackgroundLayer from "./components/layout/BackgroundLayer.vue";
 import StatusBar from "./components/layout/StatusBar.vue";
 import TitleBar from "./components/layout/TitleBar.vue";
 import ConfirmDialog from "./components/ui/ConfirmDialog.vue";
+import ToastHost from "./components/ui/ToastHost.vue";
 import { useConnectionStore } from "./stores/connection";
 import { useProfilesStore } from "./stores/profiles";
 
@@ -42,6 +43,7 @@ watch(
       <StatusBar />
     </div>
     <ConfirmDialog />
+    <ToastHost />
   </TooltipProvider>
 </template>
 

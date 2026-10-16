@@ -80,8 +80,7 @@
   /* titres uniquement */
   --font-ui: "IBM Plex Sans", system-ui, sans-serif;
   /* interface */
-  --font-mono:
-    "IBM Plex Mono", ui-monospace, monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   /* données techniques */
 
   --fs-xs: 11px;
@@ -122,6 +121,15 @@
   --border-width: 1px;
 
   --row-height: 38px;
+  --icon-button-size: 24px;
+  /* bouton d'action en icône dans une ligne de tableau */
+  --console-line-height: 18px;
+  /* ligne de la console de logs (liste virtualisée) */
+  --console-dock-height: 300px;
+  /* panneau de console ancré en bas du tableau de bord, hauteur fixe */
+  --toast-width: 340px;
+  --switch-width: 32px;
+  --switch-height: 18px;
 
   --titlebar-height: 32px;
   --titlebar-button-width: 46px;
