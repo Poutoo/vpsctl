@@ -54,6 +54,11 @@ pub fn run() {
             commands::systemd::service_action,
             commands::logs::logs_start,
             commands::logs::logs_stop,
+            commands::files::home_dir,
+            commands::files::list_dir,
+            commands::files::create_file,
+            commands::files::create_dir,
+            commands::files::rename,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

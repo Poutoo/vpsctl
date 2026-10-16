@@ -2,6 +2,12 @@
 //! lister, créer, renommer, supprimer, envoyer, télécharger.
 //! Aucune commande shell.
 //!
+//! - `path` : fonctions pures sur les chemins et les noms ;
+//! - `fs` : trait `RemoteFs` et son implémentation sur la session SFTP ;
+//! - `ops` : lister, créer, renommer, supprimer ;
+//! - `walk` : parcours d'une arborescence sans suivre les liens ;
+//! - `transfer` : envoi et téléchargement par blocs.
+//!
 //! Toutes les opérations passent par la session partagée de la liaison
 //! (`Connection::sftp`). Une erreur de transport l'invalide : elle est
 //! recréée et l'opération retentée une seule fois. Une erreur de statut
@@ -13,13 +19,21 @@ use std::sync::Arc;
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::{FileType, StatusCode};
+use serde::Serialize;
+use ts_rs::TS;
 
 use crate::error::{AppError, FileSide};
 use crate::ssh::Connection;
 
+pub mod fs;
+pub mod ops;
 pub mod path;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Genre d'un élément, d'après `lstat` : un lien symbolique n'est pas suivi.
+/// `Other` : socket, fifo, périphérique.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, rename = "FileKind")]
 pub enum EntryKind {
     File,
     Dir,
@@ -45,10 +59,21 @@ pub struct DirEntry {
     pub kind: EntryKind,
 }
 
-/// Résultat d'une opération SFTP, avant traduction en `AppError`.
+/// Résultat d'une opération SFTP, avant traduction en `AppError`. Un échec
+/// générique du serveur (élément existant, disque plein…) arrive en
+/// `App(Io)`, que l'appelant peut préciser.
 enum Failure {
     NotFound,
     App(AppError),
+}
+
+impl Failure {
+    fn into_error(self, path: &str) -> AppError {
+        match self {
+            Self::NotFound => AppError::not_found(path, FileSide::Remote),
+            Self::App(error) => error,
+        }
+    }
 }
 
 /// Lit le contenu d'un dossier (sans `.` ni `..`). `Ok(None)` s'il n'existe
