@@ -21,7 +21,7 @@ use zeroize::Zeroizing;
 
 use crate::config::{Profile, ProfileStore};
 use crate::error::AppError;
-use crate::scripts::{Script, ScriptStore};
+use crate::scripts::{self, LastRunRecorder, Script, ScriptParser, ScriptStore};
 use crate::secrets;
 use crate::sftp::fs::SftpFs;
 use crate::sftp::transfer::{self, CancelSignal, ProgressSink};
@@ -90,6 +90,9 @@ enum Link {
 struct StreamEntry {
     stop: oneshot::Sender<()>,
     task: JoinHandle<()>,
+    /// Exécution d'un script : son identifiant (un script ne tourne qu'une
+    /// fois à la fois).
+    script: Option<String>,
 }
 
 type StreamRegistry = Arc<Mutex<HashMap<String, StreamEntry>>>;
@@ -368,30 +371,68 @@ impl AppState {
         match source {
             LogSource::Docker(id) => {
                 let command = docker::logs_command(id, tail)?;
-                self.start_stream(&command, docker::DockerLogParser, sink)
+                self.start_stream(&command, docker::DockerLogParser, sink, None)
                     .await
             }
             LogSource::Systemd(unit) => {
                 let command = systemd::logs_command(unit, tail)?;
-                self.start_stream(&command, systemd::JournalParser, sink)
+                self.start_stream(&command, systemd::JournalParser, sink, None)
                     .await
             }
         }
     }
 
+    /// Exécute un script dans le shell de connexion de l'utilisateur, avec
+    /// sa commande enregistrée à cet instant. `lastRun` est enregistré à la
+    /// fin de l'exécution (voir `LastRunRecorder`). Renvoie l'identifiant
+    /// du flux.
+    pub async fn run_script(&self, id: &str, sink: EventSink) -> Result<String, AppError> {
+        let script = self.scripts.get(id)?;
+        let command = scripts::run_command(&script.command);
+        let recorder = LastRunRecorder::new(self.scripts.clone(), script.id.clone(), now_millis());
+        let result = self
+            .start_stream(
+                &command,
+                ScriptParser::new(),
+                recorder.wrap(sink),
+                Some(script.id),
+            )
+            .await;
+        if result.is_err() {
+            recorder.disarm();
+        }
+        result
+    }
+
     /// Lance `command` (enveloppée dans le script de surveillance) et lit sa
-    /// sortie avec `parser`. Renvoie l'identifiant du flux.
+    /// sortie avec `parser`. `script` : identifiant du script exécuté.
+    /// Renvoie l'identifiant du flux.
     pub async fn start_stream(
         &self,
         command: &str,
         parser: impl LineParser,
         sink: EventSink,
+        script: Option<String>,
     ) -> Result<String, AppError> {
         let _start = self.stream_start.lock().await;
+        if let Some(script_id) = &script {
+            let running = lock_streams(&self.streams)
+                .values()
+                .any(|entry| entry.script.as_ref() == Some(script_id));
+            if running {
+                return Err(AppError::invalid_input(
+                    "ce script est déjà en cours d'exécution : attendez sa fin ou interrompez-le",
+                ));
+            }
+        }
         if self.stream_count() >= MAX_STREAMS {
-            return Err(AppError::invalid_input(format!(
-                "{MAX_STREAMS} flux au maximum : fermez-en un avant d'en ouvrir un autre"
-            )));
+            return Err(AppError::invalid_input(if script.is_some() {
+                format!(
+                    "{MAX_STREAMS} flux déjà ouverts : fermez un onglet de télémétrie pour lancer ce script"
+                )
+            } else {
+                format!("{MAX_STREAMS} flux au maximum : fermez-en un avant d'en ouvrir un autre")
+            }));
         }
         let connection = self.connection().await?;
         let channel = connection
@@ -414,7 +455,7 @@ impl AppState {
                 lock_streams(&registry).remove(&id);
             })
         };
-        streams.insert(id.clone(), StreamEntry { stop, task });
+        streams.insert(id.clone(), StreamEntry { stop, task, script });
         Ok(id)
     }
 
@@ -480,7 +521,14 @@ impl AppState {
                 lock_streams(&registry).remove(&id);
             })
         };
-        transfers.insert(id.clone(), StreamEntry { stop, task });
+        transfers.insert(
+            id.clone(),
+            StreamEntry {
+                stop,
+                task,
+                script: None,
+            },
+        );
         id
     }
 
@@ -525,7 +573,7 @@ fn lock_streams(
 /// du délai, elle est abandonnée (pour un flux, le script de surveillance
 /// termine alors la commande distante à la fermeture du canal).
 async fn stop_entry(entry: StreamEntry, timeout: Duration) {
-    let StreamEntry { stop, mut task } = entry;
+    let StreamEntry { stop, mut task, .. } = entry;
     let _ = stop.send(());
     if tokio::time::timeout(timeout, &mut task).await.is_err() {
         task.abort();

@@ -1,6 +1,7 @@
 //! Scripts personnalisés : stockage local en JSON (`scripts.json`, écriture
-//! atomique fournie par `config`), validation et enregistrement de la
-//! dernière exécution.
+//! atomique fournie par `config`), validation, commande d'exécution et
+//! enregistrement de la dernière exécution. L'exécution elle-même passe par
+//! le registre des flux de `state` (même `LogEvent` que les logs).
 //!
 //! Règles d'enregistrement d'un script :
 //! - l'identifiant est attribué par le backend à la création ;
@@ -11,13 +12,17 @@
 //! Ce module ne dépend pas de Tauri.
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::config::{self, has_control_chars};
 use crate::error::AppError;
+use crate::ssh::shell;
+use crate::stream::{self, EventSink, LineParser, LogEvent, LogLine, Raw};
 
 const FILE_NAME: &str = "scripts.json";
 const FILE_VERSION: u32 = 1;
@@ -175,6 +180,121 @@ fn apply_last_run(scripts: &mut [Script], id: &str, run: LastRun) -> bool {
             true
         }
         None => false,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Exécution
+// ---------------------------------------------------------------------------
+
+/// Commande distante d'un script : le shell de connexion de l'utilisateur
+/// (`SHELL`, toujours défini par sshd), qui charge `/etc/profile` et
+/// `~/.profile`, reçoit la commande en un seul argument échappé. Plusieurs
+/// lignes, `$`, `"`, `;` et accents arrivent intacts.
+///
+/// `~/.bashrc` n'est pas chargé utilement : sous Ubuntu, il s'interrompt en
+/// mode non interactif (nvm, alias… indisponibles).
+///
+/// À envelopper dans `stream::guarded_command` : c'est une commande simple.
+pub fn run_command(command: &str) -> String {
+    format!("\"${{SHELL:-/bin/sh}}\" -l -c {}", shell::quote(command))
+}
+
+/// Lignes de la sortie d'un script, horodatées à leur réception (le
+/// programme n'en fournit pas).
+pub struct ScriptParser {
+    clock: fn() -> String,
+}
+
+impl ScriptParser {
+    pub fn new() -> Self {
+        Self { clock: now_iso }
+    }
+}
+
+impl Default for ScriptParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LineParser for ScriptParser {
+    fn parse(&mut self, raw: Raw, line: String, out: &mut Vec<LogLine>) {
+        out.push(LogLine {
+            timestamp: Some((self.clock)()),
+            ..LogLine::plain(raw, line)
+        });
+    }
+}
+
+/// Heure courante en ISO 8601 UTC, à la milliseconde.
+fn now_iso() -> String {
+    let micros = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| u64::try_from(d.as_micros()).unwrap_or(u64::MAX))
+        .unwrap_or(0);
+    stream::iso_from_micros(micros)
+}
+
+/// Enregistre `lastRun` une seule fois par exécution :
+/// - à l'événement final, **avant** de le transmettre (l'interface relit la
+///   liste à la réception de `ended` et doit y trouver la nouvelle valeur) :
+///   `ended` donne le code de sortie, `error` (liaison perdue) `null` ;
+/// - sinon à la destruction, avec `null` : arrêt demandé, interface
+///   disparue, tâche abandonnée.
+pub struct LastRunRecorder {
+    store: Arc<ScriptStore>,
+    id: String,
+    at: u64,
+    done: AtomicBool,
+}
+
+impl LastRunRecorder {
+    pub fn new(store: Arc<ScriptStore>, id: String, at: u64) -> Arc<Self> {
+        Arc::new(Self {
+            store,
+            id,
+            at,
+            done: AtomicBool::new(false),
+        })
+    }
+
+    fn record(&self, exit_code: Option<i32>) {
+        if self.done.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        // Échec d'écriture : l'exécution n'en dépend pas, rien à signaler.
+        let _ = self.store.record_last_run(
+            &self.id,
+            LastRun {
+                at: self.at,
+                exit_code,
+            },
+        );
+    }
+
+    /// Le script n'a pas été lancé (ouverture refusée) : rien n'est enregistré.
+    pub fn disarm(&self) {
+        self.done.store(true, Ordering::SeqCst);
+    }
+
+    /// Enveloppe `sink` pour enregistrer `lastRun` à l'événement final.
+    pub fn wrap(self: &Arc<Self>, sink: EventSink) -> EventSink {
+        let recorder = self.clone();
+        Arc::new(move |event: LogEvent| {
+            match &event {
+                LogEvent::Ended { exit_code } => recorder.record(*exit_code),
+                LogEvent::Error { .. } => recorder.record(None),
+                LogEvent::Lines { .. } => {}
+            }
+            sink(event)
+        })
+    }
+}
+
+impl Drop for LastRunRecorder {
+    fn drop(&mut self) {
+        self.record(None);
     }
 }
 
@@ -462,6 +582,247 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.command, "pg_dump app\nexit 0");
         assert!(!parsed.require_confirmation);
+    }
+
+    // --- Commande d'exécution ---------------------------------------------
+
+    /// Mot unique tel que le shell le lit : segments entre apostrophes
+    /// (littéraux) et caractères échappés par `\` hors apostrophes.
+    fn shell_word(word: &str) -> String {
+        let mut out = String::new();
+        let mut chars = word.chars();
+        let mut quoted = false;
+        while let Some(c) = chars.next() {
+            match (quoted, c) {
+                (_, '\'') => quoted = !quoted,
+                (false, '\\') => out.push(chars.next().expect("échappement final")),
+                (false, c) => panic!("caractère hors apostrophes : {c:?}"),
+                (true, c) => out.push(c),
+            }
+        }
+        assert!(!quoted, "apostrophe non refermée");
+        out
+    }
+
+    const TRICKY: &str = "cd ~/app && git pull\n\
+        echo \"fin : $(date) `id` $HOME\" ; echo 'cité' \\\n  suite\n\
+        printf '%s\\n' \"l'apostrophe\" 'é ü — ; && | > <'\n\
+        exit 3";
+
+    #[test]
+    fn run_command_uses_the_login_shell() {
+        assert_eq!(
+            run_command("~/scripts/deploy.sh"),
+            "\"${SHELL:-/bin/sh}\" -l -c '~/scripts/deploy.sh'"
+        );
+    }
+
+    #[test]
+    fn multiline_command_is_passed_intact_as_a_single_argument() {
+        let built = run_command(TRICKY);
+        let argument = built
+            .strip_prefix("\"${SHELL:-/bin/sh}\" -l -c ")
+            .expect("préfixe du shell de connexion");
+        // Un seul mot : aucun espace, retour à la ligne ou métacaractère
+        // n'est interprété hors des apostrophes.
+        assert_eq!(shell_word(argument), TRICKY);
+    }
+
+    #[test]
+    fn script_lines_are_stamped_on_reception() {
+        let mut parser = ScriptParser {
+            clock: || "2026-10-17T09:13:46.900Z".to_owned(),
+        };
+        let mut out = Vec::new();
+        parser.parse(Raw::Stdout, "==> déploiement".into(), &mut out);
+        parser.parse(Raw::Stderr, "layer cache miss".into(), &mut out);
+        let stamp = Some("2026-10-17T09:13:46.900Z".to_owned());
+        assert_eq!(
+            out,
+            vec![
+                LogLine {
+                    timestamp: stamp.clone(),
+                    ..LogLine::plain(Raw::Stdout, "==> déploiement".into())
+                },
+                LogLine {
+                    timestamp: stamp,
+                    ..LogLine::plain(Raw::Stderr, "layer cache miss".into())
+                },
+            ]
+        );
+        assert!(stream::normalize_utc_timestamp(&now_iso()).is_some());
+    }
+
+    // --- Enregistrement de lastRun ------------------------------------------
+
+    /// Magasin sur disque avec un script, et son identifiant.
+    fn store_with_script(dir: &TempDir) -> (Arc<ScriptStore>, String) {
+        let store = Arc::new(ScriptStore::new(&dir.0));
+        let id = store.save(script("")).unwrap().id;
+        (store, id)
+    }
+
+    type Seen = Arc<Mutex<Vec<Option<LastRun>>>>;
+
+    /// Destinataire qui relève, à chaque événement, la valeur enregistrée.
+    fn spy(store: &Arc<ScriptStore>, id: &str) -> (EventSink, Seen) {
+        let seen: Seen = Arc::new(Mutex::new(Vec::new()));
+        let sink: EventSink = {
+            let (store, id, seen) = (store.clone(), id.to_owned(), seen.clone());
+            Arc::new(move |_| {
+                seen.lock().unwrap().push(store.get(&id).unwrap().last_run);
+                true
+            })
+        };
+        (sink, seen)
+    }
+
+    const AT: u64 = 1_760_000_000_000;
+
+    #[test]
+    fn natural_end_is_recorded_before_the_event_is_forwarded() {
+        let dir = TempDir::new();
+        let (store, id) = store_with_script(&dir);
+        let (sink, seen) = spy(&store, &id);
+        let recorder = LastRunRecorder::new(store.clone(), id.clone(), AT);
+        let sink = recorder.wrap(sink);
+        drop(recorder);
+
+        sink(LogEvent::Lines {
+            lines: Vec::new(),
+            dropped: 0,
+        });
+        sink(LogEvent::Ended { exit_code: Some(1) });
+        drop(sink);
+
+        let recorded = Some(LastRun {
+            at: AT,
+            exit_code: Some(1),
+        });
+        // Rien pendant l'exécution ; la valeur est déjà écrite quand
+        // l'interface reçoit `ended`.
+        assert_eq!(*seen.lock().unwrap(), vec![None, recorded]);
+        // La destruction ne la remplace pas.
+        assert_eq!(store.get(&id).unwrap().last_run, recorded);
+    }
+
+    #[test]
+    fn lost_link_records_a_null_code() {
+        let dir = TempDir::new();
+        let (store, id) = store_with_script(&dir);
+        let (sink, seen) = spy(&store, &id);
+        let recorder = LastRunRecorder::new(store.clone(), id.clone(), AT);
+        recorder.wrap(sink)(LogEvent::Error {
+            message: "liaison perdue".into(),
+        });
+        let interrupted = Some(LastRun {
+            at: AT,
+            exit_code: None,
+        });
+        assert_eq!(*seen.lock().unwrap(), vec![interrupted]);
+    }
+
+    #[test]
+    fn interrupted_run_records_a_null_code_when_dropped() {
+        let dir = TempDir::new();
+        let (store, id) = store_with_script(&dir);
+        let (sink, _) = spy(&store, &id);
+        // Arrêt demandé, interface disparue ou tâche abandonnée : aucun
+        // événement final, le flux et son destinataire sont détruits.
+        let recorder = LastRunRecorder::new(store.clone(), id.clone(), AT);
+        let sink = recorder.wrap(sink);
+        drop(recorder);
+        assert_eq!(store.get(&id).unwrap().last_run, None);
+        drop(sink);
+        assert_eq!(
+            store.get(&id).unwrap().last_run,
+            Some(LastRun {
+                at: AT,
+                exit_code: None,
+            })
+        );
+    }
+
+    #[test]
+    fn a_run_that_never_started_records_nothing() {
+        let dir = TempDir::new();
+        let (store, id) = store_with_script(&dir);
+        let (sink, _) = spy(&store, &id);
+        let recorder = LastRunRecorder::new(store.clone(), id.clone(), AT);
+        let sink = recorder.wrap(sink);
+        recorder.disarm();
+        drop((recorder, sink));
+        assert_eq!(store.get(&id).unwrap().last_run, None);
+    }
+
+    /// Exécution réelle de la commande par `sh`, enveloppée dans le script
+    /// de surveillance, avec un dossier personnel temporaire.
+    #[cfg(unix)]
+    mod shell {
+        use super::super::run_command;
+        use super::{TempDir, TRICKY};
+        use crate::stream::guarded_command;
+        use std::process::{Command, Output, Stdio};
+
+        fn run(home: &TempDir, command: &str) -> Output {
+            let mut child = Command::new("sh")
+                .arg("-c")
+                .arg(guarded_command(&run_command(command)))
+                .env("SHELL", "/bin/sh")
+                .env("HOME", &home.0)
+                .current_dir(&home.0)
+                // Entrée gardée ouverte, comme le canal SSH : seule la
+                // commande reçoit /dev/null.
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            let _stdin = child.stdin.take();
+            child.wait_with_output().unwrap()
+        }
+
+        #[test]
+        fn multiline_command_runs_intact() {
+            let home = TempDir::new();
+            std::fs::create_dir(home.0.join("app")).unwrap();
+            let command = TRICKY
+                .replace("git pull", "echo pull")
+                .replace("$(date)", "$(echo maintenant)")
+                .replace("`id`", "`echo moi`");
+            let output = run(&home, &command);
+            assert_eq!(output.status.code(), Some(3));
+            let home_path = home.0.display();
+            assert_eq!(
+                String::from_utf8(output.stdout).unwrap(),
+                format!(
+                    "pull\nfin : maintenant moi {home_path}\ncité suite\n\
+                     l'apostrophe\né ü — ; && | > <\n"
+                )
+            );
+        }
+
+        #[test]
+        fn login_profile_is_loaded() {
+            let home = TempDir::new();
+            std::fs::write(
+                home.0.join(".profile"),
+                "VPSCTL_PROFILE=chargé; export VPSCTL_PROFILE\n",
+            )
+            .unwrap();
+            let output = run(&home, "echo \"$VPSCTL_PROFILE\"");
+            assert_eq!(String::from_utf8(output.stdout).unwrap(), "chargé\n");
+        }
+
+        #[test]
+        fn input_is_never_awaited() {
+            let home = TempDir::new();
+            // L'entrée du canal reste ouverte : sans /dev/null, `read`
+            // attendrait indéfiniment.
+            let output = run(&home, "read x; echo \"read $?\"; read y");
+            assert_eq!(String::from_utf8(output.stdout).unwrap(), "read 1\n");
+            assert_eq!(output.status.code(), Some(1));
+        }
     }
 
     // --- Fichier -----------------------------------------------------------

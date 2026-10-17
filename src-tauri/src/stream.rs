@@ -1,5 +1,5 @@
-//! Flux de lignes d'une commande longue : logs Docker et systemd, et plus
-//! tard exécution des scripts (même `LogEvent`, même console).
+//! Flux de lignes d'une commande longue : logs Docker et systemd, et
+//! exécution des scripts (même `LogEvent`, même console).
 //!
 //! - Découpage des données reçues en lignes, une mémoire par flux de sortie :
 //!   une ligne peut être coupée entre deux paquets SSH.

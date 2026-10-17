@@ -62,6 +62,8 @@ pub fn run() {
             commands::scripts::scripts_list,
             commands::scripts::scripts_save,
             commands::scripts::scripts_delete,
+            commands::scripts::script_run,
+            commands::scripts::script_stop,
             commands::files::home_dir,
             commands::files::list_dir,
             commands::files::create_file,
