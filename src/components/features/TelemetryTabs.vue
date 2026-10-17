@@ -35,7 +35,7 @@ const emit = defineEmits<{ close: [tab: TelemetryTab] }>();
           :class="streamState(tab).tone"
           :name="streamState(tab).shape"
         />
-        <span class="name">{{ streamName(tab) }}</span>
+        <span class="name" :title="streamName(tab)">{{ streamName(tab) }}</span>
         <span class="visually-hidden">, {{ streamState(tab).label }}</span>
       </RouterLink>
       <AppTooltip text="Fermer l'onglet">
