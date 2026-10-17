@@ -52,6 +52,12 @@ watch(
   position: relative;
   z-index: var(--z-content);
   display: grid;
+  /*
+   * Colonne à la largeur de la fenêtre, jamais plus : sans minmax(0, …), la
+   * colonne implicite s'élargit au contenu le plus large qui ne se replie pas
+   * (un long itinéraire de Fichiers), et la barre de titre sort de l'écran.
+   */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100%;
 }
