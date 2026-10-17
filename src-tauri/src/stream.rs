@@ -4,7 +4,8 @@
 //! - Découpage des données reçues en lignes, une mémoire par flux de sortie :
 //!   une ligne peut être coupée entre deux paquets SSH.
 //! - Conversion de chaque ligne brute en `LogLine` par un `LineParser`
-//!   propre à la source (`docker`, `systemd`).
+//!   propre à la source (`docker`, `systemd`, `scripts`), puis retrait des
+//!   séquences d'échappement ANSI (couleurs, curseur) de son texte.
 //! - Regroupement par lots (50 ms ou 500 lignes) et limite de débit
 //!   (5 000 lignes par seconde, l'excédent est compté dans `dropped`).
 //! - Script de surveillance autour de la commande, pour qu'aucun processus ne
@@ -13,7 +14,10 @@
 //! Ce module ne dépend pas de Tauri : les événements partent vers une
 //! fonction de rappel (`EventSink`). Le registre des flux est dans `state`.
 
+use std::borrow::Cow;
 use std::future::Future;
+use std::iter::Peekable;
+use std::str::Chars;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -227,6 +231,107 @@ pub fn truncate_line(mut text: String) -> String {
     text.truncate(end);
     text.push('…');
     text
+}
+
+// ---------------------------------------------------------------------------
+// Séquences d'échappement ANSI
+// ---------------------------------------------------------------------------
+
+/// Retire les séquences d'échappement ANSI (ECMA-48) d'une ligne : couleurs
+/// et styles (`ESC [ 1;31 m`), déplacements du curseur et effacements
+/// (`ESC [ 2 K`, `ESC [ ? 25 l`), titres et liens (`ESC ] … BEL` ou
+/// `ESC ] … ESC \`), chaînes de contrôle (`ESC P`, `ESC X`, `ESC ^`,
+/// `ESC _`), séquences courtes (`ESC 7`, `ESC ( B`) et CSI sur 8 bits
+/// (U+009B).
+///
+/// Appliquée à une ligne complète : une séquence coupée entre deux paquets
+/// SSH est déjà recollée par `LineSplitter`. Une séquence incomplète en fin
+/// de ligne (sortie tronquée, flux interrompu) est retirée jusqu'au bout.
+/// Sans séquence, le texte est renvoyé tel quel, sans copie.
+pub fn strip_ansi(text: &str) -> Cow<'_, str> {
+    if !text.contains(['\x1b', '\u{9b}']) {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\x1b' => match chars.peek().copied() {
+                // ESC seul en fin de ligne : séquence incomplète.
+                None => {}
+                Some('[') => {
+                    chars.next();
+                    skip_csi(&mut chars);
+                }
+                Some(']' | 'P' | 'X' | '^' | '_') => {
+                    chars.next();
+                    skip_control_string(&mut chars);
+                }
+                // Intermédiaires puis caractère final : `ESC ( B`, `ESC # 8`.
+                Some(next) if is_intermediate(next) => {
+                    while chars.next_if(|&n| is_intermediate(n)).is_some() {}
+                    chars.next_if(|&n| ('\x30'..='\x7e').contains(&n));
+                }
+                // Séquence courte : `ESC 7`, `ESC c`, `ESC =`.
+                Some(next) if ('\x30'..='\x7e').contains(&next) => {
+                    chars.next();
+                }
+                // ESC suivi d'un caractère hors séquence : seul ESC est retiré.
+                Some(_) => {}
+            },
+            '\u{9b}' => skip_csi(&mut chars),
+            _ => out.push(c),
+        }
+    }
+    Cow::Owned(out)
+}
+
+fn is_intermediate(c: char) -> bool {
+    ('\x20'..='\x2f').contains(&c)
+}
+
+/// Corps d'une séquence CSI : paramètres (`0`–`?`), intermédiaires
+/// (espace–`/`), puis un caractère final (`@`–`~`). Un autre caractère met
+/// fin à une séquence malformée ; il est conservé.
+fn skip_csi(chars: &mut Peekable<Chars<'_>>) {
+    while chars
+        .next_if(|&c| ('\x30'..='\x3f').contains(&c) || is_intermediate(c))
+        .is_some()
+    {}
+    chars.next_if(|&c| ('\x40'..='\x7e').contains(&c));
+}
+
+/// Chaîne de contrôle (OSC, DCS…), terminée par BEL ou par ST (`ESC \`).
+/// Un autre ESC la termine aussi : il est laissé à la boucle principale.
+fn skip_control_string(chars: &mut Peekable<Chars<'_>>) {
+    while let Some(&c) = chars.peek() {
+        match c {
+            '\x07' => {
+                chars.next();
+                return;
+            }
+            '\x1b' => {
+                let mut ahead = chars.clone();
+                ahead.next();
+                if ahead.peek() == Some(&'\\') {
+                    chars.next();
+                    chars.next();
+                }
+                return;
+            }
+            _ => {
+                chars.next();
+            }
+        }
+    }
+}
+
+/// Nettoyage d'une ligne prête à l'affichage : séquences ANSI retirées.
+fn clean(mut line: LogLine) -> LogLine {
+    if let Cow::Owned(text) = strip_ansi(&line.text) {
+        line.text = text;
+    }
+    line
 }
 
 // ---------------------------------------------------------------------------
@@ -448,7 +553,7 @@ pub async fn run<S: StreamSource, P: LineParser>(
                 }
                 let now = Instant::now();
                 for line in parsed.drain(..) {
-                    batcher.push(line, now);
+                    batcher.push(clean(line), now);
                 }
                 batcher.is_full()
             }
@@ -479,7 +584,7 @@ pub async fn run<S: StreamSource, P: LineParser>(
             }
             let now = Instant::now();
             for line in parsed.drain(..) {
-                batcher.push(line, now);
+                batcher.push(clean(line), now);
             }
             if let Some(event) = batcher.take() {
                 sink(event);
@@ -766,6 +871,132 @@ mod tests {
         assert!(truncated.ends_with('…'));
         assert!(truncated.len() <= MAX_LINE_BYTES + '…'.len_utf8());
         assert_eq!(truncate_line("court".into()), "court");
+    }
+
+    // --- Séquences d'échappement ANSI -------------------------------------
+
+    #[test]
+    fn plain_text_is_returned_without_copy() {
+        let text = "GET /api/health 200 · é ü — [crochets] ~";
+        assert!(matches!(strip_ansi(text), Cow::Borrowed(t) if t == text));
+    }
+
+    #[test]
+    fn colors_and_styles_are_removed() {
+        let cases = [
+            ("\x1b[31mrouge\x1b[0m", "rouge"),
+            (
+                "\x1b[1;4mgras souligné\x1b[m normal",
+                "gras souligné normal",
+            ),
+            ("\x1b[38;5;208morange\x1b[39m", "orange"),
+            (
+                "\x1b[38;2;255;128;0mvraies couleurs\x1b[0m",
+                "vraies couleurs",
+            ),
+            ("\x1b[38:2::255:128:0mdeux-points\x1b[0m", "deux-points"),
+            (
+                "\x1b[32m✔\x1b[0m Container app-app-1  \x1b[32mStarted\x1b[0m",
+                "✔ Container app-app-1  Started",
+            ),
+        ];
+        for (raw, expected) in cases {
+            assert_eq!(strip_ansi(raw), expected, "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn cursor_movements_and_erasures_are_removed() {
+        let cases = [
+            ("\x1b[2K\x1b[1Aligne réécrite", "ligne réécrite"),
+            ("\x1b[10Gcolonne\x1b[0J", "colonne"),
+            ("\x1b[?25lcurseur masqué\x1b[?25h", "curseur masqué"),
+            ("\x1b[H\x1b[2Jécran effacé", "écran effacé"),
+            ("\x1b7sauvegarde\x1b8", "sauvegarde"),
+            ("\x1b(Bjeu de caractères\x1b)0", "jeu de caractères"),
+            ("\x1b=\x1b>clavier", "clavier"),
+            ("\u{9b}31mCSI sur 8 bits\u{9b}0m", "CSI sur 8 bits"),
+        ];
+        for (raw, expected) in cases {
+            assert_eq!(strip_ansi(raw), expected, "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn titles_and_hyperlinks_are_removed() {
+        let cases = [
+            ("\x1b]0;titre de fenêtre\x07texte", "texte"),
+            (
+                "\x1b]8;;https://exemple.fr\x1b\\lien\x1b]8;;\x1b\\ suivant",
+                "lien suivant",
+            ),
+            ("\x1bPq#0;2;0;0;0\x1b\\après DCS", "après DCS"),
+        ];
+        for (raw, expected) in cases {
+            assert_eq!(strip_ansi(raw), expected, "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn incomplete_sequences_at_the_end_are_removed() {
+        let cases = [
+            ("texte\x1b", "texte"),
+            ("texte\x1b[", "texte"),
+            ("texte\x1b[38;5;2", "texte"),
+            ("texte\x1b]0;titre sans fin", "texte"),
+            ("texte\x1b(", "texte"),
+        ];
+        for (raw, expected) in cases {
+            assert_eq!(strip_ansi(raw), expected, "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn malformed_sequences_keep_the_following_text() {
+        // CSI interrompu par un caractère hors séquence : il est conservé.
+        assert_eq!(strip_ansi("\x1b[31\u{e9}t\u{e9}"), "été");
+        // OSC interrompu par une autre séquence.
+        assert_eq!(strip_ansi("\x1b]0;titre\x1b[1mgras"), "gras");
+        // ESC suivi d'un caractère de contrôle : seul ESC disparaît.
+        assert_eq!(strip_ansi("a\x1b\tb"), "a\tb");
+    }
+
+    #[test]
+    fn sequence_split_across_packets_is_removed() {
+        let mut splitter = LineSplitter::new(MAX_LINE_BYTES);
+        assert!(splitter.push(b"\x1b[3").is_empty());
+        assert!(splitter.push(b"1mrou").is_empty());
+        let lines = splitter.push(b"ge\x1b[0m\n\x1b]0;ti");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(strip_ansi(&lines[0]), "rouge");
+        // Fin du flux au milieu d'une séquence.
+        let last = splitter.finish().unwrap();
+        assert_eq!(strip_ansi(&last), "");
+    }
+
+    #[tokio::test]
+    async fn every_stream_line_is_cleaned() {
+        let (source, _) = FakeSource::new(
+            vec![
+                StreamChunk::Stdout(b"\x1b[32mvert".to_vec()),
+                StreamChunk::Stdout(b"\x1b[0m\n".to_vec()),
+                StreamChunk::Stderr(b"\x1b[1;31merreur\x1b[0m\n".to_vec()),
+                StreamChunk::Stdout(b"fin\x1b[".to_vec()),
+                StreamChunk::Exited(Some(0)),
+            ],
+            false,
+        );
+        let (sink, events) = recorder();
+        let (_tx, rx) = oneshot::channel();
+        run(source, PlainParser, sink, rx).await;
+        assert_eq!(
+            texts(&events.lock().unwrap()),
+            vec![
+                (Origin::Stdout, "vert".into()),
+                (Origin::Stderr, "erreur".into()),
+                (Origin::Stdout, "fin".into()),
+            ]
+        );
     }
 
     // --- Source, historique, horodatages ---------------------------------

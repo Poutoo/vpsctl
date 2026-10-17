@@ -185,7 +185,7 @@ logs_stop(streamId: string): void
   Chacune est enveloppée dans un script de surveillance qui la termine quand le canal se ferme (voir « Arrêt des flux » dans `docs/03-architecture.md`).
 - Événements : des lots de lignes (`lines`), puis au plus un événement final. `ended` n'est émis que si la commande se termine d'elle-même (conteneur arrêté, par exemple), `error` si la liaison est perdue. Après `logs_stop`, aucun événement n'est garanti : l'interface sait qu'elle a demandé l'arrêt.
 - Regroupement : un lot part toutes les 50 ms, ou dès 500 lignes. Au-delà de 5 000 lignes par seconde, les lignes en excès sont écartées et comptées dans `dropped` du lot suivant.
-- Toutes les lignes sont des `LogLine` : les lignes trop longues sont tronquées à 16 Kio, l'UTF-8 invalide est remplacé.
+- Toutes les lignes sont des `LogLine` : les lignes trop longues sont tronquées à 16 Kio, l'UTF-8 invalide est remplacé, et les séquences d'échappement ANSI (couleurs, styles, déplacements du curseur, titres, liens) sont retirées du texte, y compris une séquence incomplète en fin de ligne. Valable pour les logs Docker, le journal et la sortie des scripts.
 
 ## Scripts
 
