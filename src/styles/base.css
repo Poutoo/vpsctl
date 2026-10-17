@@ -84,7 +84,8 @@ textarea {
 
 input[type="text"],
 input[type="number"],
-input[type="password"] {
+input[type="password"],
+textarea {
   width: 100%;
   min-height: var(--row-height);
   padding: var(--sp-2) var(--sp-3);
@@ -99,19 +100,22 @@ input[type="password"] {
 
 input[type="text"]:hover:not(:disabled),
 input[type="number"]:hover:not(:disabled),
-input[type="password"]:hover:not(:disabled) {
+input[type="password"]:hover:not(:disabled),
+textarea:hover:not(:disabled) {
   border-color: var(--color-text-subtle);
 }
 
 input[type="text"]:focus-visible,
 input[type="number"]:focus-visible,
-input[type="password"]:focus-visible {
+input[type="password"]:focus-visible,
+textarea:focus-visible {
   outline-offset: 0;
   border-color: var(--color-action);
 }
 
 /* Erreur : bordure rouge et trait d'action à gauche (forme, pas seulement couleur). */
-input[aria-invalid="true"] {
+input[aria-invalid="true"],
+textarea[aria-invalid="true"] {
   border-color: var(--color-danger);
   box-shadow: inset var(--border-width-accent) 0 0 var(--color-danger);
 }

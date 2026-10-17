@@ -6,6 +6,12 @@ export interface ConfirmCheck {
   detail?: string;
 }
 
+/** Conséquence qui cite du code (une commande, éventuellement sur plusieurs lignes). */
+export interface ConfirmCode {
+  label: string;
+  code: string;
+}
+
 export interface ConfirmOptions {
   title: string;
   /** Objet de l'action (nom, chemin), affiché sous le titre. */
@@ -13,7 +19,7 @@ export interface ConfirmOptions {
   /** Conditions vérifiées, listées avant les conséquences (ex. « Conteneur arrêté »). */
   checks?: ConfirmCheck[];
   /** Conséquences de l'action, listées dans la fenêtre. */
-  consequences: string[];
+  consequences: (string | ConfirmCode)[];
   /** Libellé du bouton GO, ex. « Supprimer ». */
   confirmLabel: string;
   /** Action destructrice : signalée comme telle dans la modale. */

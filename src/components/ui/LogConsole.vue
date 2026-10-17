@@ -25,13 +25,39 @@ import AppButton from "./AppButton.vue";
 import AppIcon from "./AppIcon.vue";
 import AppSwitch from "./AppSwitch.vue";
 
-const props = defineProps<{
-  stream: LogSession;
-  /** `output` : Docker et scripts ; `journal` : systemd. */
-  legend: "output" | "journal";
-  /** Nom accessible de la zone de logs. */
-  label: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    stream: LogSession;
+    /** `output` : Docker et scripts ; `journal` : systemd. */
+    legend: "output" | "journal";
+    /** Nom accessible de la zone de logs. */
+    label: string;
+    /** Libellé du bouton qui rouvre le flux terminé (« Relancer » un script). */
+    replayLabel?: string;
+    /** Sortie d'un script : bannière LOS avec `exit N`, en échec si N ≠ 0. */
+    procedure?: boolean;
+    /** Remplace l'arrêt direct (ex. confirmation avant d'interrompre un script). */
+    requestStop?: () => void;
+    /** Remplace la relance directe (ex. confirmation avant de relancer un script). */
+    requestReplay?: () => void;
+  }>(),
+  {
+    replayLabel: "Rejouer",
+    procedure: false,
+    requestStop: undefined,
+    requestReplay: undefined,
+  },
+);
+
+function stop() {
+  if (props.requestStop) props.requestStop();
+  else void props.stream.stop();
+}
+
+function replay() {
+  if (props.requestReplay) props.requestReplay();
+  else void props.stream.replay();
+}
 
 defineSlots<{
   /** Identification de la source, à gauche de l'en-tête. */
@@ -153,6 +179,25 @@ const los = computed(() => {
   if (status !== "ended" && status !== "stopped" && status !== "error") {
     return null;
   }
+  const at =
+    endedAt === null
+      ? null
+      : new Date(endedAt).toLocaleTimeString("fr-FR", { hour12: false });
+  if (props.procedure) {
+    const detail =
+      status === "stopped"
+        ? "Procédure interrompue"
+        : status === "error"
+          ? (error ?? "Flux interrompu")
+          : exitCode === null
+            ? "Fin du flux · tuée par un signal"
+            : `Fin du flux · exit ${exitCode}`;
+    return {
+      detail,
+      at,
+      failed: status === "error" || (status === "ended" && exitCode !== 0),
+    };
+  }
   const detail =
     status === "stopped"
       ? "Arrêt propre"
@@ -161,10 +206,6 @@ const los = computed(() => {
         : exitCode === null
           ? "Fin du flux"
           : `Fin du flux · code ${exitCode}`;
-  const at =
-    endedAt === null
-      ? null
-      : new Date(endedAt).toLocaleTimeString("fr-FR", { hour12: false });
   return { detail, at, failed: status === "error" };
 });
 
@@ -185,10 +226,10 @@ const counts = computed(() => {
       <div class="controls">
         <AppSwitch v-model="follow" label="Défilement auto" />
         <AppButton @click="stream.clear()">Effacer</AppButton>
-        <AppButton v-if="stream.active" @click="stream.stop()">
+        <AppButton v-if="stream.active" @click="stop">
           Interrompre le flux
         </AppButton>
-        <AppButton v-else @click="stream.replay()">Rejouer</AppButton>
+        <AppButton v-else @click="replay">{{ replayLabel }}</AppButton>
         <slot name="actions" />
       </div>
     </header>

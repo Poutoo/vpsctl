@@ -77,9 +77,16 @@ function focusNoGo(event: Event) {
                 }}</span>
               </span>
             </li>
-            <li v-for="item in state.consequences" :key="item">
+            <li
+              v-for="item in state.consequences"
+              :key="typeof item === 'string' ? item : item.label"
+            >
               <span class="dash" aria-hidden="true">—</span>
-              <span>{{ item }}</span>
+              <span v-if="typeof item === 'string'">{{ item }}</span>
+              <span v-else class="cited">
+                {{ item.label }} :
+                <pre class="code">{{ item.code }}</pre>
+              </span>
             </li>
           </AlertDialogDescription>
           <p v-if="state.warning" class="warning" role="alert">
@@ -206,6 +213,28 @@ function focusNoGo(event: Event) {
 .check-detail {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Code cité (commande d'un script) : tel quel, lignes comprises, et défilant. */
+.cited {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.code {
+  max-height: calc(8 * var(--console-line-height) + 2 * var(--sp-2));
+  margin: 0;
+  overflow: auto;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--color-field);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--r-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-data);
+  line-height: var(--console-line-height);
+  white-space: pre;
 }
 
 /* Condition vérifiée : coche (forme) et libellé, puis la donnée brute. */

@@ -3,7 +3,7 @@
  * Onglets de l'écran Télémétrie : un par flux ouvert, avec sa forme d'état
  * et un bouton de fermeture. L'onglet actif est celui de l'URL.
  */
-import type { TelemetryTab } from "../../stores/telemetry";
+import { streamName, type TelemetryTab } from "../../stores/telemetry";
 import AppIcon from "../ui/AppIcon.vue";
 import AppTooltip from "../ui/AppTooltip.vue";
 import StatusIcon from "../ui/StatusIcon.vue";
@@ -15,10 +15,6 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{ close: [tab: TelemetryTab] }>();
-
-function tabName(tab: TelemetryTab): string {
-  return tab.target.name;
-}
 </script>
 
 <template>
@@ -39,14 +35,14 @@ function tabName(tab: TelemetryTab): string {
           :class="streamState(tab).tone"
           :name="streamState(tab).shape"
         />
-        <span class="name">{{ tabName(tab) }}</span>
+        <span class="name">{{ streamName(tab) }}</span>
         <span class="visually-hidden">, {{ streamState(tab).label }}</span>
       </RouterLink>
       <AppTooltip text="Fermer l'onglet">
         <button
           type="button"
           class="close"
-          :aria-label="`Fermer l'onglet ${tabName(tab)}`"
+          :aria-label="`Fermer l'onglet ${streamName(tab)}`"
           @click="emit('close', tab)"
         >
           <AppIcon name="close" />

@@ -2,9 +2,13 @@
 /**
  * Console d'un flux du store `telemetry` (panneau ancré ou onglet) :
  * identification de la source dans l'en-tête, légende selon la source.
- * Les boutons propres à l'emplacement passent par le slot `actions`.
+ * Pour un script : « Relancer » avec le GO / NO GO éventuel, sur sa
+ * définition actuelle. Les boutons propres à l'emplacement passent par le
+ * slot `actions`.
  */
 import { computed } from "vue";
+import { useScriptActions } from "../../composables/useScriptActions";
+import { useScriptsStore } from "../../stores/scripts";
 import type { TelemetryStream } from "../../stores/telemetry";
 import LogConsole from "../ui/LogConsole.vue";
 
@@ -12,8 +16,26 @@ const props = defineProps<{ stream: TelemetryStream }>();
 
 defineSlots<{ actions?(): unknown }>();
 
+const scripts = useScriptsStore();
+const { run } = useScriptActions();
+
+/** Première ligne d'une commande, suivie de « … » s'il y en a d'autres. */
+function firstLine(command: string): string {
+  const lines = command.trim().split("\n");
+  return lines.length > 1 ? `${lines[0]} …` : lines[0];
+}
+
 const ident = computed(() => {
-  const target = props.stream.target;
+  const stream = props.stream;
+  if (stream.kind === "script") {
+    return {
+      kind: "Procédure",
+      name: stream.script.name,
+      command: firstLine(stream.script.command),
+      legend: "output" as const,
+    };
+  }
+  const target = stream.target;
   return {
     kind: target.kind === "systemd" ? "Service" : "Conteneur",
     name: target.name,
@@ -22,6 +44,13 @@ const ident = computed(() => {
       target.kind === "systemd" ? ("journal" as const) : ("output" as const),
   };
 });
+
+/** Relance d'un script : sa définition enregistrée, sinon celle de l'onglet. */
+const requestReplay = computed(() => {
+  const stream = props.stream;
+  if (stream.kind !== "script") return undefined;
+  return () => void run(scripts.byId(stream.script.id) ?? stream.script);
+});
 </script>
 
 <template>
@@ -29,6 +58,9 @@ const ident = computed(() => {
     :stream="stream.session"
     :legend="ident.legend"
     :label="`Télémétrie de ${ident.name}`"
+    :procedure="stream.kind === 'script'"
+    :replay-label="stream.kind === 'script' ? 'Relancer' : 'Rejouer'"
+    :request-replay="requestReplay"
   >
     <template #title>
       <span class="caps kind">{{ ident.kind }}</span>

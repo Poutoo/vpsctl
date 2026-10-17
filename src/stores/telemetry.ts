@@ -1,14 +1,18 @@
 import { computed, ref, shallowRef, watch } from "vue";
 import { defineStore } from "pinia";
 import * as logs from "../api/logs";
+import * as scriptsApi from "../api/scripts";
 import type { LogSource } from "../bindings/LogSource";
+import type { Script } from "../bindings/Script";
 import {
   createLogSession,
   type LogSession,
   type StreamDriver,
 } from "../composables/logSession";
+import { useNotify } from "../composables/useNotify";
 import { router } from "../router";
 import { useConnectionStore } from "./connection";
+import { useScriptsStore } from "./scripts";
 
 /** Lignes d'historique demandées à l'ouverture d'un flux de logs. */
 const LOG_TAIL = 200;
@@ -61,14 +65,40 @@ export interface LogsStream {
   session: LogSession;
 }
 
+/** Exécution d'un script, toujours dans un onglet. */
+export interface ScriptStream {
+  kind: "script";
+  /** Un seul onglet par script : relancer réutilise le sien. */
+  key: string;
+  /** Script tel qu'à sa dernière exécution lancée depuis cet onglet. */
+  script: Script;
+  session: LogSession;
+}
+
+function scriptKey(id: string): string {
+  return `script:${id}`;
+}
+
+function scriptDriver(id: string): StreamDriver {
+  return {
+    open: (onEvent) => scriptsApi.runScript(id, onEvent),
+    close: scriptsApi.stopScript,
+  };
+}
+
 /** Flux affiché par une console : panneau ancré ou onglet. */
-export type TelemetryStream = LogsStream;
+export type TelemetryStream = LogsStream | ScriptStream;
 
 /** Onglet de l'écran Télémétrie. */
 export type TelemetryTab = TelemetryStream & {
   /** Identifiant local, dans l'URL (`/telemetry/:tab`). */
   id: string;
 };
+
+/** Nom d'un flux : conteneur, unité ou script. */
+export function streamName(stream: TelemetryStream): string {
+  return stream.kind === "logs" ? stream.target.name : stream.script.name;
+}
 
 /** Section de la navigation dont vient un flux, surlignée sur l'écran Télémétrie. */
 export function streamOrigin(stream: TelemetryStream): "dashboard" | "scripts" {
@@ -85,6 +115,8 @@ export function streamOrigin(stream: TelemetryStream): "dashboard" | "scripts" {
  */
 export const useTelemetryStore = defineStore("telemetry", () => {
   const connection = useConnectionStore();
+  const scripts = useScriptsStore();
+  const { notify } = useNotify();
 
   const dock = shallowRef<LogsStream | null>(null);
   const tabs = ref<TelemetryTab[]>([]);
@@ -174,6 +206,62 @@ export const useTelemetryStore = defineStore("telemetry", () => {
     return tabs.value[Math.min(index, tabs.value.length - 1)] ?? null;
   }
 
+  // --- Scripts ---------------------------------------------------------------
+
+  /** Onglet d'un script, ouvert par une exécution. */
+  function scriptTab(id: string): TelemetryTab | null {
+    return tabByKey(scriptKey(id));
+  }
+
+  /** Fin d'une exécution : sa dernière exécution est relue (déjà enregistrée). */
+  function onScriptFinish() {
+    void scripts.load().catch(() => undefined);
+  }
+
+  /**
+   * Exécute un script (la confirmation GO / NO GO est faite avant) dans son
+   * onglet, créé au besoin ; déjà en cours, l'onglet est simplement
+   * renvoyé. Échec du lancement (limite de flux, liaison absente) :
+   * notification, et l'onglet créé pour l'occasion est retiré.
+   */
+  async function runScript(script: Script): Promise<TelemetryTab | null> {
+    const existing = scriptTab(script.id);
+    if (existing?.session.active) return existing;
+
+    let tab = existing;
+    if (tab?.kind === "script") {
+      tab.script = script;
+    } else {
+      const session = createLogSession(scriptDriver(script.id), {
+        onFinish: onScriptFinish,
+      });
+      tab = addTab({
+        kind: "script",
+        key: scriptKey(script.id),
+        script,
+        session,
+      });
+    }
+    const launched = existing
+      ? await tab.session.replay()
+      : await tab.session.start();
+    if (launched || tab.session.status !== "error") return tab;
+
+    notify({
+      tone: "error",
+      title: "Script non lancé",
+      detail: script.name,
+      message: tab.session.error ?? undefined,
+    });
+    if (!existing) closeTab(tab.id);
+    return existing;
+  }
+
+  /** Exécutions de scripts en cours. */
+  const runningScripts = computed(() =>
+    tabs.value.filter((tab) => tab.kind === "script" && tab.session.active),
+  );
+
   /** Flux arrêtés par la déconnexion (ou une liaison perdue) : tout est vidé. */
   function reset() {
     closeDock();
@@ -194,6 +282,9 @@ export const useTelemetryStore = defineStore("telemetry", () => {
     tabs,
     tabCount,
     tabById,
+    scriptTab,
+    runScript,
+    runningScripts,
     openDock,
     closeDock,
     suspendDock,
