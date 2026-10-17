@@ -40,6 +40,13 @@ export const router = createRouter({
       meta: { requiresConnection: true },
     },
     {
+      path: "/telemetry/:tab?",
+      name: "telemetry",
+      component: () => import("../views/TelemetryView.vue"),
+      // Marges gérées par la vue (console sur toute la hauteur).
+      meta: { requiresConnection: true, fullBleed: true },
+    },
+    {
       path: "/settings",
       name: "settings",
       // Accessible sans connexion : les profils sont des données locales,

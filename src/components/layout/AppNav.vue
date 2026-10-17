@@ -12,6 +12,7 @@ import { SECTIONS, sectionOf } from "../../navigation";
 import { useConnectionStore } from "../../stores/connection";
 import { useFilesStore } from "../../stores/files";
 import { useProfilesStore } from "../../stores/profiles";
+import { streamOrigin, useTelemetryStore } from "../../stores/telemetry";
 import AppButton from "../ui/AppButton.vue";
 import AppIcon from "../ui/AppIcon.vue";
 import AppTooltip from "../ui/AppTooltip.vue";
@@ -20,10 +21,19 @@ const route = useRoute();
 const connection = useConnectionStore();
 const profiles = useProfilesStore();
 const files = useFilesStore();
+const telemetry = useTelemetryStore();
 const narrow = useMediaQuery(NARROW_QUERY);
 
 const profile = computed(() => profiles.byId(connection.profileId));
-const active = computed(() => sectionOf(route.name)?.route ?? null);
+
+/** Section active ; sur l'écran Télémétrie, celle d'où vient le flux affiché. */
+const active = computed(() => {
+  if (route.name === "telemetry") {
+    const tab = telemetry.tabById(String(route.params.tab ?? ""));
+    return tab ? streamOrigin(tab) : null;
+  }
+  return sectionOf(route.name)?.route ?? null;
+});
 
 const connectedAt = computed(() => connection.info?.connectedAt ?? null);
 const linkedFor = useElapsed(connectedAt, {

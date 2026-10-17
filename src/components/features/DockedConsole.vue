@@ -3,56 +3,30 @@
  * Console ancrée en bas du tableau de bord, sur la source choisie par
  * l'action Logs d'une ligne. Son flux appartient au store `telemetry` :
  * arrêté quand on quitte le tableau de bord (`useDockedStream`), arrêté par
- * Fermer.
+ * Fermer. « Plein écran » le transfère dans un onglet de l'écran
+ * Télémétrie, sans le redémarrer ni perdre la mémoire tampon.
  */
+import { useRouter } from "vue-router";
 import { useTelemetryStore, type LogsStream } from "../../stores/telemetry";
 import AppButton from "../ui/AppButton.vue";
-import LogConsole from "../ui/LogConsole.vue";
+import StreamConsole from "./StreamConsole.vue";
 
 defineProps<{ stream: LogsStream }>();
 
 const store = useTelemetryStore();
+const router = useRouter();
+
+function fullScreen() {
+  const tab = store.promoteDock();
+  if (tab) void router.push({ name: "telemetry", params: { tab: tab.id } });
+}
 </script>
 
 <template>
-  <LogConsole
-    :stream="stream.session"
-    :legend="stream.target.kind === 'systemd' ? 'journal' : 'output'"
-    :label="`Télémétrie de ${stream.target.name}`"
-  >
-    <template #title>
-      <span class="caps kind">{{
-        stream.target.kind === "systemd" ? "Service" : "Conteneur"
-      }}</span>
-      <span class="name">{{ stream.target.name }}</span>
-      <span class="command">{{ stream.target.command }}</span>
-    </template>
+  <StreamConsole :stream="stream">
     <template #actions>
+      <AppButton @click="fullScreen">Plein écran</AppButton>
       <AppButton @click="store.closeDock()">Fermer</AppButton>
     </template>
-  </LogConsole>
+  </StreamConsole>
 </template>
-
-<style scoped>
-.kind {
-  color: var(--color-text-muted);
-}
-
-.name {
-  overflow: hidden;
-  font-family: var(--font-mono);
-  font-size: var(--fs-md);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.command {
-  overflow: hidden;
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-</style>

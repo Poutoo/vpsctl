@@ -50,6 +50,9 @@ onMounted(() => {
   );
   const parsed = Number.parseFloat(token);
   if (Number.isFinite(parsed) && parsed > 0) lineHeight.value = parsed;
+  // Flux déjà alimenté (retour sur un onglet, « Plein écran ») : on reprend
+  // à la fin, défilement automatique actif.
+  if (props.stream.lines.length > 0) scrollToEnd();
 });
 
 const virtualizer = useVirtualizer(

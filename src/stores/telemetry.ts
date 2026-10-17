@@ -61,11 +61,19 @@ export interface LogsStream {
   session: LogSession;
 }
 
+/** Flux affiché par une console : panneau ancré ou onglet. */
+export type TelemetryStream = LogsStream;
+
 /** Onglet de l'écran Télémétrie. */
-export type TelemetryTab = LogsStream & {
+export type TelemetryTab = TelemetryStream & {
   /** Identifiant local, dans l'URL (`/telemetry/:tab`). */
   id: string;
 };
+
+/** Section de la navigation dont vient un flux, surlignée sur l'écran Télémétrie. */
+export function streamOrigin(stream: TelemetryStream): "dashboard" | "scripts" {
+  return stream.kind === "logs" ? "dashboard" : "scripts";
+}
 
 /**
  * Tous les flux de l'interface (docs/03-architecture.md) :
@@ -90,7 +98,7 @@ export const useTelemetryStore = defineStore("telemetry", () => {
     return tabs.value.find((tab) => tab.key === key) ?? null;
   }
 
-  function addTab(stream: LogsStream): TelemetryTab {
+  function addTab(stream: TelemetryStream): TelemetryTab {
     const tab: TelemetryTab = { ...stream, id: String(nextTabId++) };
     tabs.value.push(tab);
     return tab;
@@ -154,12 +162,16 @@ export const useTelemetryStore = defineStore("telemetry", () => {
 
   // --- Onglets ---------------------------------------------------------------
 
-  /** Ferme un onglet et arrête son flux (la confirmation est faite avant). */
-  function closeTab(id: string) {
-    const tab = tabById(id);
-    if (!tab) return;
-    void tab.session.stop();
-    tabs.value = tabs.value.filter((other) => other.id !== id);
+  /**
+   * Ferme un onglet et arrête son flux (la confirmation est faite avant).
+   * Renvoie l'onglet voisin à afficher à sa place, ou `null`.
+   */
+  function closeTab(id: string): TelemetryTab | null {
+    const index = tabs.value.findIndex((tab) => tab.id === id);
+    if (index < 0) return null;
+    void tabs.value[index].session.stop();
+    tabs.value.splice(index, 1);
+    return tabs.value[Math.min(index, tabs.value.length - 1)] ?? null;
   }
 
   /** Flux arrêtés par la déconnexion (ou une liaison perdue) : tout est vidé. */
