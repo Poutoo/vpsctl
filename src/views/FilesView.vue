@@ -4,6 +4,7 @@
  * route (`/files/home/deploy` ; `/files` = racine) ; la première visite part
  * du dossier personnel. Création et renommage se saisissent dans la liste.
  */
+import { ContextMenuRoot, ContextMenuTrigger } from "reka-ui";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { errorMessage, toAppError } from "../api/errors";
@@ -11,6 +12,9 @@ import type { FileEntry } from "../bindings/FileEntry";
 import FileItinerary from "../components/features/FileItinerary.vue";
 import type { FileAction } from "../components/features/FileMenu.vue";
 import FileTable, { type Draft } from "../components/features/FileTable.vue";
+import FolderMenu, {
+  type FolderAction,
+} from "../components/features/FolderMenu.vue";
 import TransferPanel from "../components/features/TransferPanel.vue";
 import PageHeader from "../components/layout/PageHeader.vue";
 import AppButton from "../components/ui/AppButton.vue";
@@ -178,6 +182,43 @@ const canCreate = computed(
   () => files.path !== null && files.error === null && !files.loading,
 );
 
+// --- Menu du dossier (clic droit dans une zone vide) -------------------------
+
+function onFolderAction(action: FolderAction) {
+  if (!canCreate.value) return;
+  switch (action) {
+    case "createDir":
+      startDraft({ mode: "create", kind: "dir" });
+      break;
+    case "createFile":
+      startDraft({ mode: "create", kind: "file" });
+      break;
+    case "upload":
+      void transferActions.upload();
+      break;
+  }
+}
+
+/** Action choisie dans le menu de l'état « Dossier vide », lancée à sa fermeture. */
+let pendingFolderAction: FolderAction | null = null;
+
+function chooseEmptyAction(action: FolderAction) {
+  pendingFolderAction = action;
+}
+
+/**
+ * Menu de l'état « Dossier vide » refermé : l'action part après le rendu,
+ * une fois le piège à focus du menu retiré (la saisie du nom prend le focus).
+ */
+function onEmptyMenuOpen(open: boolean) {
+  if (open) return;
+  setTimeout(() => {
+    const chosen = pendingFolderAction;
+    pendingFolderAction = null;
+    if (chosen) onFolderAction(chosen);
+  }, 0);
+}
+
 // --- Actions d'une entrée ------------------------------------------------------
 
 function onAction(entry: FileEntry, action: FileAction) {
@@ -279,17 +320,30 @@ const errorTitle = computed(() => {
         </template>
       </StateMessage>
 
-      <StateMessage
+      <ContextMenuRoot
         v-else-if="
           files.loadedPath !== null && files.entries.length === 0 && !draft
         "
-        kicker="0 entrée"
-        :kicker-detail="files.loadedPath"
-        title="Dossier vide"
-        class="message"
+        @update:open="onEmptyMenuOpen"
       >
-        Ce dossier ne contient aucun élément, caché ou non.
-      </StateMessage>
+        <ContextMenuTrigger as-child>
+          <StateMessage
+            kicker="0 entrée"
+            :kicker-detail="files.loadedPath"
+            title="Dossier vide"
+            class="message"
+          >
+            Ce dossier ne contient aucun élément, caché ou non. Clic droit pour
+            en créer un ou téléverser un fichier.
+          </StateMessage>
+        </ContextMenuTrigger>
+        <FolderMenu
+          :path="files.loadedPath"
+          :can-create="canCreate"
+          @action="chooseEmptyAction"
+          @close-auto-focus="(event) => event.preventDefault()"
+        />
+      </ContextMenuRoot>
 
       <FileTable
         v-else
@@ -303,11 +357,14 @@ const errorTitle = computed(() => {
         :draft="draft"
         :draft-error="draftError"
         :draft-busy="draftBusy"
+        :folder="files.path ?? '/'"
+        :can-create="canCreate"
         @select="(path) => (files.selected = path)"
         @open="openEntry"
         @up="goUp"
         @sort="files.setSort"
         @action="onAction"
+        @folder-action="onFolderAction"
         @commit-draft="commitDraft"
         @cancel-draft="cancelDraft"
         @edit-draft="draftError = null"

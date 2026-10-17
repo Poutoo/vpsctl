@@ -191,6 +191,12 @@ const items = computed(() => {
   color: var(--color-danger-text);
 }
 
+/* Entrée indisponible : texte atténué, pas de surbrillance. */
+.app-menu-item[data-disabled] {
+  color: var(--color-text-subtle);
+  cursor: not-allowed;
+}
+
 .app-menu-item.danger[data-highlighted] {
   box-shadow: inset var(--border-width-accent) 0 0 var(--color-danger);
 }

@@ -14,6 +14,9 @@
  *   Ctrl+Maj+C : copier le chemin ;
  * - Menu ou Maj+F10 : menu de la ligne.
  *
+ * Clic droit sur une ligne : menu de la ligne ; dans une zone vide : menu du
+ * dossier (Nouveau dossier, Nouveau fichier, Téléverser).
+ *
  * Création et renommage : saisie du nom dans la liste (`draft`), Entrée
  * valide, Échap annule. Les actions sont émises vers le parent.
  */
@@ -51,6 +54,7 @@ import AppIcon, { type AppIconName } from "../ui/AppIcon.vue";
 import AppTooltip from "../ui/AppTooltip.vue";
 import RunStateLabel from "../ui/RunStateLabel.vue";
 import FileMenu, { type FileAction } from "./FileMenu.vue";
+import FolderMenu, { type FolderAction } from "./FolderMenu.vue";
 
 /** Saisie d'un nom dans la liste : création ou renommage. */
 export type Draft =
@@ -68,6 +72,10 @@ const props = defineProps<{
   draftError: string | null;
   /** Validation en cours : la saisie reste ouverte et ne réagit plus. */
   draftBusy: boolean;
+  /** Dossier affiché, en tête du menu du dossier. */
+  folder: string;
+  /** Le dossier accepte une création (menu du dossier). */
+  canCreate: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -76,6 +84,8 @@ const emit = defineEmits<{
   up: [];
   sort: [key: SortKey];
   action: [entry: FileEntry, action: FileAction];
+  /** Action du menu du dossier (clic droit dans une zone vide). */
+  folderAction: [action: FolderAction];
   commitDraft: [name: string];
   cancelDraft: [];
   /** Le nom saisi a changé : l'erreur du serveur n'est plus d'actualité. */
@@ -460,7 +470,9 @@ function onScroll() {
   if (b.bottom <= a.top || b.top >= a.bottom) closeMenu();
 }
 /** Action choisie dans un menu, lancée une fois le menu refermé. */
-let pending: { entry: FileEntry; action: FileAction } | null = null;
+let pending:
+  { entry: FileEntry; action: FileAction } | { folder: FolderAction } | null =
+  null;
 
 function openMenu(entry: FileEntry, index: number) {
   virtualizer.value.scrollToIndex(index, { align: "auto" });
@@ -504,6 +516,10 @@ function choose(entry: FileEntry, action: FileAction) {
   pending = { entry, action };
 }
 
+function chooseFolder(action: FolderAction) {
+  pending = { folder: action };
+}
+
 /**
  * Menu refermé : le focus revient à la grille, puis l'action choisie est
  * lancée. Le délai laisse le menu rendre son piège à focus, pour que la
@@ -514,7 +530,8 @@ function onMenuClosed() {
     const chosen = pending;
     pending = null;
     focus();
-    if (chosen) emit("action", chosen.entry, chosen.action);
+    if (chosen && "folder" in chosen) emit("folderAction", chosen.folder);
+    else if (chosen) emit("action", chosen.entry, chosen.action);
   }, 0);
 }
 
@@ -539,8 +556,9 @@ function preventFocusReturn(event: Event) {
 }
 
 /**
- * Clic droit : sur une ligne, la sélectionne et ouvre son menu ; dans un
- * champ, laisse le menu du système (copier, coller) ; ailleurs, rien.
+ * Clic droit : sur une ligne, la sélectionne et ouvre son menu ; dans une
+ * zone vide, ouvre le menu du dossier (créer, téléverser) ; dans un champ,
+ * laisse le menu du système (copier, coller).
  */
 function onContextCapture(event: MouseEvent) {
   const target = event.target as HTMLElement;
@@ -548,16 +566,16 @@ function onContextCapture(event: MouseEvent) {
     event.stopPropagation();
     return;
   }
-  const row = target.closest<HTMLElement>("[data-index]");
-  const entry = row ? props.entries[Number(row.dataset.index)] : undefined;
-  // Un menu déroulant ouvert garde la main : pas de second menu par-dessus.
-  if (!entry || props.draft || menuOpen.value !== null) {
+  // Une saisie en cours ou un menu déroulant ouvert garde la main.
+  if (props.draft || menuOpen.value !== null) {
     event.preventDefault();
     event.stopPropagation();
     return;
   }
-  contextEntry.value = entry;
-  emit("select", entry.path);
+  const row = target.closest<HTMLElement>("[data-index]");
+  const entry = row ? props.entries[Number(row.dataset.index)] : undefined;
+  contextEntry.value = entry ?? null;
+  if (entry) emit("select", entry.path);
 }
 
 // --- Saisie d'un nom -----------------------------------------------------------
@@ -957,6 +975,13 @@ function onDraftBlur() {
         :entry="contextEntry"
         variant="context"
         @action="(action) => contextEntry && choose(contextEntry, action)"
+        @close-auto-focus="preventFocusReturn"
+      />
+      <FolderMenu
+        v-else
+        :path="folder"
+        :can-create="canCreate"
+        @action="chooseFolder"
         @close-auto-focus="preventFocusReturn"
       />
     </ContextMenuRoot>
