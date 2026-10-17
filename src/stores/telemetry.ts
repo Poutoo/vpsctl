@@ -10,6 +10,7 @@ import {
   type StreamDriver,
 } from "../composables/logSession";
 import { useNotify } from "../composables/useNotify";
+import { formatDuration } from "../format";
 import { router } from "../router";
 import { useConnectionStore } from "./connection";
 import { useScriptsStore } from "./scripts";
@@ -213,9 +214,47 @@ export const useTelemetryStore = defineStore("telemetry", () => {
     return tabByKey(scriptKey(id));
   }
 
-  /** Fin d'une exécution : sa dernière exécution est relue (déjà enregistrée). */
-  function onScriptFinish() {
+  /**
+   * Fin d'une exécution sans arrêt demandé : sa dernière exécution est
+   * relue (déjà enregistrée par le backend) et une notification donne le
+   * verdict ; un échec reste affiché, avec un lien vers la sortie.
+   */
+  function onScriptFinish(id: string) {
     void scripts.load().catch(() => undefined);
+    const tab = scriptTab(id);
+    if (tab?.kind !== "script") return;
+    const { status, exitCode, error, startedAt, endedAt } = tab.session;
+    const duration =
+      startedAt !== null && endedAt !== null
+        ? ` · ${formatDuration(endedAt - startedAt)}`
+        : "";
+    const showOutput = {
+      label: "Voir la sortie",
+      run: () =>
+        void router.push({ name: "telemetry", params: { tab: tab.id } }),
+    };
+    if (status === "ended" && exitCode === 0) {
+      notify({
+        tone: "success",
+        title: "Procédure terminée",
+        detail: `${tab.script.name} · exit 0${duration}`,
+      });
+    } else if (status === "ended") {
+      notify({
+        tone: "error",
+        title: "Procédure en échec",
+        detail: `${tab.script.name} · ${exitCode === null ? "tuée par un signal" : `exit ${exitCode}`}${duration}`,
+        action: showOutput,
+      });
+    } else {
+      notify({
+        tone: "error",
+        title: "Procédure interrompue",
+        detail: tab.script.name,
+        message: error ?? undefined,
+        action: showOutput,
+      });
+    }
   }
 
   /**
@@ -233,7 +272,7 @@ export const useTelemetryStore = defineStore("telemetry", () => {
       tab.script = script;
     } else {
       const session = createLogSession(scriptDriver(script.id), {
-        onFinish: onScriptFinish,
+        onFinish: () => onScriptFinish(script.id),
       });
       tab = addTab({
         kind: "script",

@@ -8,6 +8,7 @@
  */
 import { computed } from "vue";
 import { useScriptActions } from "../../composables/useScriptActions";
+import { useScriptGuards } from "../../composables/useScriptGuards";
 import { useScriptsStore } from "../../stores/scripts";
 import type { TelemetryStream } from "../../stores/telemetry";
 import LogConsole from "../ui/LogConsole.vue";
@@ -18,6 +19,7 @@ defineSlots<{ actions?(): unknown }>();
 
 const scripts = useScriptsStore();
 const { run } = useScriptActions();
+const { confirmStop } = useScriptGuards();
 
 /** Première ligne d'une commande, suivie de « … » s'il y en a d'autres. */
 function firstLine(command: string): string {
@@ -45,6 +47,15 @@ const ident = computed(() => {
   };
 });
 
+/** Interruption d'un script : après GO / NO GO. */
+const requestStop = computed(() => {
+  const stream = props.stream;
+  if (stream.kind !== "script") return undefined;
+  return async () => {
+    if (await confirmStop(stream)) await stream.session.stop();
+  };
+});
+
 /** Relance d'un script : sa définition enregistrée, sinon celle de l'onglet. */
 const requestReplay = computed(() => {
   const stream = props.stream;
@@ -60,6 +71,7 @@ const requestReplay = computed(() => {
     :label="`Télémétrie de ${ident.name}`"
     :procedure="stream.kind === 'script'"
     :replay-label="stream.kind === 'script' ? 'Relancer' : 'Rejouer'"
+    :request-stop="requestStop"
     :request-replay="requestReplay"
   >
     <template #title>

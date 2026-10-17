@@ -83,6 +83,20 @@ export function closeWindow(): Promise<void> {
 }
 
 /**
+ * Garde la fermeture de la fenêtre (bouton Fermer, Alt+F4, gestionnaire de
+ * fenêtres) : `allow` décide, et la fenêtre n'est détruite que s'il
+ * l'accepte (permission `core:window:allow-destroy`). Renvoie la fonction
+ * d'arrêt du suivi.
+ */
+export function guardWindowClose(
+  allow: () => Promise<boolean>,
+): Promise<() => void> {
+  return getCurrentWindow().onCloseRequested(async (event) => {
+    if (!(await allow())) event.preventDefault();
+  });
+}
+
+/**
  * Suit l'état agrandi de la fenêtre (relu à chaque redimensionnement, ce qui
  * couvre aussi l'ancrage et le double-clic). Renvoie la fonction d'arrêt.
  */

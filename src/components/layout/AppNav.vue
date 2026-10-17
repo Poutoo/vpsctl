@@ -11,17 +11,20 @@ import { NARROW_QUERY, useMediaQuery } from "../../composables/useMediaQuery";
 import { SECTIONS, sectionOf } from "../../navigation";
 import { useConnectionStore } from "../../stores/connection";
 import { useFilesStore } from "../../stores/files";
+import { useScriptGuards } from "../../composables/useScriptGuards";
 import { useProfilesStore } from "../../stores/profiles";
 import { streamOrigin, useTelemetryStore } from "../../stores/telemetry";
 import AppButton from "../ui/AppButton.vue";
 import AppIcon from "../ui/AppIcon.vue";
 import AppTooltip from "../ui/AppTooltip.vue";
+import TelemetryIndicator from "./TelemetryIndicator.vue";
 
 const route = useRoute();
 const connection = useConnectionStore();
 const profiles = useProfilesStore();
 const files = useFilesStore();
 const telemetry = useTelemetryStore();
+const { confirmLeave } = useScriptGuards();
 const narrow = useMediaQuery(NARROW_QUERY);
 
 const profile = computed(() => profiles.byId(connection.profileId));
@@ -41,7 +44,9 @@ const linkedFor = useElapsed(connectedAt, {
   tickMs: 1_000,
 });
 
+/** Scripts en cours : GO / NO GO, ils seront interrompus. */
 async function disconnect() {
+  if (!(await confirmLeave("disconnect"))) return;
   await connection.disconnect();
 }
 </script>
@@ -79,6 +84,7 @@ async function disconnect() {
     </ul>
 
     <div class="footer">
+      <TelemetryIndicator :narrow="narrow" />
       <p v-if="linkedFor !== null && !narrow" class="since mono">
         Liaison depuis {{ formatClock(linkedFor) }}
       </p>

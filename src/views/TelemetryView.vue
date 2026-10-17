@@ -13,11 +13,13 @@ import TelemetryTabs from "../components/features/TelemetryTabs.vue";
 import PageHeader from "../components/layout/PageHeader.vue";
 import AppButton from "../components/ui/AppButton.vue";
 import StateMessage from "../components/ui/StateMessage.vue";
+import { useScriptGuards } from "../composables/useScriptGuards";
 import { useTelemetryStore, type TelemetryTab } from "../stores/telemetry";
 
 const store = useTelemetryStore();
 const route = useRoute();
 const router = useRouter();
+const { confirmCloseTab } = useScriptGuards();
 
 const requestedId = computed(() => {
   const param = route.params.tab;
@@ -38,7 +40,9 @@ watch(
   { immediate: true },
 );
 
-function closeTab(tab: TelemetryTab) {
+/** Fermer l'onglet d'un script en cours l'interrompt : GO / NO GO d'abord. */
+async function closeTab(tab: TelemetryTab) {
+  if (!(await confirmCloseTab(tab))) return;
   const next = store.closeTab(tab.id);
   if (tab.id !== requestedId.value) return;
   void router.replace(

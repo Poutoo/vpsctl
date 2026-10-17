@@ -82,3 +82,17 @@ export function formatAgo(millis: number, now = Date.now()): string {
   if (days <= 30) return `il y a ${days} j`;
   return `le ${formatModified(millis, new Date(now))}`;
 }
+
+/** Durée d'une exécution : « 18,4 s », « 2 min 05 s », « 1 h 03 min ». */
+export function formatDuration(ms: number): string {
+  const seconds = Math.max(0, ms) / 1000;
+  if (seconds < 60) {
+    return `${seconds.toLocaleString("fr-FR", { maximumFractionDigits: 1 })} s`;
+  }
+  const total = Math.round(seconds);
+  const minutes = Math.floor(total / 60);
+  if (minutes < 60) {
+    return `${minutes} min ${String(total % 60).padStart(2, "0")} s`;
+  }
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
+}

@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { TooltipProvider } from "reka-ui";
-import { watch } from "vue";
+import { onBeforeUnmount, onMounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { guardWindowClose } from "./api/window";
 import AppNav from "./components/layout/AppNav.vue";
 import BackgroundLayer from "./components/layout/BackgroundLayer.vue";
 import StatusBar from "./components/layout/StatusBar.vue";
 import TitleBar from "./components/layout/TitleBar.vue";
 import ConfirmDialog from "./components/ui/ConfirmDialog.vue";
 import ToastHost from "./components/ui/ToastHost.vue";
+import { useScriptGuards } from "./composables/useScriptGuards";
 import { useConnectionStore } from "./stores/connection";
 import { useProfilesStore } from "./stores/profiles";
 
@@ -15,8 +17,24 @@ const connection = useConnectionStore();
 const profiles = useProfilesStore();
 const route = useRoute();
 const router = useRouter();
+const { confirmLeave } = useScriptGuards();
 
 void profiles.ensureLoaded().catch(() => undefined);
+
+// Fermeture de l'application pendant un script : GO / NO GO, il sera
+// interrompu. Sinon, la fenêtre se ferme directement.
+let stopGuard: (() => void) | null = null;
+let mounted = false;
+onMounted(async () => {
+  mounted = true;
+  const stop = await guardWindowClose(() => confirmLeave("close"));
+  if (mounted) stopGuard = stop;
+  else stop();
+});
+onBeforeUnmount(() => {
+  mounted = false;
+  stopGuard?.();
+});
 
 // Liaison perdue ou fermée : retour à l'écran de connexion.
 watch(
