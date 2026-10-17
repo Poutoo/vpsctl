@@ -199,6 +199,38 @@ script_stop(runId: string): void
 
 `script_run` réutilise `LogEvent` : un seul composant de console côté frontend pour les logs et les scripts.
 
+### Stockage
+
+- Scripts enregistrés localement dans `scripts.json` (dossier de configuration de l'application), avec la même écriture atomique que les profils (temporaire puis renommage).
+- `scripts_list` renvoie les scripts dans l'ordre d'enregistrement.
+- `scripts_save` : `id` vide pour créer (l'identifiant est attribué par le backend), sinon l'identifiant d'un script existant (`InvalidInput` sinon). Le `lastRun` reçu est ignoré : seul le backend l'écrit, la valeur enregistrée est conservée.
+- Validation (`InvalidInput`) :
+  - `name` : non vide après suppression des espaces, 64 caractères au plus, sans caractère de contrôle ;
+  - `description` : facultative (chaîne vide), sans caractère nul ;
+  - `command` : non vide après suppression des espaces, sans caractère nul, 64 Kio au plus. Les commandes sur plusieurs lignes sont autorisées ; les fins de ligne `\r\n` sont ramenées à `\n`.
+- `scripts_delete` : identifiant inconnu → `InvalidInput`. Un script en cours d'exécution peut être supprimé : l'exécution continue, son `lastRun` n'est pas enregistré.
+
+### Exécution
+
+`script_run` lance la commande enregistrée (lue au moment du lancement : une modification ultérieure n'affecte pas l'exécution en cours) dans un **shell de connexion** de l'utilisateur, la commande étant transmise comme un seul argument échappé :
+
+```sh
+"${SHELL:-/bin/sh}" -l -c '<commande>'
+```
+
+- `SHELL` est toujours défini par sshd : c'est le shell de connexion du compte. `-l` charge `/etc/profile` et `~/.profile` (ou `~/.bash_profile`, `~/.zprofile` selon le shell) : le PATH qu'ils configurent est disponible.
+- **Limite** : `~/.bashrc` n'est pas chargé utilement. Sous Ubuntu, `~/.profile` le source, mais il s'interrompt dès le début en mode non interactif (`case $- in *i*) ;; *) return;; esac`). Ce qu'il configure (nvm, alias, fonctions, PATH ajouté à la fin du fichier) n'est donc pas disponible : le script doit le charger lui-même (ex. `. "$HOME/.nvm/nvm.sh"`) ou utiliser des chemins complets. Le formulaire le rappelle sous le champ Commande.
+- Échappement par `shell::quote` (apostrophes, `'` → `'\''`) : plusieurs lignes, `$`, `"`, `;`, `` ` `` et accents arrivent intacts au shell.
+- Dossier de départ : le dossier personnel (sshd s'y place avant d'exécuter la commande).
+- Ni terminal ni entrée standard (`/dev/null`) : un script qui attend une saisie (`read`, mot de passe de `sudo`) lit une fin de fichier et échoue aussitôt au lieu de rester bloqué.
+- Comme les logs, la commande est enveloppée dans le script de surveillance (voir « Arrêt des flux » dans `docs/03-architecture.md`) ; elle tourne dans le même groupe de processus que l'enveloppe. Limite : un processus qui ignore SIGTERM ou quitte le groupe (`setsid`, démon) survit à l'arrêt. C'est voulu pour `docker compose up -d` : les conteneurs appartiennent au daemon Docker.
+- Délai maximal de 10 s pour ouvrir le canal et lancer la commande ; l'exécution elle-même n'a pas d'échéance.
+- Limite de 4 flux simultanés, partagée avec les logs. Au-delà, `InvalidInput` avec le message « 4 flux déjà ouverts : fermez un onglet de télémétrie pour lancer ce script ».
+- Un script déjà en cours d'exécution ne peut pas être relancé avant la fin de la première exécution (`InvalidInput`).
+- Événements : comme les logs (lots de `lines`, puis `ended` avec le code de sortie, ou `error`). Origine `stdout` / `stderr` ; `timestamp` est l'heure de réception par le backend (le programme n'en fournit pas). `exitCode` vaut `null` si la commande a été tuée par un signal.
+- `script_stop` : comme `logs_stop` (rend la main une fois le processus distant arrêté, 3 s au plus ; identifiant inconnu ignoré).
+- `lastRun` est enregistré à la fin de chaque exécution : `at` est l'heure de **début** de l'exécution, `exitCode` le code de sortie de la fin naturelle, ou `null` pour une exécution interrompue (`script_stop`, déconnexion, liaison perdue, rechargement de l'interface, fermeture de l'application) ou tuée par un signal.
+
 ## Structures
 
 ```ts
@@ -291,17 +323,22 @@ interface ServiceDef {
 }
 
 interface Script {
-  id: string
+  id: string                     // "" à la création : attribué par le backend
   name: string
-  description: string
-  command: string
+  description: string            // "" si absente
+  command: string                // peut contenir plusieurs lignes
   requireConfirmation: boolean
-  lastRun: { at: number; exitCode: number | null } | null   // mis à jour par le backend à la fin de chaque exécution
+  lastRun: LastRun | null        // écrit uniquement par le backend, à la fin de chaque exécution
+}
+
+interface LastRun {
+  at: number                     // début de l'exécution, millisecondes depuis l'epoch Unix
+  exitCode: number | null        // null : exécution interrompue ou tuée par un signal
 }
 
 interface LogLine {
   text: string
-  timestamp: string | null          // ISO 8601 en UTC, à la milliseconde : 2026-10-16T09:13:46.900Z
+  timestamp: string | null          // ISO 8601 en UTC, à la milliseconde : 2026-10-16T09:13:46.900Z ; scripts : heure de réception
   origin: "stdout" | "stderr" | "journal"
   priority: number | null           // priorité syslog 0-7, uniquement pour origin = "journal"
   missing: boolean                  // entrée du journal sans MESSAGE : text vaut "[sans message]"

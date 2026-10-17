@@ -111,9 +111,13 @@ Correspondance des états systemd vers les états de l'interface (champ `active`
 
 Un service dont le nom ne respecte pas `^[a-zA-Z0-9@._-]+\.service$` (ex. nom échappé `a\x2db.service`) est affiché mais marqué non pilotable : il ne reçoit aucune action.
 
-**scripts** : charge les scripts depuis `config` et les exécute via `ssh` avec sortie en streaming.
+**scripts** : type `Script`, validation et règles d'enregistrement (fonctions pures), fichier `scripts.json` (écriture atomique fournie par `config`), construction de la commande d'exécution et enregistrement de `lastRun`. L'exécution passe par le registre des flux de `state.rs`, comme les logs.
 
-**config** : lit et écrit les profils de connexion et les scripts en JSON dans le dossier de configuration de l'application.
+- La commande est lancée dans le shell de connexion de l'utilisateur : `"${SHELL:-/bin/sh}" -l -c '<commande>'`, la commande échappée par `shell::quote` en un seul argument, le tout enveloppé dans le script de surveillance. Détail et limites (`~/.bashrc` non chargé) : voir `docs/04-contrat-commandes.md`.
+- Chaque ligne est horodatée à sa réception par le backend.
+- `stream::run` renvoie l'issue du flux ; à la fin de la tâche, une fonction enregistre `lastRun` (début de l'exécution, code de sortie ou `null`).
+
+**config** : lit et écrit les profils de connexion en JSON dans le dossier de configuration de l'application, et fournit l'écriture atomique (temporaire puis renommage) utilisée aussi pour les scripts.
 
 **secrets** : surcouche de la crate `keyring` pour la passphrase de la clé SSH (Credential Manager sous Windows, Secret Service sous Linux).
 
@@ -150,7 +154,7 @@ Mise en œuvre (store `services`) :
 
 ### Arrêt des flux
 
-Chaque flux (logs, exécution de script) reçoit un identifiant et est enregistré dans `state.rs` (4 au maximum). Il est arrêté par `logs_stop`, à la déconnexion, à la fermeture de l'application, au chargement d'une page (rechargement de l'interface : les `Channel` de l'ancienne page sont morts, sans que leur envoi échoue forcément), et de lui-même si un envoi vers son `Channel` échoue.
+Chaque flux (logs, exécution de script) reçoit un identifiant et est enregistré dans `state.rs` (4 au maximum). Il est arrêté par `logs_stop` ou `script_stop`, à la déconnexion, à la fermeture de l'application, au chargement d'une page (rechargement de l'interface : les `Channel` de l'ancienne page sont morts, sans que leur envoi échoue forcément), et de lui-même si un envoi vers son `Channel` échoue.
 
 Fermer le canal ne suffit pas à terminer le processus distant. Dans OpenSSH (`session.c`), une session sans terminal n'est pas tuée à la fermeture de son canal : sshd ferme seulement ses tubes, et le processus ne meurt qu'à sa prochaine écriture (SIGPIPE). `docker logs -f` sur un conteneur silencieux ou `journalctl -f` sur un service calme survivraient indéfiniment. Un terminal (PTY) réglerait la question par SIGHUP, mais il fusionne stdout et stderr : exclu.
 
@@ -220,8 +224,8 @@ Les champs saisis dans le formulaire de création (`execStart`, `description`, e
 src/
 ├── bindings/          types générés par ts-rs (jamais modifiés à la main)
 ├── api/               une fonction typée par commande Tauri, regroupées par domaine
-├── stores/            Pinia : connection, profiles, files, transfers, services, scripts, ui
-├── composables/       useLogStream, useConfirm, useAsyncAction, useVisiblePolling
+├── stores/            Pinia : connection, profiles, files, transfers, services, scripts, telemetry
+├── composables/       logSession, useDockedStream, useConfirm, useNotify, useVisiblePolling
 ├── router/            routes + garde « connexion requise »
 ├── styles/            tokens.css, base.css
 ├── components/
@@ -233,12 +237,15 @@ src/
 ### Règles
 
 - **Aucun `invoke()` en dehors de `api/`.** Stores et composants appellent des fonctions typées (`docker.list()`, etc.).
-- **`useLogStream(source)`** gère tout le cycle de vie d'un flux : démarrage, mémoire tampon limitée (5 000 lignes par défaut, les plus anciennes sont supprimées), appel automatique de `logs_stop` au démontage du composant. Aucun flux ne doit rester ouvert après un changement d'écran. Utilisé aussi pour l'exécution des scripts.
+- **Sessions de flux** : `createLogSession` porte l'état d'un flux (logs ou script) : démarrage, mémoire tampon limitée (5 000 lignes par défaut, les plus anciennes sont supprimées), compteurs, arrêt, relance. Elle ne dépend d'aucun composant : son `Channel` reste vivant tant que la page existe. Toutes les sessions appartiennent au store `telemetry` :
+  - **onglets de l'écran Télémétrie** (sortie de script ou logs) : un flux vit jusqu'à la fermeture de son onglet, la déconnexion ou la fermeture de l'application. Quitter l'écran, changer d'onglet ou de section ne l'interrompt pas, et sa sortie continue d'être collectée. Fermer l'onglet d'un script en cours, l'interrompre, couper la liaison ou fermer l'application pendant un script demande un GO / NO GO ;
+  - **panneau ancré du tableau de bord** : `useDockedStream` arrête son flux quand on quitte le tableau de bord (démontage). « Plein écran » transfère la session vers un nouvel onglet, sans redémarrer le flux ni perdre la mémoire tampon.
+- **Indicateur de télémétrie** : hors de l'écran Télémétrie, la navigation signale les procédures en cours (forme « En transition » et chrono T+), ou à défaut le nombre de flux ouverts, avec un lien vers l'onglet.
 - **Transferts** : file d'attente gérée dans le store `transfers`, un seul transfert actif à la fois. Chaque transfert a un identifiant et peut être annulé. « Afficher » ouvre le dossier local du fichier téléchargé via le plugin officiel opener de Tauri (`revealItemInDir`). Le store vit au-delà de l'écran Fichiers : un transfert continue pendant la navigation vers une autre section.
 - **Explorateur** : la liste est virtualisée (`@tanstack/vue-virtual`), triée côté Vue, dossiers (et liens vers un dossier) en premier. Les fenêtres de sélection de fichiers viennent du plugin officiel dialog (`open`, `save`). Avant une action qui peut couper l'accès SSH (`FileEntry.sshAccess`), le GO / NO GO affiche un avertissement et exige une case à cocher. Les résidus de transfert (`FileEntry.residue`) sont signalés dans la liste.
 - **Rafraîchissement des services** : toutes les 5 secondes uniquement quand le tableau de bord est affiché et la fenêtre visible : document visible (`document.visibilityState`) et fenêtre non réduite (`isMinimized` de Tauri, relu à chaque redimensionnement et changement de focus, car WebView2 ne masque pas le document quand la fenêtre est réduite), plus un bouton d'actualisation manuelle. Le rafraîchissement suivant est programmé 5 secondes après la fin du précédent, et un rafraîchissement manuel pendant qu'un autre est en cours réutilise celui-ci : deux rafraîchissements ne se chevauchent jamais. Docker et systemd sont appelés indépendamment : l'échec de l'un n'empêche pas l'affichage de l'autre.
 - **Sortie d'erreur ≠ erreur** : beaucoup de programmes écrivent tous leurs logs sur la sortie d'erreur (Caddy, le module `logging` de Python par défaut). Une ligne `stderr` est donc marquée de façon neutre (étiquette discrète, sans fond rouge). Le style d'erreur rouge est réservé aux messages systemd de priorité ≤ 3.
-- **Console** : un seul composant console, utilisé à l'identique dans la vue plein écran, le panneau ancré du tableau de bord et l'exécution des scripts (défilement automatique, indicateur de nouvelles lignes, bannière LOS). Le panneau ancré réduit la zone du tableau au-dessus de lui, il ne la recouvre pas.
+- **Console** : un seul composant console, utilisé à l'identique dans l'écran Télémétrie (logs et sortie des scripts) et le panneau ancré du tableau de bord (défilement automatique, indicateur de nouvelles lignes, bannière LOS). Le panneau ancré réduit la zone du tableau au-dessus de lui, il ne la recouvre pas.
 - **Barre de titre personnalisée** : la barre native est désactivée (`decorations: false`). La zone de déplacement utilise `data-tauri-drag-region`, les boutons réduire, agrandir et fermer appellent l'API de fenêtre de Tauri, avec les permissions correspondantes dans les capabilities. Le double-clic sur la barre agrandit la fenêtre. Limite connue : sous Windows, le menu d'ancrage (Snap Layouts) au survol du bouton agrandir n'est pas disponible ; sous Linux, le comportement est à tester selon le gestionnaire de fenêtres.
 - **Barre d'état** : affiche `server_info` (système, Docker, systemd), récupéré une fois après la connexion.
 - **Erreurs** : chaque `kind` de `AppError` est traduit en message clair. `HostKeyMismatch` redirige vers un écran d'alerte dédié, jamais une simple notification.
@@ -251,4 +258,5 @@ src/
 | `/dashboard` | DashboardView (Docker + systemd) | oui |
 | `/files/:path*` | FilesView (chemin absolu ; `/files` = racine) | oui |
 | `/scripts` | ScriptsView | oui |
+| `/telemetry/:tab?` | TelemetryView (onglets des flux ; section d'origine surlignée : Scripts ou Tableau de bord) | oui |
 | `/settings` | SettingsView (profils) | oui |

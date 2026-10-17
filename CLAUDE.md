@@ -48,7 +48,7 @@ Lire le document concerné avant de travailler sur une partie :
 - Design entièrement maison : ne jamais ajouter de librairie de composants stylés (PrimeVue, Vuetify, Naive UI, shadcn-vue…) ni Tailwind. Reka UI est utilisé uniquement pour ses comportements, sans ses éventuels styles.
 - Toutes les valeurs visuelles (couleurs, espacements, rayons, tailles de texte) viennent des tokens de `src/styles/tokens.css`. Pas de valeur en dur dans les composants.
 - Aucun appel à `invoke()` en dehors du dossier `src/api/`.
-- Tout flux de logs ou de script passe par le composable `useLogStream`, qui arrête le flux au démontage.
+- Tout flux de logs ou de script passe par une session `createLogSession` détenue par le store `telemetry`. Le panneau ancré du tableau de bord arrête son flux quand on quitte le tableau de bord ; un onglet de l'écran Télémétrie vit jusqu'à sa fermeture, la déconnexion ou la fermeture de l'application (un script en cours n'est jamais interrompu par un changement d'écran).
 - Arguments de commandes : `snake_case` côté Rust, `camelCase` côté `invoke()` (conversion par défaut de Tauri).
 - Les actions destructrices (suppression de fichier, de conteneur, de service, script marqué `requireConfirmation`) passent toujours par une confirmation explicite.
 - Tester régulièrement le rendu sur Windows (WebView2) et Linux (WebKitGTK).
