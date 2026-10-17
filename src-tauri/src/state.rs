@@ -1,6 +1,6 @@
-//! État partagé de l'application (`AppState`) : profils, liaison SSH active
-//! (une seule à la fois), empreintes présentées par les serveurs, registre
-//! des flux en cours (logs, plus tard exécutions de scripts) et registre des
+//! État partagé de l'application (`AppState`) : profils, scripts, liaison SSH
+//! active (une seule à la fois), empreintes présentées par les serveurs,
+//! registre des flux en cours (logs et exécutions de scripts) et registre des
 //! transferts de fichiers, chacun identifié par un id pour pouvoir être
 //! arrêté proprement.
 //!
@@ -21,6 +21,7 @@ use zeroize::Zeroizing;
 
 use crate::config::{Profile, ProfileStore};
 use crate::error::AppError;
+use crate::scripts::{Script, ScriptStore};
 use crate::secrets;
 use crate::sftp::fs::SftpFs;
 use crate::sftp::transfer::{self, CancelSignal, ProgressSink};
@@ -97,6 +98,8 @@ pub struct AppState {
     profiles: ProfileStore,
     /// Sérialise les lectures-modifications du fichier des profils.
     profiles_lock: Mutex<()>,
+    /// Partagé avec les tâches d'exécution, qui enregistrent `lastRun`.
+    scripts: Arc<ScriptStore>,
     link: tokio::sync::Mutex<Link>,
     attempts: AtomicU64,
     /// Dernière empreinte présentée par le serveur de chaque profil, lors
@@ -115,6 +118,7 @@ impl AppState {
         Self {
             profiles: ProfileStore::new(config_dir),
             profiles_lock: Mutex::new(()),
+            scripts: Arc::new(ScriptStore::new(config_dir)),
             link: tokio::sync::Mutex::new(Link::Idle),
             attempts: AtomicU64::new(0),
             presented: Mutex::new(HashMap::new()),
@@ -194,6 +198,20 @@ impl AppState {
         self.with_profiles(|store| store.set_fingerprint(profile_id, fingerprint))?;
         presented.remove(profile_id);
         Ok(())
+    }
+
+    // --- Scripts -------------------------------------------------------------
+
+    pub fn list_scripts(&self) -> Result<Vec<Script>, AppError> {
+        self.scripts.list()
+    }
+
+    pub fn save_script(&self, script: Script) -> Result<Script, AppError> {
+        self.scripts.save(script)
+    }
+
+    pub fn delete_script(&self, id: &str) -> Result<(), AppError> {
+        self.scripts.delete(id)
     }
 
     // --- Liaison -------------------------------------------------------------

@@ -1,6 +1,7 @@
 //! Lecture et écriture des profils de connexion en JSON dans le dossier de
 //! configuration de l'application (fourni par l'appelant : ce module ne
-//! dépend pas de Tauri).
+//! dépend pas de Tauri), et écriture atomique des fichiers JSON, partagée
+//! avec les scripts.
 //!
 //! Règles d'enregistrement d'un profil :
 //! - l'empreinte de la clé hôte n'est jamais modifiée par `save_profile` :
@@ -11,6 +12,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -55,14 +57,8 @@ impl ProfileStore {
     }
 
     pub fn list(&self) -> Result<Vec<Profile>, AppError> {
-        if !self.path.exists() {
-            return Ok(Vec::new());
-        }
-        let content = fs::read_to_string(&self.path)
-            .map_err(|e| AppError::io(format!("lecture des profils impossible : {e}")))?;
-        let file: ProfilesFile = serde_json::from_str(&content)
-            .map_err(|e| AppError::io(format!("fichier des profils invalide : {e}")))?;
-        Ok(file.profiles)
+        let file: Option<ProfilesFile> = read_json(&self.path, "des profils")?;
+        Ok(file.map(|f| f.profiles).unwrap_or_default())
     }
 
     pub fn get(&self, id: &str) -> Result<Profile, AppError> {
@@ -99,23 +95,40 @@ impl ProfileStore {
         self.write(&profiles)
     }
 
-    /// Écriture atomique : fichier temporaire puis renommage.
     fn write(&self, profiles: &[Profile]) -> Result<(), AppError> {
-        let to_io =
-            |e: std::io::Error| AppError::io(format!("écriture des profils impossible : {e}"));
-        if let Some(dir) = self.path.parent() {
-            fs::create_dir_all(dir).map_err(to_io)?;
-        }
         let file = ProfilesFile {
             version: FILE_VERSION,
             profiles: profiles.to_vec(),
         };
-        let json = serde_json::to_string_pretty(&file)
-            .map_err(|e| AppError::io(format!("sérialisation des profils impossible : {e}")))?;
-        let tmp = self.path.with_extension("json.tmp");
-        fs::write(&tmp, json).map_err(to_io)?;
-        fs::rename(&tmp, &self.path).map_err(to_io)
+        write_json_atomic(&self.path, &file, "des profils")
     }
+}
+
+/// Lit un fichier JSON de configuration ; `None` s'il n'existe pas.
+/// `what` complète les messages d'erreur (« des profils »).
+pub fn read_json<T: DeserializeOwned>(path: &Path, what: &str) -> Result<Option<T>, AppError> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(path)
+        .map_err(|e| AppError::io(format!("lecture {what} impossible : {e}")))?;
+    serde_json::from_str(&content)
+        .map(Some)
+        .map_err(|e| AppError::io(format!("fichier {what} invalide : {e}")))
+}
+
+/// Écriture atomique d'un fichier JSON : fichier temporaire puis renommage.
+/// Le dossier est créé au besoin.
+pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T, what: &str) -> Result<(), AppError> {
+    let to_io = |e: std::io::Error| AppError::io(format!("écriture {what} impossible : {e}"));
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(to_io)?;
+    }
+    let json = serde_json::to_string_pretty(value)
+        .map_err(|e| AppError::io(format!("sérialisation {what} impossible : {e}")))?;
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, json).map_err(to_io)?;
+    fs::rename(&tmp, path).map_err(to_io)
 }
 
 /// Applique les règles d'enregistrement sur la liste en mémoire.
@@ -196,7 +209,7 @@ fn normalize(mut profile: Profile) -> Result<Profile, AppError> {
     Ok(profile)
 }
 
-fn has_control_chars(value: &str) -> bool {
+pub fn has_control_chars(value: &str) -> bool {
     value.chars().any(char::is_control)
 }
 
