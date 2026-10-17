@@ -99,7 +99,7 @@ function lastRunView(script: Script, now: number): LastRunView {
       </tr>
     </thead>
     <TransitionGroup name="row-in" tag="tbody" appear>
-      <tr v-for="script in scripts" :key="script.id">
+      <tr v-for="script in scripts" :key="script.id" class="script-row">
         <td class="truncate" :title="script.name">{{ script.name }}</td>
         <td class="description-cell">
           <span class="clamp" :title="script.description || undefined">{{
@@ -124,6 +124,7 @@ function lastRunView(script: Script, now: number): LastRunView {
         <td>
           <div class="row-actions">
             <AppButton
+              size="compact"
               :busy-since="runningSince(script)"
               :aria-label="
                 runningSince(script) === null
@@ -135,8 +136,18 @@ function lastRunView(script: Script, now: number): LastRunView {
               <AppIcon name="play" />
               Exécuter
             </AppButton>
-            <AppButton @click="emit('edit', script)">Modifier</AppButton>
-            <AppButton variant="danger" @click="emit('remove', script)">
+            <AppButton
+              size="compact"
+              variant="quiet"
+              @click="emit('edit', script)"
+            >
+              Modifier
+            </AppButton>
+            <AppButton
+              size="compact"
+              variant="quiet-danger"
+              @click="emit('remove', script)"
+            >
               Supprimer…
             </AppButton>
           </div>
@@ -149,20 +160,29 @@ function lastRunView(script: Script, now: number): LastRunView {
 <style scoped>
 /* La description prend la largeur restante. */
 .name {
-  width: 18%;
-}
-
-.confirmation {
   width: 14%;
 }
 
-.last-run {
-  width: 20%;
+.confirmation {
+  width: 13%;
 }
 
-/* Trois boutons et la place d'un chrono T+. */
+/* « il y a 12 min · interrompue » sans coupure. */
+.last-run {
+  width: 24%;
+}
+
+/*
+ * Exécuter, Modifier, Supprimer… (libellés en Plex Sans gras, plus larges
+ * que la monospace du tableau) et la place d'un chrono T+.
+ */
 .actions {
-  width: calc(32ch + 2 * var(--sp-4) + var(--sp-7));
+  width: calc(6 * var(--sp-8) + var(--sp-5));
+}
+
+/* De l'air au-dessus et au-dessous des boutons compacts. */
+.script-row td {
+  padding-block: var(--sp-2);
 }
 
 .actions-head {
@@ -226,6 +246,6 @@ function lastRunView(script: Script, now: number): LastRunView {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--sp-2);
+  gap: var(--sp-1);
 }
 </style>

@@ -123,6 +123,8 @@
   --row-height: 38px;
   --icon-button-size: 24px;
   /* bouton d'action en icône dans une ligne de tableau */
+  --button-height-compact: 28px;
+  /* bouton à libellé dans une ligne de tableau (taille compact) */
   --console-line-height: 18px;
   /* ligne de la console de logs (liste virtualisée) */
   --console-dock-height: 300px;

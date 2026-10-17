@@ -4,6 +4,10 @@
  * (contour et texte rouge). Désactivé : contour pointillé. En cours : chrono
  * `T+02` à côté du libellé, jamais de spinner.
  *
+ * Dans une ligne de tableau : taille `compact` (moins haute que la ligne),
+ * et variantes `quiet` / `quiet-danger` (libellé seul, contour au survol)
+ * pour les actions secondaires.
+ *
  * Avec `to`, rend un lien de navigation ; désactivé, il redevient un bouton
  * inactif (un lien ne peut pas être désactivé).
  */
@@ -13,7 +17,8 @@ import { formatElapsed, useElapsed } from "../../composables/useElapsed";
 
 const props = withDefaults(
   defineProps<{
-    variant?: "primary" | "secondary" | "danger";
+    variant?: "primary" | "secondary" | "danger" | "quiet" | "quiet-danger";
+    size?: "default" | "compact";
     type?: "button" | "submit";
     disabled?: boolean;
     /** Début de l'action en cours (`performance.now()`) : affiche le chrono. */
@@ -22,6 +27,7 @@ const props = withDefaults(
   }>(),
   {
     variant: "secondary",
+    size: "default",
     type: "button",
     disabled: false,
     busySince: null,
@@ -36,14 +42,19 @@ const chrono = computed(() =>
 </script>
 
 <template>
-  <RouterLink v-if="to && !disabled" :to="to" class="button" :class="variant">
+  <RouterLink
+    v-if="to && !disabled"
+    :to="to"
+    class="button"
+    :class="[variant, size]"
+  >
     <slot />
   </RouterLink>
   <button
     v-else
     :type="type"
     class="button"
-    :class="variant"
+    :class="[variant, size]"
     :disabled="disabled"
     :aria-busy="chrono !== null || undefined"
   >
@@ -117,6 +128,31 @@ const chrono = computed(() =>
 
 .danger:active {
   background: var(--color-danger-tint-strong);
+}
+
+/* Action secondaire d'une ligne : libellé seul, contour au survol. */
+.quiet {
+  color: var(--color-text-muted);
+}
+
+.quiet:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.quiet-danger {
+  color: var(--color-danger-text);
+}
+
+.quiet-danger:hover {
+  border-color: var(--color-danger);
+  background: var(--color-danger-tint);
+}
+
+/* Dans une ligne de tableau : moins haut que la ligne, qui garde de l'air. */
+.compact {
+  min-height: var(--button-height-compact);
+  padding: var(--sp-1) var(--sp-3);
 }
 
 /* Désactivé : contour pointillé, pas seulement grisé. */
