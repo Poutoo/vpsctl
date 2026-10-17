@@ -84,15 +84,24 @@ export function closeWindow(): Promise<void> {
 
 /**
  * Garde la fermeture de la fenêtre (bouton Fermer, Alt+F4, gestionnaire de
- * fenêtres) : `allow` décide, et la fenêtre n'est détruite que s'il
- * l'accepte (permission `core:window:allow-destroy`). Renvoie la fonction
- * d'arrêt du suivi.
+ * fenêtres) : `allow` décide, et la fenêtre n'est gardée ouverte que s'il
+ * refuse explicitement. S'il échoue (erreur, exception), elle se ferme
+ * quand même : mieux vaut fermer que rester bloqué, et le script de
+ * surveillance arrête les processus distants. Fermeture par
+ * `destroy()` (permission `core:window:allow-destroy`). Renvoie la
+ * fonction d'arrêt du suivi.
  */
 export function guardWindowClose(
   allow: () => Promise<boolean>,
 ): Promise<() => void> {
   return getCurrentWindow().onCloseRequested(async (event) => {
-    if (!(await allow())) event.preventDefault();
+    let allowed = true;
+    try {
+      allowed = await allow();
+    } catch {
+      allowed = true;
+    }
+    if (!allowed) event.preventDefault();
   });
 }
 
