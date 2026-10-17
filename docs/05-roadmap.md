@@ -41,6 +41,7 @@ Chaque jalon doit produire quelque chose d'utilisable.
 - Monitoring
 - Détection immédiate d'une perte de liaison (événement émis par le backend au lieu du polling de 30 s)
 - Glisser/Déposer de dossiers entier dans le gestionnaire
+- Gestion des droits pour MCP Claude (écriture, périmètre d'accès...)
 
 ### Accès pour Claude (serveur MCP local)
 
