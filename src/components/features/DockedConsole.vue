@@ -1,36 +1,34 @@
 <script setup lang="ts">
 /**
  * Console ancrée en bas du tableau de bord, sur la source choisie par
- * l'action Logs d'une ligne. Changer de source arrête le flux précédent ;
- * fermer le panneau le démonte, ce qui arrête le flux (`useLogStream`).
+ * l'action Logs d'une ligne. Son flux appartient au store `telemetry` :
+ * arrêté quand on quitte le tableau de bord (`useDockedStream`), arrêté par
+ * Fermer.
  */
-import { computed, reactive } from "vue";
-import { useLogStream } from "../../composables/useLogStream";
-import { useConsoleStore, type LogTarget } from "../../stores/console";
+import { useTelemetryStore, type LogsStream } from "../../stores/telemetry";
 import AppButton from "../ui/AppButton.vue";
 import LogConsole from "../ui/LogConsole.vue";
 
-const props = defineProps<{ target: LogTarget }>();
+defineProps<{ stream: LogsStream }>();
 
-const store = useConsoleStore();
-const stream = reactive(useLogStream(computed(() => props.target.source)));
+const store = useTelemetryStore();
 </script>
 
 <template>
   <LogConsole
-    :stream="stream"
-    :legend="target.kind === 'systemd' ? 'journal' : 'output'"
-    :label="`Télémétrie de ${target.name}`"
+    :stream="stream.session"
+    :legend="stream.target.kind === 'systemd' ? 'journal' : 'output'"
+    :label="`Télémétrie de ${stream.target.name}`"
   >
     <template #title>
       <span class="caps kind">{{
-        target.kind === "systemd" ? "Service" : "Conteneur"
+        stream.target.kind === "systemd" ? "Service" : "Conteneur"
       }}</span>
-      <span class="name">{{ target.name }}</span>
-      <span class="command">{{ target.command }}</span>
+      <span class="name">{{ stream.target.name }}</span>
+      <span class="command">{{ stream.target.command }}</span>
     </template>
     <template #actions>
-      <AppButton @click="store.close()">Fermer</AppButton>
+      <AppButton @click="store.closeDock()">Fermer</AppButton>
     </template>
   </LogConsole>
 </template>

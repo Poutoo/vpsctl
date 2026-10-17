@@ -9,12 +9,12 @@ import type { Container } from "../bindings/Container";
 import type { RunState } from "../bindings/RunState";
 import type { Service } from "../bindings/Service";
 import { useNotify } from "../composables/useNotify";
+import { useConnectionStore } from "./connection";
 import {
   containerLogTarget,
   serviceLogTarget,
-  useConsoleStore,
-} from "./console";
-import { useConnectionStore } from "./connection";
+  useTelemetryStore,
+} from "./telemetry";
 
 /** Une liste du tableau de bord, chargée indépendamment de l'autre. */
 export interface Section<T> {
@@ -124,7 +124,7 @@ const FAILURE_TITLE: Record<Operation, string> = {
 
 export const useServicesStore = defineStore("services", () => {
   const connection = useConnectionStore();
-  const consoleStore = useConsoleStore();
+  const telemetry = useTelemetryStore();
   const { notify } = useNotify();
 
   const containers = ref(emptySection<Container>()) as Ref<Section<Container>>;
@@ -221,7 +221,7 @@ export const useServicesStore = defineStore("services", () => {
   }
 
   function openLogs(target: Target) {
-    consoleStore.open(
+    telemetry.showLogs(
       target.kind === "docker"
         ? containerLogTarget(target.id, target.name)
         : serviceLogTarget(target.unit),

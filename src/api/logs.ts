@@ -4,7 +4,7 @@ import type { LogSource } from "../bindings/LogSource";
 import { call } from "./invoke";
 
 // Logs en direct (docs/04-contrat-commandes.md). À utiliser uniquement via
-// le composable `useLogStream`, qui arrête le flux au démontage.
+// le store `telemetry` (sessions de flux).
 
 /**
  * Ouvre un flux de logs : `tail` lignes d'historique (5 000 au plus), puis

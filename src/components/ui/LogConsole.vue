@@ -1,10 +1,9 @@
 <script setup lang="ts">
 /**
  * Console de logs : un seul composant, identique partout (panneau ancré du
- * tableau de bord, plus tard télémétrie plein écran et sortie des scripts).
- * Affiche un flux géré par `useLogStream` (passé en `reactive`) : il ne
- * démarre ni n'arrête rien de lui-même, hormis les boutons Interrompre et
- * Rejouer.
+ * tableau de bord, onglets de l'écran Télémétrie : logs et sortie des
+ * scripts). Affiche une session du store `telemetry` : il ne démarre ni
+ * n'arrête rien de lui-même, hormis les boutons Interrompre et Rejouer.
  *
  * - Liste virtualisée (@tanstack/vue-virtual), lignes de hauteur fixe
  *   `--console-line-height`, sans retour à la ligne (défilement horizontal).
@@ -20,15 +19,14 @@ import { formatElapsed, useElapsed } from "../../composables/useElapsed";
 import {
   isJournalError,
   type ConsoleLine,
-  type LogStream,
-} from "../../composables/useLogStream";
-import type { UnwrapNestedRefs } from "vue";
+  type LogSession,
+} from "../../composables/logSession";
 import AppButton from "./AppButton.vue";
 import AppIcon from "./AppIcon.vue";
 import AppSwitch from "./AppSwitch.vue";
 
 const props = defineProps<{
-  stream: UnwrapNestedRefs<LogStream>;
+  stream: LogSession;
   /** `output` : Docker et scripts ; `journal` : systemd. */
   legend: "output" | "journal";
   /** Nom accessible de la zone de logs. */

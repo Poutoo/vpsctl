@@ -1,23 +1,11 @@
-import {
-  computed,
-  onBeforeUnmount,
-  ref,
-  shallowRef,
-  triggerRef,
-  watch,
-  type Ref,
-} from "vue";
+import { computed, reactive, ref, shallowRef, triggerRef } from "vue";
 import { errorMessage } from "../api/errors";
-import * as logs from "../api/logs";
 import type { AppError } from "../bindings/AppError";
 import type { LogEvent } from "../bindings/LogEvent";
 import type { LogLine } from "../bindings/LogLine";
-import type { LogSource } from "../bindings/LogSource";
 
 /** Lignes gardées en mémoire : les plus anciennes sont supprimées. */
 export const LOG_CAPACITY = 5_000;
-/** Lignes d'historique demandées à l'ouverture du flux. */
-const DEFAULT_TAIL = 200;
 
 /** Ligne de console : une ligne reçue, ou un avis local (lignes écartées). */
 export interface ConsoleLine extends LogLine {
@@ -43,17 +31,32 @@ export function isJournalError(line: LogLine): boolean {
   );
 }
 
+/** Ouverture et arrêt d'un flux côté backend (logs ou script). */
+export interface StreamDriver {
+  /** Ouvre le flux et renvoie son identifiant. */
+  open(onEvent: (event: LogEvent) => void): Promise<string>;
+  close(id: string): Promise<void>;
+}
+
+export interface LogSessionOptions {
+  capacity?: number;
+  /**
+   * Fin du flux sans arrêt demandé : `ended` (commande terminée d'elle-même)
+   * ou `error` (liaison perdue, ouverture refusée).
+   */
+  onFinish?: (session: LogSession) => void;
+}
+
 /**
- * Cycle de vie complet d'un flux de logs (ou, plus tard, de la sortie d'un
- * script) : ouverture, mémoire tampon limitée, arrêt. Le flux est arrêté
- * quand la source change et au démontage du composant : aucun flux ne reste
- * ouvert après un changement d'écran.
- *
- * `source` à `null` : aucun flux.
+ * État complet d'un flux de logs ou de la sortie d'un script : ouverture,
+ * mémoire tampon limitée, compteurs, arrêt, relance. Indépendante de tout
+ * composant : la session (et son `Channel`) vit tant qu'on la garde, quel
+ * que soit l'écran affiché. Toutes les sessions appartiennent au store
+ * `telemetry`, qui décide quand les arrêter.
  */
-export function useLogStream(
-  source: Readonly<Ref<LogSource | null>>,
-  { tail = DEFAULT_TAIL, capacity = LOG_CAPACITY } = {},
+export function createLogSession(
+  driver: StreamDriver,
+  { capacity = LOG_CAPACITY, onFinish }: LogSessionOptions = {},
 ) {
   const lines = shallowRef<ConsoleLine[]>([]);
   const status = ref<StreamStatus>("idle");
@@ -61,6 +64,8 @@ export function useLogStream(
   const error = ref<string | null>(null);
   /** Début de l'ouverture en cours (`performance.now()`), pour le chrono. */
   const startingSince = ref<number | null>(null);
+  /** Début du flux en cours ou terminé (horodatage en ms), pour le chrono T+. */
+  const startedAt = ref<number | null>(null);
   /** Fin du flux (horodatage en ms), pour la bannière LOS. */
   const endedAt = ref<number | null>(null);
   /** Lignes de la sortie d'erreur, et erreurs du journal, dans la mémoire. */
@@ -73,7 +78,6 @@ export function useLogStream(
   /** Incrémenté à chaque ouverture ou arrêt : les événements d'un flux remplacé sont ignorés. */
   let generation = 0;
   let nextLineId = 1;
-  let unmounted = false;
 
   function count(line: LogLine, delta: number) {
     if (line.origin === "stderr") stderrCount.value += delta;
@@ -126,12 +130,14 @@ export function useLogStream(
         break;
       }
       case "ended":
-        finish("ended");
         exitCode.value = event.exitCode;
+        finish("ended");
+        onFinish?.(session);
         break;
       case "error":
-        finish("error");
         error.value = event.message;
+        finish("error");
+        onFinish?.(session);
         break;
     }
   }
@@ -144,31 +150,37 @@ export function useLogStream(
     endedAt.value = Date.now();
   }
 
-  async function start() {
-    const target = source.value;
-    if (target === null || unmounted) return;
+  /**
+   * Ouvre le flux. Renvoie `false` si l'ouverture a échoué (message dans
+   * `error`) ou si le flux a été arrêté pendant l'ouverture.
+   */
+  async function start(): Promise<boolean> {
     const current = ++generation;
     status.value = "starting";
     startingSince.value = performance.now();
+    startedAt.value = Date.now();
     exitCode.value = null;
     error.value = null;
     endedAt.value = null;
     try {
-      const id = await logs.startLogs(target, tail, (event) =>
-        onEvent(current, event),
-      );
+      const id = await driver.open((event) => onEvent(current, event));
       if (current !== generation) {
-        // Arrêté ou remplacé pendant l'ouverture : le flux n'a plus d'usage.
-        void logs.stopLogs(id).catch(() => undefined);
-        return;
+        // Terminé, arrêté ou remplacé pendant l'ouverture : un flux encore
+        // ouvert n'a plus d'usage (identifiant inconnu ignoré sinon).
+        void driver.close(id).catch(() => undefined);
+        // Relu après l'attente : l'événement final a pu le changer.
+        const reached = status.value as StreamStatus;
+        return reached === "ended" || reached === "error";
       }
       streamId = id;
       status.value = "live";
       startingSince.value = null;
+      return true;
     } catch (raw) {
-      if (current !== generation) return;
-      finish("error");
+      if (current !== generation) return false;
       error.value = errorMessage(raw as AppError);
+      finish("error");
+      return false;
     }
   }
 
@@ -178,7 +190,7 @@ export function useLogStream(
     const wasActive = status.value === "live" || status.value === "starting";
     if (wasActive) finish("stopped");
     else generation++;
-    if (id !== null) await logs.stopLogs(id).catch(() => undefined);
+    if (id !== null) await driver.close(id).catch(() => undefined);
   }
 
   function clear() {
@@ -188,48 +200,35 @@ export function useLogStream(
     errorCount.value = 0;
   }
 
-  /** Rouvre le flux sur la même source (bouton « Rejouer »). */
-  async function replay() {
+  /** Rouvre le flux sur la même source (« Rejouer », « Relancer »). */
+  async function replay(): Promise<boolean> {
     await stop();
     clear();
-    await start();
+    return start();
   }
-
-  watch(
-    source,
-    async (next, previous) => {
-      if (previous !== undefined) await stop();
-      clear();
-      status.value = "idle";
-      if (next !== null) await start();
-    },
-    { immediate: true, deep: true },
-  );
-
-  onBeforeUnmount(() => {
-    unmounted = true;
-    void stop();
-  });
 
   const active = computed(
     () => status.value === "live" || status.value === "starting",
   );
 
-  return {
+  const session = reactive({
     lines,
     status,
     active,
     exitCode,
     error,
     startingSince,
+    startedAt,
     endedAt,
     stderrCount,
     errorCount,
     received,
+    start,
     stop,
     clear,
     replay,
-  };
+  });
+  return session;
 }
 
-export type LogStream = ReturnType<typeof useLogStream>;
+export type LogSession = ReturnType<typeof createLogSession>;

@@ -8,20 +8,17 @@ import PageHeader from "../components/layout/PageHeader.vue";
 import AppButton from "../components/ui/AppButton.vue";
 import AppIcon from "../components/ui/AppIcon.vue";
 import { formatElapsed, useElapsed } from "../composables/useElapsed";
+import { useDockedStream } from "../composables/useDockedStream";
 import { useServiceActions } from "../composables/useServiceActions";
 import { useVisiblePolling } from "../composables/useVisiblePolling";
-import {
-  containerLogTarget,
-  serviceLogTarget,
-  useConsoleStore,
-} from "../stores/console";
 import { useServicesStore } from "../stores/services";
+import { containerLogTarget, serviceLogTarget } from "../stores/telemetry";
 
 /** Rafraîchissement automatique, uniquement sur cet écran et fenêtre visible. */
 const REFRESH_INTERVAL_MS = 5_000;
 
 const store = useServicesStore();
-const consoleStore = useConsoleStore();
+const telemetry = useDockedStream();
 const { onContainer, onService } = useServiceActions();
 const { trigger } = useVisiblePolling(
   () => store.refresh(),
@@ -117,7 +114,7 @@ const refreshedLabel = computed(() => {
         <ContainerTable
           :containers="store.containers.items"
           :loading="loading"
-          @logs="(c) => consoleStore.open(containerLogTarget(c.id, c.name))"
+          @logs="(c) => telemetry.showLogs(containerLogTarget(c.id, c.name))"
           @operate="onContainer"
         />
       </DashboardSection>
@@ -135,15 +132,15 @@ const refreshedLabel = computed(() => {
         <ServiceTable
           :services="store.services.items"
           :loading="loading"
-          @logs="(s) => consoleStore.open(serviceLogTarget(s.unit))"
+          @logs="(s) => telemetry.showLogs(serviceLogTarget(s.unit))"
           @operate="onService"
         />
       </DashboardSection>
     </div>
 
     <!-- Panneau ancré : réduit la zone au-dessus de lui, ne la recouvre pas. -->
-    <div v-if="consoleStore.target" class="dock">
-      <DockedConsole :target="consoleStore.target" />
+    <div v-if="telemetry.dock" class="dock">
+      <DockedConsole :stream="telemetry.dock" />
     </div>
   </div>
 </template>
