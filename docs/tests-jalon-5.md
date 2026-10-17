@@ -202,7 +202,11 @@ pgrep -u "$USER" -af 'exec 3<&0|seq 1 120|sleep 60[0-3]'
 
 ## 12. Rechargement de l'interface
 
-- [ ] `vpsctl-t-long` en cours, Ctrl+R ou F5 (fenêtre en développement) : l'interface se recharge **sans** confirmation, le script est interrompu (aucun processus restant), plus aucun onglet ; la dernière exécution indique « interrompue ». Limite connue : pas de GO / NO GO dans ce cas.
+- [ ] En développement (`npm run tauri dev`), `vpsctl-t-long` en cours, Ctrl+R ou F5 : l'interface se recharge **sans** confirmation, le script est interrompu (aucun processus restant), plus aucun onglet ; la dernière exécution indique « interrompue ».
+- [ ] En production (`npm run tauri build`, application installée), `vpsctl-t-long` en cours : F5, Ctrl+R et Ctrl+Maj+R n'ont **aucun** effet, le script continue.
+- [ ] En production, clic droit sur une zone vide, un titre, un tableau du tableau de bord, la console : aucun menu du moteur web (pas de « Recharger », « Précédent », « Inspecter »). Les menus de l'application restent actifs : clic droit sur une ligne de Fichiers (menu de la ligne) et dans une zone vide de la liste (menu du dossier).
+- [ ] En production, clic droit dans un champ de saisie (commande d'un script, nom d'un profil) : le menu couper / copier / coller du système reste disponible.
+- [ ] En développement, le clic droit hors d'un menu de l'application affiche toujours le menu du moteur web (avec « Inspecter »).
 
 ## 13. Rendu Windows et Linux
 
