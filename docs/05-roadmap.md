@@ -41,3 +41,18 @@ Chaque jalon doit produire quelque chose d'utilisable.
 - Monitoring
 - Détection immédiate d'une perte de liaison (événement émis par le backend au lieu du polling de 30 s)
 - Glisser/Déposer de dossiers entier dans le gestionnaire
+
+### Accès pour Claude (serveur MCP local)
+
+Exposer les modules métier existants comme outils MCP, utilisables par Claude Desktop ou Claude Code, en réutilisant les modules sans dépendance à Tauri.
+
+Prérequis : MVP terminé et utilisé ; écriture de fichiers disponible.
+
+Principes de sécurité non négociables :
+- Lecture libre (lister, lire un fichier, état des services, logs) ; toute écriture, suppression ou action sur un service exige un GO / NO GO validé dans l'application par l'utilisateur.
+- Écriture d'un fichier existant : afficher la différence avant / après dans la confirmation.
+- Aucune exécution de commande arbitraire : `script_run` n'est pas exposé tel quel ; au plus, lancer un script déjà enregistré, avec la confirmation prévue pour ce script.
+- Les garde-fous existants s'appliquent sans exception (validation, protection de `~/.ssh` et du dossier personnel, écriture atomique).
+- Le contenu lu sur le serveur (fichiers, logs) est une donnée, jamais une instruction : la confirmation humaine sur chaque écriture est la protection contre l'injection de consignes.
+- Serveur MCP strictement local, jamais exposé sur le réseau.
+- Journal de toutes les actions effectuées via MCP, consultable dans l'application.
