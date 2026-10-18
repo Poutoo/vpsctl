@@ -69,6 +69,45 @@ pub enum AppError {
         #[ts(type = "number | null")]
         available: Option<u64>,
     },
+
+    /// Création ou suppression d'un service arrêtée en cours de séquence :
+    /// `step` est l'étape en échec, `state` décrit où en est le service.
+    #[error("{unit} : échec à l'étape {step} ({state}) : {cause}")]
+    ServiceStepFailed {
+        unit: String,
+        step: ServiceStep,
+        state: String,
+        cause: Box<AppError>,
+    },
+}
+
+/// Étape d'une séquence de création (`Reload`, `Enable`) ou de suppression
+/// d'un service (voir `docs/04-contrat-commandes.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ServiceStep {
+    Reload,
+    Enable,
+    Stop,
+    Disable,
+    RemoveDropIn,
+    RemoveFile,
+    ResetFailed,
+}
+
+impl std::fmt::Display for ServiceStep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Reload => "daemon-reload",
+            Self::Enable => "enable",
+            Self::Stop => "stop",
+            Self::Disable => "disable",
+            Self::RemoveDropIn => "suppression du dossier de surcharge",
+            Self::RemoveFile => "suppression du fichier",
+            Self::ResetFailed => "reset-failed",
+        })
+    }
 }
 
 /// Côté d'un élément de fichier : le VPS ou la machine locale.
@@ -248,6 +287,30 @@ mod tests {
                 "side": "local",
                 "needed": 10,
                 "available": null,
+            })
+        );
+    }
+
+    #[test]
+    fn service_step_failure_serializes_its_cause() {
+        use super::ServiceStep;
+        let error = AppError::ServiceStepFailed {
+            unit: "bot.service".into(),
+            step: ServiceStep::RemoveDropIn,
+            state: "Service arrêté et désactivé.".into(),
+            cause: Box::new(AppError::Remote {
+                exit_code: 1,
+                stderr: "boom".into(),
+            }),
+        };
+        assert_eq!(
+            to_value(error).unwrap(),
+            json!({
+                "kind": "ServiceStepFailed",
+                "unit": "bot.service",
+                "step": "removeDropIn",
+                "state": "Service arrêté et désactivé.",
+                "cause": { "kind": "Remote", "exitCode": 1, "stderr": "boom" },
             })
         );
     }

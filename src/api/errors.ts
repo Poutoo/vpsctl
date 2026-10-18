@@ -1,5 +1,6 @@
 import type { AppError } from "../bindings/AppError";
 import type { FileSide } from "../bindings/FileSide";
+import type { ServiceStep } from "../bindings/ServiceStep";
 import { formatBytes } from "../format";
 
 /** Normalise une erreur reçue d'`invoke()` en `AppError`. */
@@ -52,8 +53,22 @@ export function errorMessage(error: AppError): string {
         : `Un élément porte déjà ce nom : ${error.path}`;
     case "InsufficientSpace":
       return `Espace disque insuffisant ${where(error.side)}${spaceDetail(error.needed, error.available)}.`;
+    case "ServiceStepFailed":
+      // La cause, puis l'état dans lequel la séquence laisse le service.
+      return `Arrêt à l'étape « ${STEP_LABEL[error.step]} » : ${errorMessage(error.cause).replace(/\.?$/, ".")} ${error.state}`;
   }
 }
+
+/** Étapes de création et de suppression d'un service, telles qu'affichées. */
+const STEP_LABEL: Record<ServiceStep, string> = {
+  reload: "rechargement de systemd",
+  enable: "activation et démarrage",
+  stop: "arrêt",
+  disable: "désactivation",
+  removeDropIn: "suppression du dossier de surcharge",
+  removeFile: "suppression du fichier",
+  resetFailed: "réinitialisation de l'état d'échec",
+};
 
 function where(side: FileSide): string {
   return side === "remote" ? "sur le VPS" : "sur cette machine";

@@ -303,7 +303,7 @@ pub(super) async fn refuse_home(
 
 /// Précise un échec générique du serveur : si l'élément existe désormais,
 /// c'est qu'il existait déjà.
-pub(super) async fn explain_failure(fs: &impl RemoteFs, target: &str, error: AppError) -> AppError {
+pub(crate) async fn explain_failure(fs: &impl RemoteFs, target: &str, error: AppError) -> AppError {
     if matches!(error, AppError::Io { .. }) {
         if let Ok(Some(meta)) = fs.lstat(target).await {
             return AppError::already_exists(target, meta.kind == EntryKind::Dir);

@@ -79,7 +79,7 @@ fn final_event(outcome: Result<(), Stop>) -> Progress {
 }
 
 /// Jeton des temporaires d'un transfert (8 caractères hexadécimaux).
-fn new_token() -> String {
+pub(crate) fn new_token() -> String {
     uuid::Uuid::new_v4().simple().to_string()[..path::TOKEN_LEN].to_owned()
 }
 

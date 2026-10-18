@@ -11,6 +11,7 @@
 //! - `unit` : validation d'un service à créer et texte de son fichier d'unité ;
 //! - `manage` : séquences de création et de suppression.
 
+pub mod manage;
 pub mod unit;
 
 use std::collections::{HashMap, HashSet};
