@@ -57,6 +57,7 @@ pub fn run() {
             commands::docker::docker_remove,
             commands::systemd::services_list,
             commands::systemd::service_action,
+            commands::systemd::service_unit_preview,
             commands::logs::logs_start,
             commands::logs::logs_stop,
             commands::scripts::scripts_list,

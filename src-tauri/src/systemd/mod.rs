@@ -7,6 +7,11 @@
 //! Liste : unités en mémoire (`list-units` en JSON) et fichiers d'unité du
 //! dossier utilisateur (lus par SFTP), croisés par `select_user_services`.
 //! Règle de filtrage et correspondance des états : `docs/03-architecture.md`.
+//!
+//! - `unit` : validation d'un service à créer et texte de son fichier d'unité ;
+//! - `manage` : séquences de création et de suppression.
+
+pub mod unit;
 
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;

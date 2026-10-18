@@ -5,6 +5,7 @@ use tauri::State;
 use crate::error::AppError;
 use crate::run_state::Action;
 use crate::state::AppState;
+use crate::systemd::unit::{self, ServiceDef};
 use crate::systemd::{self, Service};
 
 #[tauri::command]
@@ -21,4 +22,10 @@ pub async fn service_action(
 ) -> Result<(), AppError> {
     let connection = state.connection().await?;
     systemd::action(&connection, &unit, action).await
+}
+
+/// Texte du fichier d'unité, pour l'aperçu du formulaire (sans connexion).
+#[tauri::command]
+pub fn service_unit_preview(def: ServiceDef) -> Result<String, AppError> {
+    unit::render_unit(&def)
 }
