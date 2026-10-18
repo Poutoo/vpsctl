@@ -26,7 +26,7 @@ Chaque jalon doit produire quelque chose d'utilisable.
 - [x] Jalon 2 : lister les services Docker et systemd (lecture seule)
 - [x] Jalon 3 : piloter les services (start/stop/restart avec confirmation) et logs en direct
 - [x] Jalon 4 : explorateur SFTP
-- [ ] Jalon 5 : scripts personnalisés
+- [x] Jalon 5 : scripts personnalisés
 - [ ] Jalon 6 : créer et supprimer des services systemd
 - [ ] Jalon 7 : packaging et utilisation quotidienne sur les deux machines
 

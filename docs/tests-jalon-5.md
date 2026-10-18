@@ -88,25 +88,25 @@ sleep 603
 
 ## 1. Liste et formulaire
 
-- [ ] Liste vide : état « 0 PROCÉDURE · Aucun script » avec un bouton Nouveau script.
-- [ ] Formulaire : Nom, Description (facultative), Commande en monospace sur plusieurs lignes, sans retour à la ligne automatique (une longue ligne défile horizontalement), case GO / NO GO.
-- [ ] Sous le champ Commande, l'aide discrète : « Exécutée dans un shell de connexion : ~/.profile est chargé, mais pas les réglages de ~/.bashrc (nvm, alias…). »
-- [ ] Enregistrer avec un nom vide, puis une commande vide (ou faite d'espaces et de retours à la ligne) : message sous le champ, rien n'est enregistré.
-- [ ] Nom de plus de 64 caractères : refusé.
-- [ ] Annuler : retour à la liste sans changement.
-- [ ] Après la création des scripts de test, la liste suit les captures (`docs/design/ecran/scripts/accueil.png`) : nom, description sur deux lignes au plus (complète en infobulle), « ⚠ GO / NO GO » en ambre ou « Directe », « ○ jamais exécutée », boutons Exécuter, Modifier, Supprimer…. Le compteur en haut indique « 12 scripts ».
-- [ ] Modifier `vpsctl-t-multi` : le formulaire « MODIFIER · vpsctl-t-multi » montre la commande intacte, retours à la ligne compris.
-- [ ] `scripts.json` : la commande de `vpsctl-t-multi` contient des `\n` et aucun `\r` (y compris sous Windows).
+- [y] Liste vide : état « 0 PROCÉDURE · Aucun script » avec un bouton Nouveau script.
+- [y] Formulaire : Nom, Description (facultative), Commande en monospace sur plusieurs lignes, sans retour à la ligne automatique (une longue ligne défile horizontalement), case GO / NO GO.
+- [y] Sous le champ Commande, l'aide discrète : « Exécutée dans un shell de connexion : ~/.profile est chargé, mais pas les réglages de ~/.bashrc (nvm, alias…). »
+- [y] Enregistrer avec un nom vide, puis une commande vide (ou faite d'espaces et de retours à la ligne) : message sous le champ, rien n'est enregistré.
+- [y] Nom de plus de 64 caractères : refusé.
+- [y] Annuler : retour à la liste sans changement.
+- [y] Après la création des scripts de test, la liste suit les captures (`docs/design/ecran/scripts/accueil.png`) : nom, description sur deux lignes au plus (complète en infobulle), « ⚠ GO / NO GO » en ambre ou « Directe », « ○ jamais exécutée », boutons Exécuter, Modifier, Supprimer…. Le compteur en haut indique « 12 scripts ».
+- [y] Modifier `vpsctl-t-multi` : le formulaire « MODIFIER · vpsctl-t-multi » montre la commande intacte, retours à la ligne compris.
+- [y] `scripts.json` : la commande de `vpsctl-t-multi` contient des `\n` et aucun `\r` (y compris sous Windows).
 
 ## 2. Exécutions courtes
 
-- [ ] Exécuter `vpsctl-t-ok` (Directe) : aucune fenêtre GO / NO GO ; l'écran Télémétrie s'ouvre sur un onglet « vpsctl-t-ok » ; la navigation surligne **Scripts**. En-tête « PROCÉDURE vpsctl-t-ok echo début; sleep 1; echo fin ». Lignes `out` « début » puis « fin », horodatées à la milliseconde.
-- [ ] Fin : bannière « LOS · Fin du flux · exit 0 · HH:MM:SS » ; notification de succès « Procédure terminée · vpsctl-t-ok · exit 0 · 1,… s », fermée après 5 s ; l'onglet passe au cercle plein ; le bouton devient « Relancer ».
-- [ ] Retour à Scripts : « ● à l'instant · exit 0 » ; après quelques minutes, « il y a N min ».
-- [ ] Exécuter `vpsctl-t-echec` : fenêtre GO / NO GO « Exécuter la procédure ? », sujet `vpsctl-t-echec`, avec dans les conséquences « Commande : » et la commande en monospace. NO GO (ou Échap) : rien ne se lance.
-- [ ] GO : bannière LOS en rouge « exit 1 » ; notification d'erreur persistante « Procédure en échec · vpsctl-t-echec · exit 1 » avec « Voir la sortie » ; onglet avec le triangle. Dans Scripts : « ▲ … · exit 1 » en rouge.
-- [ ] Exécuter `vpsctl-t-stderr` : « sur la sortie standard » en `out`, « sur la sortie d'erreur » et le message de `ls` en `err` **neutre** (pas de rouge) ; compteur « 3 lignes · 2 sur stderr » ; exit 2, notification d'échec.
-- [ ] Exécuter `vpsctl-t-multi` : la fenêtre GO / NO GO montre les sept lignes de la commande, telles quelles. Sortie attendue, exactement :
+- [y] Exécuter `vpsctl-t-ok` (Directe) : aucune fenêtre GO / NO GO ; l'écran Télémétrie s'ouvre sur un onglet « vpsctl-t-ok » ; la navigation surligne **Scripts**. En-tête « PROCÉDURE vpsctl-t-ok echo début; sleep 1; echo fin ». Lignes `out` « début » puis « fin », horodatées à la milliseconde.
+- [y] Fin : bannière « LOS · Fin du flux · exit 0 · HH:MM:SS » ; notification de succès « Procédure terminée · vpsctl-t-ok · exit 0 · 1,… s », fermée après 5 s ; l'onglet passe au cercle plein ; le bouton devient « Relancer ».
+- [y] Retour à Scripts : « ● à l'instant · exit 0 » ; après quelques minutes, « il y a N min ».
+- [y] Exécuter `vpsctl-t-echec` : fenêtre GO / NO GO « Exécuter la procédure ? », sujet `vpsctl-t-echec`, avec dans les conséquences « Commande : » et la commande en monospace. NO GO (ou Échap) : rien ne se lance.
+- [y] GO : bannière LOS en rouge « exit 1 » ; notification d'erreur persistante « Procédure en échec · vpsctl-t-echec · exit 1 » avec « Voir la sortie » ; onglet avec le triangle. Dans Scripts : « ▲ … · exit 1 » en rouge.
+- [y] Exécuter `vpsctl-t-stderr` : « sur la sortie standard » en `out`, « sur la sortie d'erreur » et le message de `ls` en `err` **neutre** (pas de rouge) ; compteur « 3 lignes · 2 sur stderr » ; exit 2, notification d'échec.
+- [y] Exécuter `vpsctl-t-multi` : la fenêtre GO / NO GO montre les sept lignes de la commande, telles quelles. Sortie attendue, exactement :
 
   ```
   l'apostrophe
@@ -119,33 +119,33 @@ sleep 603
   ```
 
   puis LOS « exit 3 ».
-- [ ] Exécuter `vpsctl-t-pwd` : affiche le dossier personnel (`/home/<compte>`).
-- [ ] Relancer (bouton de la console) `vpsctl-t-echec` : GO / NO GO à nouveau ; GO : même onglet, console vidée, nouvelle exécution.
-- [ ] Notification « Voir la sortie » cliquée depuis un autre écran : l'écran Télémétrie s'ouvre sur l'onglet du script.
+- [y] Exécuter `vpsctl-t-pwd` : affiche le dossier personnel (`/home/<compte>`).
+- [y] Relancer (bouton de la console) `vpsctl-t-echec` : GO / NO GO à nouveau ; GO : même onglet, console vidée, nouvelle exécution.
+- [y] Notification « Voir la sortie » cliquée depuis un autre écran : l'écran Télémétrie s'ouvre sur l'onglet du script.
 
 ## 3. Script long et changement d'écran
 
-- [ ] Exécuter `vpsctl-t-long`. Le bouton Exécuter de la liste (revenir sur Scripts) affiche un chrono « T+… » et la dernière exécution indique « ◐ en cours ».
-- [ ] Hors de l'écran Télémétrie, la navigation affiche au-dessus de « Liaison depuis » : « ◐ 1 procédure en cours · T+00:00:… », le chrono avance. Un clic ouvre l'onglet du script.
-- [ ] Pendant l'exécution, aller successivement sur Fichiers, Tableau de bord (ouvrir les logs d'un conteneur dans le panneau), Réglages, attendre 20 s, puis revenir sur l'onglet du script : les nombres sont **consécutifs**, sans trou (aucune ligne perdue pendant l'absence), et la console reprend à la dernière ligne.
-- [ ] Changer d'onglet de télémétrie (ouvrir un flux de logs en plein écran, section 9) puis revenir : idem.
-- [ ] Réduire la fenêtre 20 s, la restaurer : idem.
-- [ ] Cliquer Exécuter sur `vpsctl-t-long` pendant qu'il tourne : l'onglet s'ouvre, **aucune** seconde exécution (une seule suite de nombres ; sur le VPS, `pgrep -u "$USER" -af 'seq 1 120'` ne liste qu'un processus de boucle).
-- [ ] À la fin (120 lignes) : LOS « exit 0 », notification de succès avec une durée d'environ « 2 min 00 s ».
+- [y] Exécuter `vpsctl-t-long`. Le bouton Exécuter de la liste (revenir sur Scripts) affiche un chrono « T+… » et la dernière exécution indique « ◐ en cours ».
+- [y] Hors de l'écran Télémétrie, la navigation affiche au-dessus de « Liaison depuis » : « ◐ 1 procédure en cours · T+00:00:… », le chrono avance. Un clic ouvre l'onglet du script.
+- [y] Pendant l'exécution, aller successivement sur Fichiers, Tableau de bord (ouvrir les logs d'un conteneur dans le panneau), Réglages, attendre 20 s, puis revenir sur l'onglet du script : les nombres sont **consécutifs**, sans trou (aucune ligne perdue pendant l'absence), et la console reprend à la dernière ligne.
+- [y] Changer d'onglet de télémétrie (ouvrir un flux de logs en plein écran, section 9) puis revenir : idem.
+- [y] Réduire la fenêtre 20 s, la restaurer : idem.
+- [y] Cliquer Exécuter sur `vpsctl-t-long` pendant qu'il tourne : l'onglet s'ouvre, **aucune** seconde exécution (une seule suite de nombres ; sur le VPS, `pgrep -u "$USER" -af 'seq 1 120'` ne liste qu'un processus de boucle).
+- [y] À la fin (120 lignes) : LOS « exit 0 », notification de succès avec une durée d'environ « 2 min 00 s ».
 
 ## 4. Saisie impossible
 
-- [ ] Exécuter `vpsctl-t-read` : se termine **aussitôt** (pas d'attente), affiche « read : code 1 », LOS « exit 1 ».
-- [ ] Exécuter `vpsctl-t-sudo` : se termine aussitôt avec, en `err`, « sudo: a terminal is required to read the password… » (ou équivalent) et « exit 1 ». Aucune invite de mot de passe, nulle part.
+- [y] Exécuter `vpsctl-t-read` : se termine **aussitôt** (pas d'attente), affiche « read : code 1 », LOS « exit 1 ».
+- [y] Exécuter `vpsctl-t-sudo` : se termine aussitôt avec, en `err`, « sudo: a terminal is required to read the password… » (ou équivalent) et « exit 1 ». Aucune invite de mot de passe, nulle part.
 
 ## 5. Variables du shell de connexion
 
-- [ ] Exécuter `vpsctl-t-path` : « PATH du shell de connexion : OK », exit 0. La commande n'est trouvée que grâce à `~/.profile`.
+- [y] Exécuter `vpsctl-t-path` : « PATH du shell de connexion : OK », exit 0. La commande n'est trouvée que grâce à `~/.profile`.
 
 ## 6. ~/.bashrc non chargé
 
-- [ ] Exécuter `vpsctl-t-bashrc` : « bashrc : non charge ». Le réglage ajouté à la fin de `~/.bashrc` n'est **pas** disponible, comme l'indique l'aide du formulaire.
-- [ ] Exécuter `vpsctl-t-env` : « fichier : charge ». Charger explicitement un fichier (comme `. "$HOME/.nvm/nvm.sh"` pour nvm) est la solution.
+- [y] Exécuter `vpsctl-t-bashrc` : « bashrc : non charge ». Le réglage ajouté à la fin de `~/.bashrc` n'est **pas** disponible, comme l'indique l'aide du formulaire.
+- [y] Exécuter `vpsctl-t-env` : « fichier : charge ». Charger explicitement un fichier (comme `. "$HOME/.nvm/nvm.sh"` pour nvm) est la solution.
 - [ ] Si nvm est installé : un script `node --version` échoue (« node: not found », code 127) ; `. "$HOME/.nvm/nvm.sh"; node --version` affiche la version.
 
 ## 7. Interruption et processus restants
@@ -158,61 +158,61 @@ pgrep -u "$USER" -af 'exec 3<&0|seq 1 120|sleep 60[0-3]'
 
 `exec 3<&0` repère le script de surveillance qui enveloppe chaque exécution.
 
-- [ ] `vpsctl-t-long` en cours : la commande liste l'enveloppe, le shell de connexion, la boucle et son `sleep 1`.
-- [ ] Bouton « Interrompre le flux » : fenêtre GO / NO GO « Interrompre la procédure ? » (SIGTERM, rien n'est annulé, exécution enregistrée comme interrompue). NO GO : le script continue.
-- [ ] GO : bannière « LOS · Procédure interrompue », onglet au cercle vide, **aucune** notification. Après 1 à 2 s, la commande de vérification ne renvoie **rien**.
-- [ ] Scripts : « ○ à l'instant · interrompue ».
-- [ ] Exécuter `vpsctl-t-enfants` : « enfants lancés » ; la vérification liste les quatre `sleep 600` à `603`. Interrompre (GO) : plus **rien**, y compris le `nohup` et le sous-shell.
-- [ ] Fermer l'onglet d'un script en cours (`vpsctl-t-long`) : fenêtre « Fermer l'onglet ? » avec « Le script sera interrompu ». NO GO : l'onglet reste, le script continue. GO : l'onglet disparaît, l'onglet voisin s'affiche, plus aucun processus.
-- [ ] Fermer l'onglet d'un script **terminé** : aucune fenêtre.
-- [ ] Limite connue (facultatif) : un script `setsid sleep 604` quitte le groupe de processus et survit à l'interruption. Le vérifier avec `pgrep -af 'sleep 604'`, puis `pkill -f 'sleep 604'`.
+- [y] `vpsctl-t-long` en cours : la commande liste l'enveloppe, le shell de connexion, la boucle et son `sleep 1`.
+- [y] Bouton « Interrompre le flux » : fenêtre GO / NO GO « Interrompre la procédure ? » (SIGTERM, rien n'est annulé, exécution enregistrée comme interrompue). NO GO : le script continue.
+- [y] GO : bannière « LOS · Procédure interrompue », onglet au cercle vide, **aucune** notification. Après 1 à 2 s, la commande de vérification ne renvoie **rien**.
+- [y] Scripts : « ○ à l'instant · interrompue ».
+- [y] Exécuter `vpsctl-t-enfants` : « enfants lancés » ; la vérification liste les quatre `sleep 600` à `603`. Interrompre (GO) : plus **rien**, y compris le `nohup` et le sous-shell.
+- [y] Fermer l'onglet d'un script en cours (`vpsctl-t-long`) : fenêtre « Fermer l'onglet ? » avec « Le script sera interrompu ». NO GO : l'onglet reste, le script continue. GO : l'onglet disparaît, l'onglet voisin s'affiche, plus aucun processus.
+- [y] Fermer l'onglet d'un script **terminé** : aucune fenêtre.
+- [y] Limite connue (facultatif) : un script `setsid sleep 604` quitte le groupe de processus et survit à l'interruption. Le vérifier avec `pgrep -af 'sleep 604'`, puis `pkill -f 'sleep 604'`.
 
 ## 8. Déconnexion et fermeture pendant un script
 
-- [ ] Aucun script en cours : « Couper la liaison » déconnecte sans fenêtre ; fermer l'application (bouton Fermer) la ferme sans fenêtre.
-- [ ] `vpsctl-t-long` en cours, « Couper la liaison » : fenêtre « Couper la liaison ? », sujet `vpsctl-t-long`, « 1 script en cours sera interrompu ». NO GO : la liaison reste, le script continue.
-- [ ] Deux scripts en cours (`vpsctl-t-long` et `vpsctl-t-enfants`) : « 2 scripts en cours seront interrompus », les deux noms en sujet.
-- [ ] GO : retour à l'écran de connexion ; sur le VPS, plus aucun processus. Après reconnexion : aucun onglet ouvert, et dans Scripts les deux affichent « interrompue ».
-- [ ] `vpsctl-t-long` en cours, bouton **Fermer** de la barre de titre : fenêtre « Fermer l'application ? ». NO GO : l'application reste ouverte, le script continue (les nombres avancent).
-- [ ] Même chose avec **Alt+F4** (Windows) et, sous Linux, la fermeture par le gestionnaire de fenêtres (raccourci ou menu de la barre des tâches) : la fenêtre GO / NO GO s'affiche aussi.
-- [ ] GO : l'application se ferme ; sur le VPS, plus aucun processus. Au redémarrage de l'application : `vpsctl-t-long` « interrompue ».
-- [ ] Application tuée pendant un script (gestionnaire des tâches ; `kill -9` sous Linux) : sur le VPS, plus aucun processus (le surveillant agit). Au redémarrage, la dernière exécution n'a **pas** été enregistrée (l'application n'a pas pu l'écrire) : c'est attendu.
+- [y] Aucun script en cours : « Couper la liaison » déconnecte sans fenêtre ; fermer l'application (bouton Fermer) la ferme sans fenêtre.
+- [y] `vpsctl-t-long` en cours, « Couper la liaison » : fenêtre « Couper la liaison ? », sujet `vpsctl-t-long`, « 1 script en cours sera interrompu ». NO GO : la liaison reste, le script continue.
+- [y] Deux scripts en cours (`vpsctl-t-long` et `vpsctl-t-enfants`) : « 2 scripts en cours seront interrompus », les deux noms en sujet.
+- [y] GO : retour à l'écran de connexion ; sur le VPS, plus aucun processus. Après reconnexion : aucun onglet ouvert, et dans Scripts les deux affichent « interrompue ».
+- [y] `vpsctl-t-long` en cours, bouton **Fermer** de la barre de titre : fenêtre « Fermer l'application ? ». NO GO : l'application reste ouverte, le script continue (les nombres avancent).
+- [y] Même chose avec **Alt+F4** (Windows) et, sous Linux, la fermeture par le gestionnaire de fenêtres (raccourci ou menu de la barre des tâches) : la fenêtre GO / NO GO s'affiche aussi.
+- [y] GO : l'application se ferme ; sur le VPS, plus aucun processus. Au redémarrage de l'application : `vpsctl-t-long` « interrompue ».
+- [y] Application tuée pendant un script (gestionnaire des tâches ; `kill -9` sous Linux) : sur le VPS, plus aucun processus (le surveillant agit). Au redémarrage, la dernière exécution n'a **pas** été enregistrée (l'application n'a pas pu l'écrire) : c'est attendu.
 
 ## 9. Panneau ancré et onglets de logs
 
-- [ ] Tableau de bord, Logs d'un conteneur : le panneau ancré s'ouvre comme au jalon 3, avec un bouton « Plein écran » en plus.
-- [ ] Plein écran : l'écran Télémétrie s'ouvre sur un nouvel onglet du conteneur, avec **les mêmes lignes** (pas de rechargement de l'historique, pas de bannière LOS) ; le flux continue. La navigation surligne **Tableau de bord**. Retour au tableau de bord : plus de panneau.
-- [ ] Logs du **même** conteneur depuis le tableau de bord : l'onglet existant s'ouvre, pas de second flux.
-- [ ] Onglet de logs, aller sur Fichiers puis revenir : le flux a continué (nouvelles lignes reçues pendant l'absence).
-- [ ] Onglets : forme d'état par onglet (cercle plein en direct, cercle vide terminé, demi-disque pour un script en cours, triangle en échec), onglet actif en ambre ; un nom long est coupé par « … », nom complet en infobulle.
-- [ ] Fermer un onglet de logs : aucune fenêtre, le flux s'arrête (`pgrep -u "$USER" -af 'docker logs|journalctl'` ne le liste plus).
-- [ ] Écran Télémétrie sans onglet : état « 0 FLUX · Aucun flux ouvert » avec des liens vers Tableau de bord et Scripts.
-- [ ] Indicateur de la navigation sans script en cours mais avec des onglets de logs : « ● Télémétrie · N flux », qui mène au premier onglet.
+- [y] Tableau de bord, Logs d'un conteneur : le panneau ancré s'ouvre comme au jalon 3, avec un bouton « Plein écran » en plus.
+- [y] Plein écran : l'écran Télémétrie s'ouvre sur un nouvel onglet du conteneur, avec **les mêmes lignes** (pas de rechargement de l'historique, pas de bannière LOS) ; le flux continue. La navigation surligne **Tableau de bord**. Retour au tableau de bord : plus de panneau.
+- [y] Logs du **même** conteneur depuis le tableau de bord : l'onglet existant s'ouvre, pas de second flux.
+- [y] Onglet de logs, aller sur Fichiers puis revenir : le flux a continué (nouvelles lignes reçues pendant l'absence).
+- [y] Onglets : forme d'état par onglet (cercle plein en direct, cercle vide terminé, demi-disque pour un script en cours, triangle en échec), onglet actif en ambre ; un nom long est coupé par « … », nom complet en infobulle.
+- [y] Fermer un onglet de logs : aucune fenêtre, le flux s'arrête (`pgrep -u "$USER" -af 'docker logs|journalctl'` ne le liste plus).
+- [y] Écran Télémétrie sans onglet : état « 0 FLUX · Aucun flux ouvert » avec des liens vers Tableau de bord et Scripts.
+- [y] Indicateur de la navigation sans script en cours mais avec des onglets de logs : « ● Télémétrie · N flux », qui mène au premier onglet.
 
 ## 10. Limite de 4 flux
 
-- [ ] Ouvrir 3 onglets de logs (Logs puis Plein écran, trois fois) et garder un 4ᵉ flux dans le panneau ancré. Exécuter `vpsctl-t-ok` : notification d'erreur « Script non lancé · vpsctl-t-ok » avec le message « 4 flux déjà ouverts : fermez un onglet de télémétrie pour lancer ce script ». Aucun onglet n'est créé, la dernière exécution n'est pas modifiée.
-- [ ] Fermer un onglet, relancer : le script s'exécute.
+- [y] Ouvrir 3 onglets de logs (Logs puis Plein écran, trois fois) et garder un 4ᵉ flux dans le panneau ancré. Exécuter `vpsctl-t-ok` : notification d'erreur « Script non lancé · vpsctl-t-ok » avec le message « 4 flux déjà ouverts : fermez un onglet de télémétrie pour lancer ce script ». Aucun onglet n'est créé, la dernière exécution n'est pas modifiée.
+- [y] Fermer un onglet, relancer : le script s'exécute.
 
 ## 11. Suppression
 
-- [ ] Supprimer… sur `vpsctl-t-pwd` : fenêtre GO / NO GO rouge « Supprimer le script ? » (retiré de l'application, rien n'est modifié sur le serveur). NO GO : rien ne change. GO : il disparaît de la liste et de `scripts.json`.
-- [ ] Supprimer `vpsctl-t-long` **pendant** son exécution : la fenêtre ajoute « Son exécution en cours continue jusqu'à sa fin ; elle ne sera pas enregistrée ». GO : le script disparaît, l'onglet continue jusqu'au bout. Puis « Relancer » : notification « Script non lancé » (script introuvable), rien ne s'exécute. Recréer `vpsctl-t-long` pour la suite si besoin.
-- [ ] Modifier un script exécuté : sa dernière exécution est conservée.
+- [y] Supprimer… sur `vpsctl-t-pwd` : fenêtre GO / NO GO rouge « Supprimer le script ? » (retiré de l'application, rien n'est modifié sur le serveur). NO GO : rien ne change. GO : il disparaît de la liste et de `scripts.json`.
+- [y] Supprimer `vpsctl-t-long` **pendant** son exécution : la fenêtre ajoute « Son exécution en cours continue jusqu'à sa fin ; elle ne sera pas enregistrée ». GO : le script disparaît, l'onglet continue jusqu'au bout. Puis « Relancer » : notification « Script non lancé » (script introuvable), rien ne s'exécute. Recréer `vpsctl-t-long` pour la suite si besoin.
+- [y] Modifier un script exécuté : sa dernière exécution est conservée.
 
 ## 12. Rechargement de l'interface
 
-- [ ] En développement (`npm run tauri dev`), `vpsctl-t-long` en cours, Ctrl+R ou F5 : l'interface se recharge **sans** confirmation, le script est interrompu (aucun processus restant), plus aucun onglet ; la dernière exécution indique « interrompue ».
-- [ ] En production (`npm run tauri build`, application installée), `vpsctl-t-long` en cours : F5, Ctrl+R et Ctrl+Maj+R n'ont **aucun** effet, le script continue.
-- [ ] En production, clic droit sur une zone vide, un titre, un tableau du tableau de bord, la console : aucun menu du moteur web (pas de « Recharger », « Précédent », « Inspecter »). Les menus de l'application restent actifs : clic droit sur une ligne de Fichiers (menu de la ligne) et dans une zone vide de la liste (menu du dossier).
-- [ ] En production, clic droit dans un champ de saisie (commande d'un script, nom d'un profil) : le menu couper / copier / coller du système reste disponible.
-- [ ] En développement, le clic droit hors d'un menu de l'application affiche toujours le menu du moteur web (avec « Inspecter »).
+- [y] En développement (`npm run tauri dev`), `vpsctl-t-long` en cours, Ctrl+R ou F5 : l'interface se recharge **sans** confirmation, le script est interrompu (aucun processus restant), plus aucun onglet ; la dernière exécution indique « interrompue ».
+- [y] En production (`npm run tauri build`, application installée), `vpsctl-t-long` en cours : F5, Ctrl+R et Ctrl+Maj+R n'ont **aucun** effet, le script continue.
+- [y] En production, clic droit sur une zone vide, un titre, un tableau du tableau de bord, la console : aucun menu du moteur web (pas de « Recharger », « Précédent », « Inspecter »). Les menus de l'application restent actifs : clic droit sur une ligne de Fichiers (menu de la ligne) et dans une zone vide de la liste (menu du dossier).
+- [y] En production, clic droit dans un champ de saisie (commande d'un script, nom d'un profil) : le menu couper / copier / coller du système reste disponible.
+- [y] En développement, le clic droit hors d'un menu de l'application affiche toujours le menu du moteur web (avec « Inspecter »).
 
 ## 13. Rendu Windows et Linux
 
-- [ ] Windows (WebView2) et Linux (WebKitGTK) : écran Scripts, formulaire, fenêtre GO / NO GO avec commande sur plusieurs lignes (défilante au-delà de 8 lignes), onglets et console identiques aux captures (`docs/design/ecran/scripts/`, `telemetrie/`).
-- [ ] Description sur deux lignes au plus, coupée par « … » (`line-clamp`), sous les deux moteurs.
-- [ ] Fenêtre étroite : la navigation se réduit aux numéraux ; l'indicateur ne montre plus que sa forme, avec une infobulle « 1 procédure en cours · T+… ».
+- [y] Windows (WebView2) et Linux (WebKitGTK) : écran Scripts, formulaire, fenêtre GO / NO GO avec commande sur plusieurs lignes (défilante au-delà de 8 lignes), onglets et console identiques aux captures (`docs/design/ecran/scripts/`, `telemetrie/`).
+- [y] Description sur deux lignes au plus, coupée par « … » (`line-clamp`), sous les deux moteurs.
+- [y] Fenêtre étroite : la navigation se réduit aux numéraux ; l'indicateur ne montre plus que sa forme, avec une infobulle « 1 procédure en cours · T+… ».
 
 ## 14. Sécurité (contrôle rapide)
 
@@ -224,8 +224,8 @@ await window.__TAURI_INTERNALS__.invoke("scripts_save", { script: { id: "inconnu
 await window.__TAURI_INTERNALS__.invoke("script_run", { id: "$(touch /tmp/vpsctl-pwned)", onEvent: null })
 ```
 
-- [ ] Chaque appel est refusé avec `InvalidInput` (le dernier peut échouer avant, sur `onEvent`). Sur le VPS, `ls /tmp/vpsctl-pwned` : fichier absent.
-- [ ] `lastRun` forgé : enregistrer un script en passant `lastRun: { at: 1, exitCode: 42 }` par la même console ; `scripts_list` renvoie la valeur précédente (ou `null`), jamais celle-ci.
+- [y] Chaque appel est refusé avec `InvalidInput` (le dernier peut échouer avant, sur `onEvent`). Sur le VPS, `ls /tmp/vpsctl-pwned` : fichier absent.
+- [y] `lastRun` forgé : enregistrer un script en passant `lastRun: { at: 1, exitCode: 42 }` par la même console ; `scripts_list` renvoie la valeur précédente (ou `null`), jamais celle-ci.
 
 ## 15. Nettoyage
 
@@ -246,4 +246,4 @@ rm -rf ~/vpsctl-t-bin ~/vpsctl-t-env.sh
 pgrep -u "$USER" -af 'exec 3<&0|seq 1 120|sleep 60[0-4]|docker logs|journalctl'
 ```
 
-- [ ] Les deux `diff` ne renvoient rien (fichiers d'origine retrouvés), aucun processus restant, et la liste des scripts de l'application est vide (ou revenue à l'état de départ).
+- [y] Les deux `diff` ne renvoient rien (fichiers d'origine retrouvés), aucun processus restant, et la liste des scripts de l'application est vide (ou revenue à l'état de départ).
