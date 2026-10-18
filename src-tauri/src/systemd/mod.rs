@@ -53,6 +53,25 @@ pub struct Service {
     /// Faux si l'unité est masquée ou si son nom ne respecte pas la regex des
     /// services : elle ne reçoit alors aucune action.
     pub controllable: bool,
+    /// Raison pour laquelle le service ne peut pas être supprimé ; `None` :
+    /// suppression possible (voir `delete_block`).
+    pub delete_block: Option<DeleteBlock>,
+}
+
+/// Raison pour laquelle un service ne peut pas être supprimé depuis
+/// l'application, par ordre de priorité.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum DeleteBlock {
+    /// Nom hors de `^[a-zA-Z0-9@._-]+\.service$` : aucune commande possible.
+    InvalidName,
+    Masked,
+    /// Instance d'un gabarit : pas de fichier propre.
+    TemplateInstance,
+    /// Lien vers un fichier situé ailleurs (`systemctl link`) : supprimer le
+    /// lien ne supprimerait pas le vrai fichier.
+    Linked,
 }
 
 /// Une unité de `systemctl --user list-units --output=json`.
@@ -72,6 +91,8 @@ pub struct UnitFile {
     pub name: String,
     /// Lien vers `/dev/null` (`systemctl --user mask`).
     pub masked: bool,
+    /// Lien vers autre chose que `/dev/null` (`systemctl --user link`).
+    pub linked: bool,
 }
 
 /// Liste les services utilisateur, triés par nom d'unité.
@@ -136,15 +157,17 @@ async fn unit_files(connection: &Connection) -> Result<Vec<UnitFile>, AppError> 
     };
     let mut files = Vec::new();
     for entry in unit_file_candidates(&entries) {
-        let masked = if entry.kind == EntryKind::Symlink {
+        let (masked, linked) = if entry.kind == EntryKind::Symlink {
             let target = sftp::read_link(connection, &format!("{UNIT_DIR}/{}", entry.name)).await?;
-            target.as_deref().is_some_and(is_mask_target)
+            let masked = target.as_deref().is_some_and(is_mask_target);
+            (masked, !masked)
         } else {
-            false
+            (false, false)
         };
         files.push(UnitFile {
             name: entry.name.clone(),
             masked,
+            linked,
         });
     }
     Ok(files)
@@ -215,7 +238,7 @@ pub fn select_user_services(units: Vec<UnitRow>, files: &[UnitFile]) -> Vec<Serv
         }
         let masked = row.load == "masked" || file.is_some_and(|f| f.masked);
         seen.insert(row.unit.clone());
-        services.push(loaded_service(row, masked));
+        services.push(loaded_service(row, masked, file.copied()));
     }
     for file in plain.values() {
         if !seen.contains(&file.name) {
@@ -226,10 +249,11 @@ pub fn select_user_services(units: Vec<UnitRow>, files: &[UnitFile]) -> Vec<Serv
     services
 }
 
-fn loaded_service(row: UnitRow, masked: bool) -> Service {
+fn loaded_service(row: UnitRow, masked: bool, file: Option<&UnitFile>) -> Service {
     let state = run_state(&row.load, &row.active);
     Service {
         controllable: !masked && is_valid_unit_name(&row.unit),
+        delete_block: delete_block(&row.unit, masked, file),
         description: Some(row.description).filter(|d| !d.is_empty()),
         unit: row.unit,
         load: Some(row.load),
@@ -250,6 +274,24 @@ fn unloaded_service(file: &UnitFile) -> Service {
         state: RunState::Stopped,
         masked: file.masked,
         controllable: !file.masked && is_valid_unit_name(&file.name),
+        delete_block: delete_block(&file.name, file.masked, Some(file)),
+    }
+}
+
+/// Suppression possible uniquement pour un fichier d'unité ordinaire du
+/// dossier utilisateur. `file` : son fichier dans le dossier, absent pour une
+/// instance de gabarit. L'état d'exécution n'entre pas en compte.
+pub fn delete_block(unit: &str, masked: bool, file: Option<&UnitFile>) -> Option<DeleteBlock> {
+    if !is_valid_unit_name(unit) {
+        Some(DeleteBlock::InvalidName)
+    } else if masked {
+        Some(DeleteBlock::Masked)
+    } else {
+        match file {
+            None => Some(DeleteBlock::TemplateInstance),
+            Some(file) if file.linked => Some(DeleteBlock::Linked),
+            Some(_) => None,
+        }
     }
 }
 
@@ -453,6 +495,7 @@ mod tests {
         UnitFile {
             name: name.into(),
             masked: false,
+            linked: false,
         }
     }
 
@@ -473,6 +516,7 @@ mod tests {
             UnitFile {
                 name: "hidden.service".into(),
                 masked: true,
+                linked: false,
             },
         ]
     }
@@ -592,6 +636,7 @@ mod tests {
                 state: RunState::Stopped,
                 masked: false,
                 controllable: true,
+                delete_block: None,
             }
         );
     }
@@ -627,6 +672,7 @@ mod tests {
         let masked_file = UnitFile {
             name: "off.service".into(),
             masked: true,
+            linked: false,
         };
         let off = &select_user_services(vec![], &[masked_file])[0];
         assert!(off.masked);
@@ -987,6 +1033,113 @@ mod tests {
         assert_eq!(services[0].state, RunState::Nominal);
     }
 
+    // --- Suppression possible ------------------------------------------
+
+    #[test]
+    fn only_plain_unit_files_can_be_deleted() {
+        assert_eq!(service("api.service").delete_block, None);
+        assert_eq!(service("never-started.service").delete_block, None);
+        assert_eq!(service("broken.service").delete_block, None);
+        // En transition ou en échec : la suppression reste possible.
+        assert_eq!(service("cron-like.service").state, RunState::Transition);
+        assert_eq!(service("cron-like.service").delete_block, None);
+        assert_eq!(
+            service("bot@1.service").delete_block,
+            Some(DeleteBlock::TemplateInstance)
+        );
+        assert_eq!(
+            service("hidden.service").delete_block,
+            Some(DeleteBlock::Masked)
+        );
+    }
+
+    #[test]
+    fn linked_and_masked_files_cannot_be_deleted() {
+        let linked = UnitFile {
+            name: "linked.service".into(),
+            masked: false,
+            linked: true,
+        };
+        let rows = parse_list_units(
+            r#"[{"unit":"linked.service","load":"loaded","active":"active","sub":"running","description":"Lié"}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            select_user_services(rows, std::slice::from_ref(&linked))[0].delete_block,
+            Some(DeleteBlock::Linked)
+        );
+        // Non chargé : même règle.
+        assert_eq!(
+            select_user_services(vec![], &[linked])[0].delete_block,
+            Some(DeleteBlock::Linked)
+        );
+        let masked = UnitFile {
+            name: "off.service".into(),
+            masked: true,
+            linked: false,
+        };
+        assert_eq!(
+            select_user_services(vec![], &[masked])[0].delete_block,
+            Some(DeleteBlock::Masked)
+        );
+    }
+
+    #[test]
+    fn delete_block_priorities() {
+        let plain = file("x.service");
+        let linked = UnitFile {
+            linked: true,
+            ..file("x.service")
+        };
+        // Nom invalide avant tout le reste.
+        assert_eq!(
+            delete_block("a\\x2db.service", true, None),
+            Some(DeleteBlock::InvalidName)
+        );
+        // Masquée (par un lien du dossier ou ailleurs) avant l'absence de fichier.
+        assert_eq!(
+            delete_block("bot@1.service", true, None),
+            Some(DeleteBlock::Masked)
+        );
+        assert_eq!(
+            delete_block("x.service", true, Some(&linked)),
+            Some(DeleteBlock::Masked)
+        );
+        assert_eq!(
+            delete_block("bot@1.service", false, None),
+            Some(DeleteBlock::TemplateInstance)
+        );
+        assert_eq!(
+            delete_block("x.service", false, Some(&linked)),
+            Some(DeleteBlock::Linked)
+        );
+        assert_eq!(delete_block("x.service", false, Some(&plain)), None);
+        // Instance qui a son propre fichier dans le dossier.
+        assert_eq!(delete_block("job@daily.service", false, Some(&plain)), None);
+    }
+
+    #[test]
+    fn invalid_names_cannot_be_deleted() {
+        let rows = parse_list_units(
+            r#"[{"unit":"a\\x2db.service","load":"loaded","active":"active","sub":"running","description":"Échappé"}]"#,
+        )
+        .unwrap();
+        let services = select_user_services(rows, &[file("a\\x2db.service")]);
+        assert_eq!(services[0].delete_block, Some(DeleteBlock::InvalidName));
+    }
+
+    #[test]
+    fn delete_blocks_serialize_in_camel_case() {
+        for (block, name) in [
+            (DeleteBlock::InvalidName, "invalidName"),
+            (DeleteBlock::Masked, "masked"),
+            (DeleteBlock::TemplateInstance, "templateInstance"),
+            (DeleteBlock::Linked, "linked"),
+        ] {
+            assert_eq!(serde_json::to_value(block).unwrap(), json!(name));
+        }
+    }
+
     #[test]
     fn service_serializes_in_camel_case() {
         assert_eq!(
@@ -1000,6 +1153,7 @@ mod tests {
                 "state": "nominal",
                 "masked": false,
                 "controllable": true,
+                "deleteBlock": null,
             })
         );
     }
