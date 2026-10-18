@@ -268,6 +268,7 @@ export const useServicesStore = defineStore("services", () => {
   /**
    * Relit l'état d'une ligne en attente (après 2,5 s si `delayed`), lève la
    * marque « en attente » puis conclut : notification et animation.
+   * `successTitle` remplace le titre habituel de la notification de succès.
    */
   async function verify(
     target: Target,
@@ -276,6 +277,7 @@ export const useServicesStore = defineStore("services", () => {
     duration: number,
     current: number,
     delayed: boolean,
+    successTitle?: string,
   ) {
     if (delayed) await sleep(VERIFY_DELAY_MS);
     if (current !== generation) return;
@@ -284,7 +286,7 @@ export const useServicesStore = defineStore("services", () => {
 
     delete pending.value[targetKey(target)];
     const found = find(target);
-    conclude(target, operation, before, found, duration);
+    conclude(target, operation, before, found, duration, successTitle);
   }
 
   /**
@@ -316,6 +318,7 @@ export const useServicesStore = defineStore("services", () => {
       performance.now() - since,
       current,
       true,
+      "Service créé et démarré",
     );
     return created;
   }
@@ -326,12 +329,13 @@ export const useServicesStore = defineStore("services", () => {
     before: RunState | null,
     found: Container | Service | null,
     duration: number,
+    successTitle = SUCCESS_TITLE[target.kind][operation],
   ) {
     const name = targetName(target);
     const success = () =>
       notify({
         tone: "success",
-        title: SUCCESS_TITLE[target.kind][operation],
+        title: successTitle,
         detail: `${name} · ${seconds(duration)}`,
       });
 

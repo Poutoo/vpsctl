@@ -333,7 +333,7 @@ function describedBy(field: Field): string {
             />
             <IconButton
               icon="close"
-              :label="`Retirer la variable ${row.key || i + 1}`"
+              label="Retirer la variable"
               @click="removeVariable(i)"
             />
           </div>

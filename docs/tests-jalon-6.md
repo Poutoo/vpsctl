@@ -56,7 +56,7 @@ Créer `vpsctl-t-ok` :
 | Dossier de travail | `~` |
 | Redémarrage | `on-failure` |
 
-- [ ] « Créer le service » : chrono « Création T+… » sur le bouton, puis retour au tableau de bord. La ligne `vpsctl-t-ok.service` apparaît aussitôt « En transition » (« Démarrage » et chrono), puis environ 2,5 s plus tard « Nominal », avec l'animation d'allumage et la notification « Service démarré ».
+- [ ] « Créer le service » : chrono « Création T+… » sur le bouton, puis retour au tableau de bord. La ligne `vpsctl-t-ok.service` apparaît aussitôt « En transition » (« Démarrage » et chrono), puis environ 2,5 s plus tard « Nominal », avec l'animation d'allumage et la notification « Service créé et démarré ».
 - [ ] Sur le VPS, `systemctl --user cat vpsctl-t-ok.service` : après la ligne de commentaire `# /home/<compte>/.config/systemd/user/vpsctl-t-ok.service`, le texte est **identique** à l'aperçu affiché avant la création.
 - [ ] `systemctl --user is-enabled vpsctl-t-ok` : `enabled` ; `ls -l $U/default.target.wants/` contient le lien `vpsctl-t-ok.service`.
 - [ ] `stat -c %a $U/vpsctl-t-ok.service` : `644`. `ls -a $U` : aucun fichier `.vpsctl-t-ok.service.atlas-*.part`.
