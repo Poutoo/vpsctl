@@ -17,6 +17,7 @@ export type AppIconName =
   | "play"
   | "stop"
   | "logs"
+  | "edit"
   | "trash"
   | "arrow-down"
   | "arrow-right"
@@ -106,6 +107,11 @@ defineProps<{
     />
     <!-- Télémétrie : lignes de journal. -->
     <path v-else-if="name === 'logs'" d="M3 4.5h10M3 8h10M3 11.5h6" />
+    <!-- Modifier : crayon. -->
+    <g v-else-if="name === 'edit'">
+      <path d="M10.5 3l2.5 2.5-7 7H3.5V10z" />
+      <path d="M9 4.5l2.5 2.5" />
+    </g>
     <g v-else-if="name === 'trash'">
       <path d="M2.5 4.5h11" />
       <path d="M6 4.5V3h4v1.5" />
