@@ -37,7 +37,10 @@ src-tauri/src/
 │   └── transfer.rs   envoi et téléchargement par blocs, temporaires, annulation
 ├── stream.rs         flux de lignes : LogEvent, découpage, lots, boucle de lecture, arrêt
 ├── docker.rs
-├── systemd.rs
+├── systemd/
+│   ├── mod.rs        liste, filtrage, états, actions, logs
+│   ├── unit.rs       fonctions pures : validation de ServiceDef et texte du fichier d'unité
+│   └── manage.rs     séquences de création et de suppression d'un service
 ├── scripts.rs
 ├── config.rs
 ├── secrets.rs
@@ -111,6 +114,19 @@ Correspondance des états systemd vers les états de l'interface (champ `active`
 
 Un service dont le nom ne respecte pas `^[a-zA-Z0-9@._-]+\.service$` (ex. nom échappé `a\x2db.service`) est affiché mais marqué non pilotable : il ne reçoit aucune action.
 
+Suppression possible (`Service.deleteBlock`, fonction pure) : uniquement pour un service dont le fichier d'unité est un fichier ordinaire du dossier utilisateur. Sinon, la raison est donnée, dans cet ordre de priorité :
+
+| Cas | `deleteBlock` |
+|---|---|
+| Nom hors de `^[a-zA-Z0-9@._-]+\.service$` | `invalidName` |
+| Unité masquée | `masked` |
+| Instance d'un gabarit, sans fichier propre | `templateInstance` |
+| Lien symbolique vers autre chose que `/dev/null` (`systemctl link`) : supprimer le lien ne supprimerait pas le vrai fichier | `linked` |
+
+L'état d'exécution n'entre pas en compte : un service « en transition » (qui redémarre en boucle, par exemple) peut être supprimé.
+
+Création et suppression (`manage.rs`) : séquences décrites dans `docs/04-contrat-commandes.md`. Elles sont génériques sur un petit trait qui fournit l'exécution d'une commande et un `RemoteFs`, pour tester l'ordre des étapes et l'arrêt au premier échec sans réseau (`MemFs` et une exécution simulée qui enregistre les commandes).
+
 **scripts** : type `Script`, validation et règles d'enregistrement (fonctions pures), fichier `scripts.json` (écriture atomique fournie par `config`), construction de la commande d'exécution et enregistrement de `lastRun`. L'exécution passe par le registre des flux de `state.rs`, comme les logs.
 
 - La commande est lancée dans le shell de connexion de l'utilisateur : `"${SHELL:-/bin/sh}" -l -c '<commande>'`, la commande échappée par `shell::quote` en un seul argument, le tout enveloppé dans le script de surveillance. Détail et limites (`~/.bashrc` non chargé) : voir `docs/04-contrat-commandes.md`.
@@ -183,6 +199,8 @@ Deux mécanismes complémentaires :
 
 ### Fichiers d'unité systemd
 
+Le texte du fichier est produit uniquement par le backend, par une fonction pure (`systemd/unit.rs`). L'aperçu du formulaire l'obtient par `service_unit_preview` : il est toujours identique au fichier écrit.
+
 Gabarit généré :
 
 ```ini
@@ -202,10 +220,47 @@ WantedBy=default.target
 ```
 
 - Pas de `After=network-online.target` : cette cible appartient au gestionnaire système, elle n'a pas d'effet dans un service utilisateur.
-- Dossier de travail : `~` seul est accepté tel quel ; `~/chemin` est converti en `%h/chemin` (systemd n'accepte pas `~/` dans `WorkingDirectory`).
-- Chaque variable d'environnement est écrite entre guillemets, avec les guillemets et barres obliques inverses échappés.
+- La ligne `Description=` est omise si la description est vide (systemd affiche alors le nom de l'unité). Une ligne `Environment=` par variable, dans l'ordre saisi ; aucune s'il n'y en a pas.
+- Le fichier se termine par un retour à la ligne.
 
-Les champs saisis dans le formulaire de création (`execStart`, `description`, etc.) sont écrits sans retour à la ligne, pour empêcher l'insertion de directives supplémentaires dans le fichier d'unité.
+Règles de lecture de systemd prises en compte (vérifiées dans le source de systemd 259 : `conf-parser.c`, `load-fragment.c`, `extract-word.c`) :
+
+- Une ligne se termine par `\n`, `\r` ou un caractère nul ; une ligne qui finit par un nombre impair de `\` est jointe à la suivante. Les espaces au début et à la fin d'une valeur sont retirés.
+- **Spécificateurs `%`** (`%h`, `%n`…) : résolus dans `Description=`, `WorkingDirectory=`, `ExecStart=` et `Environment=`. Un spécificateur inconnu (`%Y`) fait ignorer la directive (`Description=`, `Environment=`) ou met l'unité en erreur (`ExecStart=`, `WorkingDirectory=`). `%%` donne `%`.
+- **`ExecStart=`** : les mots sont séparés par des espaces, `'…'` et `"…"` les regroupent, les échappements C (`\n`, `\x2d`, `\\`…) sont traités, y compris entre apostrophes. Puis les spécificateurs sont résolus. Préfixes reconnus en tête du premier mot, après retrait des guillemets : `-` (échec ignoré), `@` (argv[0] séparé), `:` (pas de substitution), `+`, `!` (privilèges), `|` (lancé par le shell) ; `!!` est ignoré depuis la v258. Un `;` isolé hors guillemets sépare deux commandes. Le programme doit être un chemin absolu ou un simple nom (cherché dans un PATH fixe) ; `~` n'est pas développé. À l'exécution, `$VAR` et `${VAR}` sont remplacés (variable inconnue : chaîne vide), `$$` donne `$`.
+- **`Environment=`** : retrait des guillemets et échappements C, puis spécificateurs. `$` n'a aucun sens particulier.
+- **`WorkingDirectory=`** : ni guillemets ni échappements, spécificateurs seulement. `~` désigne le dossier personnel ; un préfixe `-` tolère un dossier absent ; le chemin doit être absolu et normalisé (sans `.` ni `..`).
+
+Validation (`InvalidInput`, le message nomme le champ) et écriture de chaque champ. Pour tous : aucun caractère de contrôle (retours à la ligne, `\r`, caractère nul, tabulation…), ce qui empêche d'insérer des directives supplémentaires.
+
+| Champ | Validation | Écriture |
+|---|---|---|
+| `name` | Saisi sans `.service` : `^[a-z0-9][a-z0-9-]*$`, 64 caractères au plus | `<name>.service` |
+| `description` | Facultative ; espaces de bord retirés ; 256 caractères au plus ; ne finit pas par `\` | `%` → `%%` |
+| `execStart` | Requise ; espaces de bord retirés ; 4 096 octets au plus ; ne finit pas par `\` ; guillemets équilibrés ; aucun `;` isolé hors guillemets ; le premier mot n'est pas vide, ne commence pas par `-`, `@`, `:`, `+`, `!`, `\|`, `~` ni `;`, ne contient pas `\`, et est un chemin absolu ou un nom sans `/` | `%` → `%%`, `$` → `$$` |
+| `workingDir` | Requis (pré-rempli avec `~`) ; espaces de bord retirés ; `~`, `~/chemin` ou chemin absolu ; sans `\` ; sans composant `.` ou `..` ; 4 096 octets au plus | `~` tel quel ; `~/chemin` → `%h/chemin` ; `%` → `%%` (le `%h` de la conversion est le seul spécificateur produit) |
+| `restart` | `no`, `on-failure` ou `always` | tel quel |
+| `env` | 32 variables au plus ; clé `^[A-Za-z_][A-Za-z0-9_]*$`, 128 caractères au plus, sans doublon ; valeur de 4 096 octets au plus (espaces conservés) | `Environment="CLE=valeur"` avec `\` → `\\`, `"` → `\"`, `%` → `%%` |
+
+Choix pour `ExecStart=` : la syntaxe de systemd (guillemets, échappements) est conservée, mais aucune substitution n'a lieu : `%` et `$` arrivent tels quels au programme. Les variables d'environnement restent transmises au processus ; pour les utiliser dans les arguments, passer par un shell (`/bin/sh -c '… $VAR …'`), qui les développe. Les préfixes spéciaux sont refusés : `-` neutraliserait `Restart=on-failure`, `@` et `|` changent l'interprétation de la ligne, `+` et `!` n'ont pas d'usage dans un service utilisateur.
+
+Exemple :
+
+```ini
+[Unit]
+Description=Sauvegarde 100%% locale
+
+[Service]
+Type=simple
+WorkingDirectory=%h/backup
+ExecStart=/bin/sh -c 'tar czf "a-$$(date +%%Y).tgz" data'
+Restart=on-failure
+RestartSec=5
+Environment="TOKEN=a\"b\\c"
+
+[Install]
+WantedBy=default.target
+```
 
 ## Frontend
 
@@ -243,6 +298,8 @@ src/
 - **Indicateur de télémétrie** : hors de l'écran Télémétrie, la navigation signale les procédures en cours (forme « En transition » et chrono T+), ou à défaut le nombre de flux ouverts, avec un lien vers l'onglet.
 - **Transferts** : file d'attente gérée dans le store `transfers`, un seul transfert actif à la fois. Chaque transfert a un identifiant et peut être annulé. « Afficher » ouvre le dossier local du fichier téléchargé via le plugin officiel opener de Tauri (`revealItemInDir`). Le store vit au-delà de l'écran Fichiers : un transfert continue pendant la navigation vers une autre section.
 - **Explorateur** : la liste est virtualisée (`@tanstack/vue-virtual`), triée côté Vue, dossiers (et liens vers un dossier) en premier. Les fenêtres de sélection de fichiers viennent du plugin officiel dialog (`open`, `save`). Avant une action qui peut couper l'accès SSH (`FileEntry.sshAccess`), le GO / NO GO affiche un avertissement et exige une case à cocher. Les résidus de transfert (`FileEntry.residue`) sont signalés dans la liste.
+- **Création d'un service** (écran ouvert depuis le tableau de bord) : validation instantanée de chaque champ avec les mêmes règles que le backend (`src/serviceRules.ts`, voir « Fichiers d'unité systemd ») ; aperçu du fichier obtenu du backend (`service_unit_preview`), 300 ms après la dernière saisie ; avertissement si le lingering n'est pas actif (`user_linger`). Après la création, retour au tableau de bord : la ligne est « en transition » puis vérifiée à 2,5 s, comme après un démarrage.
+- **Suppression d'un service** : action isolée par un séparateur, désactivée avec sa raison (`deleteBlock`) en infobulle. Le GO / NO GO liste les conséquences d'après `service_delete_info`. La liste est relue dès la fin de la séquence.
 - **Rafraîchissement des services** : toutes les 5 secondes uniquement quand le tableau de bord est affiché et la fenêtre visible : document visible (`document.visibilityState`) et fenêtre non réduite (`isMinimized` de Tauri, relu à chaque redimensionnement et changement de focus, car WebView2 ne masque pas le document quand la fenêtre est réduite), plus un bouton d'actualisation manuelle. Le rafraîchissement suivant est programmé 5 secondes après la fin du précédent, et un rafraîchissement manuel pendant qu'un autre est en cours réutilise celui-ci : deux rafraîchissements ne se chevauchent jamais. Docker et systemd sont appelés indépendamment : l'échec de l'un n'empêche pas l'affichage de l'autre.
 - **Sortie d'erreur ≠ erreur** : beaucoup de programmes écrivent tous leurs logs sur la sortie d'erreur (Caddy, le module `logging` de Python par défaut). Une ligne `stderr` est donc marquée de façon neutre (étiquette discrète, sans fond rouge). Le style d'erreur rouge est réservé aux messages systemd de priorité ≤ 3.
 - **Console** : un seul composant console, utilisé à l'identique dans l'écran Télémétrie (logs et sortie des scripts) et le panneau ancré du tableau de bord (défilement automatique, indicateur de nouvelles lignes, bannière LOS). Le panneau ancré réduit la zone du tableau au-dessus de lui, il ne la recouvre pas.
@@ -257,6 +314,7 @@ src/
 |---|---|---|
 | `/connect` | ConnectView | non |
 | `/dashboard` | DashboardView (Docker + systemd) | oui |
+| `/dashboard/new-service` | ServiceCreateView (création d'un service ; Tableau de bord surligné) | oui |
 | `/files/:path*` | FilesView (chemin absolu ; `/files` = racine) | oui |
 | `/scripts` | ScriptsView | oui |
 | `/telemetry/:tab?` | TelemetryView (onglets des flux ; section d'origine surlignée : Scripts ou Tableau de bord) | oui |

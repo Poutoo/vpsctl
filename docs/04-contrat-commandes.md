@@ -30,8 +30,13 @@ type AppError =
   | { kind: "NotFound"; path: string; side: FileSide }
   | { kind: "AlreadyExists"; path: string; isDir: boolean }   // sur le VPS
   | { kind: "InsufficientSpace"; path: string; side: FileSide; needed: number | null; available: number | null }
+  // Création ou suppression d'un service arrêtée en cours de séquence (voir « Systemd »).
+  | { kind: "ServiceStepFailed"; unit: string; step: ServiceStep; state: string; cause: AppError }
 
 type FileSide = "local" | "remote"
+
+// Étape d'une séquence de création (reload, enable) ou de suppression (les autres, et reload).
+type ServiceStep = "reload" | "enable" | "stop" | "disable" | "removeDropIn" | "removeFile" | "resetFailed"
 ```
 
 `HostKeyMismatch` est présenté comme une alerte de sécurité, pas comme une erreur ordinaire.
@@ -153,8 +158,11 @@ docker_remove(id: string): void
 ```ts
 services_list(): Service[]      // délai maximal 10 s ; trié par nom d'unité
 service_action(unit: string, action: "start" | "stop" | "restart"): void
+service_unit_preview(def: ServiceDef): string   // texte du fichier d'unité, sans connexion
 service_create(def: ServiceDef): Service
+service_delete_info(unit: string): ServiceDeleteInfo
 service_delete(unit: string): void
+user_linger(): boolean | null   // null : état inconnu
 ```
 
 Les deux listes sont des commandes indépendantes : l'interface les appelle séparément, et l'échec de l'une n'empêche pas l'affichage de l'autre. Les états d'interface (`RunState`), le code de sortie et la règle de filtrage des services sont calculés dans le backend (voir `docs/03-architecture.md`).
@@ -164,6 +172,69 @@ Les deux listes sont des commandes indépendantes : l'interface les appelle sép
 1. `unit` doit respecter `^[a-zA-Z0-9@._-]+\.service$`, sinon `InvalidInput`.
 2. La liste des services est relue (mêmes commandes que `services_list`) : l'unité doit y figurer et être pilotable (`controllable`, donc non masquée), sinon `InvalidInput`.
 3. `systemctl --user --no-block <start|stop|restart> -- '<unit>'` : la commande rend la main dès que la tâche est mise en file. Le résultat réel est vérifié ensuite par l'interface (voir « Vérification après une action » dans `docs/03-architecture.md`).
+
+### Fichier d'unité
+
+`service_unit_preview` et `service_create` produisent le texte par la même fonction pure : l'aperçu du formulaire est identique au fichier écrit. Validation des champs, échappements et gabarit : voir « Fichiers d'unité systemd » dans `docs/03-architecture.md`. Un champ invalide donne `InvalidInput`, dont le message nomme le champ. `service_unit_preview` n'a pas besoin de la liaison.
+
+Les chemins sont absolus, construits à partir du dossier personnel (`realpath` de `.` par SFTP) : `<home>/.config/systemd/user/<nom>.service`. Toutes les opérations sur les fichiers passent par SFTP, toutes les commandes par `systemctl --user`, sans `sudo`. Le nom, validé, est échappé par `shell::quote` et placé après `--`.
+
+### Création
+
+`service_create(def)`, dans l'ordre. Délais : 30 s pour les contrôles (étapes 1 et 2), 30 s pour l'écriture (étapes 3 et 4), 30 s pour le rechargement et l'activation (étapes 5 et 6).
+
+1. Validation de `def` et production du texte. Erreur : `InvalidInput`.
+2. Contrôles, sans rien écrire :
+   - `lstat` de `<nom>.service` dans le dossier : s'il existe (fichier, lien ou dossier), `AlreadyExists`. La création n'écrase jamais rien.
+   - `lstat` de `<nom>.service.d/` : s'il existe, `AlreadyExists` (`isDir`). Un dossier de surcharge oublié modifierait silencieusement le nouveau service.
+   - `systemctl --user show --property=LoadState --property=FragmentPath -- '<nom>.service'` : si `LoadState` n'est pas `not-found`, le nom est déjà utilisé par une autre unité (fournie par le système dans `/usr/lib/systemd/user/`, par exemple) : `AlreadyExists` avec son `FragmentPath`, ou `InvalidInput` si celui-ci est vide. Sans ce contrôle, le fichier créé masquerait cette unité.
+3. Création par SFTP des dossiers manquants parmi `~/.config`, `~/.config/systemd` et `~/.config/systemd/user`. Un élément existant qui n'est pas un dossier : `InvalidInput`.
+4. Écriture atomique :
+   - ouverture exclusive (`CREATE | EXCLUDE`) d'un temporaire `.<nom>.service.atlas-<8 hex>.part` du dossier ;
+   - écriture du texte, fermeture, droits `0644` ;
+   - renommage en `<nom>.service`, refusé par le serveur si la cible existe (`AlreadyExists`) ;
+   - en cas d'échec, le temporaire est supprimé.
+5. `systemctl --user daemon-reload`
+6. `systemctl --user enable --now --no-block -- '<nom>.service'` : activation au démarrage (`WantedBy=default.target`) et démarrage mis en file, sans attendre son résultat.
+7. Relecture de la liste ; le `Service` créé est renvoyé.
+
+Une erreur aux étapes 1 à 4 ne laisse rien en place, à part les dossiers créés à l'étape 3. Une erreur aux étapes 5 ou 6 laisse le fichier en place : `ServiceStepFailed` (étape `reload` ou `enable`). Le résultat du démarrage est vérifié ensuite par l'interface, comme après un `service_action` : un service qui échoue au démarrage reste créé et apparaît « En échec ».
+
+### Suppression
+
+Uniquement pour un service dont `deleteBlock` est `null` : un fichier ordinaire dans `~/.config/systemd/user/` (pas une instance de gabarit, pas une unité masquée, pas un lien). Sinon `InvalidInput`.
+
+`service_delete_info(unit)` fait les vérifications 1 et 2 ci-dessous, sans rien modifier, et renvoie les éléments affichés dans le GO / NO GO (`ServiceDeleteInfo`). Délai maximal 20 s.
+
+`service_delete(unit)`, dans l'ordre. Délais : 100 s pour l'arrêt (plus que le `TimeoutStopSec` par défaut de 90 s, après lequel systemd envoie SIGKILL), 30 s pour chacune des autres étapes.
+
+1. `unit` doit respecter `^[a-zA-Z0-9@._-]+\.service$`, sinon `InvalidInput`.
+2. La liste des services est relue : l'unité doit y figurer avec `deleteBlock` à `null`, et son fichier (`lstat`) doit être un fichier ordinaire, sinon `InvalidInput`.
+3. `stop` : `systemctl --user stop -- '<unit>'`, en attendant la fin de l'arrêt.
+4. `disable` : `systemctl --user disable -- '<unit>'`.
+5. `removeDropIn` : si `<unit>.d/` existe, suppression par SFTP de toute son arborescence, sans suivre les liens (même parcours que `delete_path` récursif). Un lien à cette place est supprimé seul.
+6. `removeFile` : suppression par SFTP de `<unit>`.
+7. `reload` : `systemctl --user daemon-reload`.
+8. `resetFailed` : `if systemctl --user is-failed --quiet -- '<unit>'; then systemctl --user reset-failed -- '<unit>'; fi`. Une unité en échec reste en mémoire après le rechargement ; `reset-failed` seul échouerait sur une unité déjà déchargée.
+
+Le dossier de surcharge est supprimé avant le fichier : si une suppression échoue, le fichier est encore là, le service reste dans la liste et la suppression peut être relancée depuis l'application.
+
+Au premier échec, la séquence s'arrête et renvoie `ServiceStepFailed` : `step` est l'étape en échec, `state` décrit l'état du service, `cause` l'erreur de l'étape. Les erreurs des étapes 1 et 2 (rien n'a été modifié) sont renvoyées telles quelles.
+
+| Étape en échec | État décrit (`state`) |
+|---|---|
+| `stop` | Rien n'a été modifié. L'arrêt est peut-être encore en cours. |
+| `disable` | Service arrêté, toujours activé au démarrage, fichier en place. |
+| `removeDropIn` | Service arrêté et désactivé, fichier en place, dossier de surcharge peut-être partiellement supprimé. |
+| `removeFile` | Service arrêté et désactivé, dossier de surcharge supprimé, fichier en place. |
+| `reload` | Fichier supprimé ; systemd garde l'ancienne définition en mémoire jusqu'au prochain `systemctl --user daemon-reload`. |
+| `resetFailed` | Service supprimé ; systemd le liste encore en échec jusqu'à `systemctl --user reset-failed`. |
+
+Création : `reload` → « Fichier créé, systemd non rechargé : service ni activé ni démarré. » ; `enable` → « Fichier créé et systemd rechargé : service ni activé ni démarré. »
+
+### Lingering
+
+`user_linger` : `loginctl show-user --property=Linger --value -- "$(id -u)"`, délai maximal 10 s. `yes` → `true`, `no` → `false`, toute autre réponse ou un échec → `null`. Sans lingering, les services utilisateur s'arrêtent à la fin de la dernière session du compte : le formulaire de création l'indique.
 
 ## Logs (Docker et systemd)
 
@@ -312,15 +383,32 @@ interface Service {
   state: RunState
   masked: boolean
   controllable: boolean     // false si masquée, ou si le nom ne respecte pas ^[a-zA-Z0-9@._-]+\.service$
+  deleteBlock: DeleteBlock | null   // raison pour laquelle le service ne peut pas être supprimé ; null : suppression possible
 }
 
+// Par ordre de priorité (voir docs/03-architecture.md).
+type DeleteBlock = "invalidName" | "masked" | "templateInstance" | "linked"
+
 interface ServiceDef {
-  name: string
-  description: string
+  name: string                  // sans le suffixe .service : ^[a-z0-9][a-z0-9-]*$
+  description: string           // "" : ligne Description= omise
   execStart: string
-  workingDir: string
+  workingDir: string            // ~, ~/chemin ou chemin absolu
   restart: "no" | "on-failure" | "always"
-  env: Record<string, string>
+  env: EnvVar[]                 // dans l'ordre saisi ; clés sans doublon
+}
+
+interface EnvVar {
+  key: string
+  value: string
+}
+
+interface ServiceDeleteInfo {
+  unit: string
+  file: string                  // chemin absolu du fichier d'unité supprimé
+  dropIn: string | null         // chemin absolu du dossier de surcharge <unit>.d/, s'il existe
+  dropInEntries: number         // éléments qu'il contient (fichiers, liens, sous-dossiers)
+  active: boolean               // le service n'est pas arrêté : il sera arrêté
 }
 
 interface Script {
