@@ -35,7 +35,7 @@ const active = computed(() => {
     const tab = telemetry.tabById(String(route.params.tab ?? ""));
     return tab ? streamOrigin(tab) : null;
   }
-  return sectionOf(route.name)?.route ?? null;
+  return route.meta.section ?? sectionOf(route.name)?.route ?? null;
 });
 
 const connectedAt = computed(() => connection.info?.connectedAt ?? null);

@@ -8,6 +8,7 @@ import type { AppError } from "../bindings/AppError";
 import type { Container } from "../bindings/Container";
 import type { RunState } from "../bindings/RunState";
 import type { Service } from "../bindings/Service";
+import type { ServiceDef } from "../bindings/ServiceDef";
 import { useNotify } from "../composables/useNotify";
 import { useConnectionStore } from "./connection";
 import {
@@ -261,14 +262,62 @@ export const useServicesStore = defineStore("services", () => {
     const synchronous =
       operation === "remove" ||
       (target.kind === "docker" && operation === "stop");
-    if (!synchronous) await sleep(VERIFY_DELAY_MS);
+    await verify(target, operation, before, duration, current, !synchronous);
+  }
+
+  /**
+   * Relit l'état d'une ligne en attente (après 2,5 s si `delayed`), lève la
+   * marque « en attente » puis conclut : notification et animation.
+   */
+  async function verify(
+    target: Target,
+    operation: Operation,
+    before: RunState | null,
+    duration: number,
+    current: number,
+    delayed: boolean,
+  ) {
+    if (delayed) await sleep(VERIFY_DELAY_MS);
     if (current !== generation) return;
     await refreshFresh();
     if (current !== generation) return;
 
-    delete pending.value[key];
+    delete pending.value[targetKey(target)];
     const found = find(target);
     conclude(target, operation, before, found, duration);
+  }
+
+  /**
+   * Crée un service. Rend la main une fois le fichier écrit et le démarrage
+   * mis en file (les erreurs sont rejetées vers le formulaire). Le démarrage
+   * est ensuite vérifié comme après « Démarrer » : ligne « en transition »,
+   * relecture à 2,5 s, notification avec le lien vers les logs en cas
+   * d'échec.
+   */
+  async function create(def: ServiceDef): Promise<Service> {
+    const current = generation;
+    const since = performance.now();
+    const created = await systemd.createService(def);
+    if (current !== generation) return created;
+
+    const target = serviceTarget(created);
+    pending.value[targetKey(target)] = { operation: "start", since };
+    // La ligne apparaît tout de suite, avant la prochaine relecture.
+    if (!find(target)) {
+      const items = [...services.value.items, created].sort((a, b) =>
+        a.unit < b.unit ? -1 : 1,
+      );
+      services.value = { ...services.value, items };
+    }
+    void verify(
+      target,
+      "start",
+      "stopped",
+      performance.now() - since,
+      current,
+      true,
+    );
+    return created;
   }
 
   function conclude(
@@ -351,5 +400,6 @@ export const useServicesStore = defineStore("services", () => {
     arrivals,
     refresh,
     perform,
+    create,
   };
 });

@@ -5,7 +5,8 @@
  * tracé et vide sous un bandeau « Interrogation » avec chrono (pas de
  * spinner) ; puis les données, une erreur ou un état vide.
  *
- * Le slot reçoit `loading` pour tracer les lignes vides du registre.
+ * Le slot reçoit `loading` pour tracer les lignes vides du registre ; le
+ * slot `actions` place des boutons à droite de l'en-tête.
  */
 import { computed, onMounted, ref } from "vue";
 import { errorMessage } from "../../api/errors";
@@ -28,7 +29,10 @@ const props = defineProps<{
   emptyText: string;
 }>();
 
-defineSlots<{ default(props: { loading: boolean }): unknown }>();
+defineSlots<{
+  default(props: { loading: boolean }): unknown;
+  actions?(): unknown;
+}>();
 
 const counts = computed(() =>
   countsByState(props.section.items.map((item) => item.state)),
@@ -69,6 +73,7 @@ const skippedWarning = computed(() => {
           {{ count.label }}
         </li>
       </ul>
+      <div v-if="$slots.actions" class="actions"><slot name="actions" /></div>
     </header>
 
     <div class="card">
@@ -137,6 +142,18 @@ const skippedWarning = computed(() => {
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-sm);
+}
+
+/* À droite de l'en-tête, après les compteurs s'il y en a. */
+.actions {
+  display: flex;
+  align-self: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+
+.counts + .actions {
+  margin-left: 0;
 }
 
 .counts li {

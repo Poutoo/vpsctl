@@ -120,7 +120,6 @@ const refreshedLabel = computed(() => {
       </DashboardSection>
 
       <DashboardSection
-        v-slot="{ loading }"
         title="Services systemd"
         command="systemctl --user list-units"
         :section="store.services"
@@ -129,12 +128,19 @@ const refreshedLabel = computed(() => {
         empty-title="Aucun service utilisateur"
         empty-text="Aucun service dans ~/.config/systemd/user/ sur ce serveur."
       >
-        <ServiceTable
-          :services="store.services.items"
-          :loading="loading"
-          @logs="(s) => telemetry.showLogs(serviceLogTarget(s.unit))"
-          @operate="onService"
-        />
+        <template #actions>
+          <AppButton size="compact" :to="{ name: 'service-create' }">
+            Nouveau service
+          </AppButton>
+        </template>
+        <template #default="{ loading }">
+          <ServiceTable
+            :services="store.services.items"
+            :loading="loading"
+            @logs="(s) => telemetry.showLogs(serviceLogTarget(s.unit))"
+            @operate="onService"
+          />
+        </template>
       </DashboardSection>
     </div>
 

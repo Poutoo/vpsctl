@@ -1,5 +1,6 @@
 import type { Action } from "../bindings/Action";
 import type { Service } from "../bindings/Service";
+import type { ServiceDef } from "../bindings/ServiceDef";
 import type { ServiceDeleteInfo } from "../bindings/ServiceDeleteInfo";
 import { call } from "./invoke";
 
@@ -30,4 +31,25 @@ export function serviceDeleteInfo(unit: string): Promise<ServiceDeleteInfo> {
  */
 export function deleteService(unit: string): Promise<void> {
   return call("service_delete", { unit });
+}
+
+/**
+ * Texte exact du fichier d'unité qui serait écrit (aperçu du formulaire).
+ * Un champ invalide donne `InvalidInput`, dont le message nomme le champ.
+ */
+export function previewUnit(def: ServiceDef): Promise<string> {
+  return call("service_unit_preview", { def });
+}
+
+/**
+ * Écrit le fichier d'unité, recharge systemd, active et démarre le service
+ * (`--no-block` : le résultat du démarrage est à vérifier ensuite).
+ */
+export function createService(def: ServiceDef): Promise<Service> {
+  return call("service_create", { def });
+}
+
+/** Lingering du compte ; `null` si son état n'a pas pu être lu. */
+export function userLinger(): Promise<boolean | null> {
+  return call("user_linger");
 }

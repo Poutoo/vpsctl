@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
+import type { AppSection } from "../navigation";
 import { useConnectionStore } from "../stores/connection";
 
 declare module "vue-router" {
@@ -6,6 +7,8 @@ declare module "vue-router" {
     requiresConnection?: boolean;
     /** La vue gère ses propres marges (écran plein cadre). */
     fullBleed?: boolean;
+    /** Section surlignée dans la navigation, pour un écran sans entrée propre. */
+    section?: AppSection["route"];
   }
 }
 
@@ -25,6 +28,12 @@ export const router = createRouter({
       component: () => import("../views/DashboardView.vue"),
       // Marges et défilement gérés par la vue (console ancrée en bas).
       meta: { requiresConnection: true, fullBleed: true },
+    },
+    {
+      path: "/dashboard/new-service",
+      name: "service-create",
+      component: () => import("../views/ServiceCreateView.vue"),
+      meta: { requiresConnection: true, section: "dashboard" },
     },
     {
       path: "/files/:path*",
