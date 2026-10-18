@@ -225,11 +225,15 @@ const counts = computed(() => {
       <div class="ident"><slot name="title" /></div>
       <div class="controls">
         <AppSwitch v-model="follow" label="Défilement auto" />
-        <AppButton @click="stream.clear()">Effacer</AppButton>
-        <AppButton v-if="stream.active" @click="stop">
+        <AppButton size="compact" variant="quiet" @click="stream.clear()">
+          Effacer
+        </AppButton>
+        <AppButton v-if="stream.active" size="compact" @click="stop">
           Interrompre le flux
         </AppButton>
-        <AppButton v-else @click="replay">{{ replayLabel }}</AppButton>
+        <AppButton v-else size="compact" @click="replay">
+          {{ replayLabel }}
+        </AppButton>
         <slot name="actions" />
       </div>
     </header>
@@ -342,6 +346,7 @@ const counts = computed(() => {
   min-width: 0;
 }
 
+/* Boutons compacts : l'en-tête reste une barre fine au-dessus des logs. */
 .controls {
   display: flex;
   align-items: center;

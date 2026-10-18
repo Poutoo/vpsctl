@@ -8,7 +8,7 @@
  */
 import { useRouter } from "vue-router";
 import { useTelemetryStore, type LogsStream } from "../../stores/telemetry";
-import AppButton from "../ui/AppButton.vue";
+import IconButton from "../ui/IconButton.vue";
 import StreamConsole from "./StreamConsole.vue";
 
 defineProps<{ stream: LogsStream }>();
@@ -25,8 +25,21 @@ function fullScreen() {
 <template>
   <StreamConsole :stream="stream">
     <template #actions>
-      <AppButton @click="fullScreen">Plein écran</AppButton>
-      <AppButton @click="store.closeDock()">Fermer</AppButton>
+      <span class="separator" aria-hidden="true" />
+      <IconButton icon="maximize" label="Plein écran" @click="fullScreen" />
+      <IconButton
+        icon="close"
+        label="Fermer la console"
+        @click="store.closeDock()"
+      />
     </template>
   </StreamConsole>
 </template>
+
+<style scoped>
+/* Sépare les actions du panneau de celles du flux. */
+.separator {
+  align-self: stretch;
+  border-left: var(--border-width) solid var(--color-border-strong);
+}
+</style>
