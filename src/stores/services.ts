@@ -211,13 +211,9 @@ export const useServicesStore = defineStore("services", () => {
         ? docker.removeContainer(target.id)
         : docker.dockerAction(target.id, operation);
     }
-    if (operation === "remove") {
-      return Promise.reject({
-        kind: "InvalidInput",
-        message: "suppression de service non prise en charge",
-      } satisfies AppError);
-    }
-    return systemd.serviceAction(target.unit, operation);
+    return operation === "remove"
+      ? systemd.deleteService(target.unit)
+      : systemd.serviceAction(target.unit, operation);
   }
 
   function openLogs(target: Target) {
@@ -260,9 +256,11 @@ export const useServicesStore = defineStore("services", () => {
     }
     const duration = performance.now() - since;
 
+    // Arrêt Docker et suppressions : la commande rend la main une fois
+    // l'opération terminée, l'état est relu tout de suite.
     const synchronous =
-      target.kind === "docker" &&
-      (operation === "stop" || operation === "remove");
+      operation === "remove" ||
+      (target.kind === "docker" && operation === "stop");
     if (!synchronous) await sleep(VERIFY_DELAY_MS);
     if (current !== generation) return;
     await refreshFresh();

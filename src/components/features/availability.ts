@@ -1,4 +1,5 @@
 import type { Container } from "../../bindings/Container";
+import type { DeleteBlock } from "../../bindings/DeleteBlock";
 import type { Service } from "../../bindings/Service";
 import type { Operation } from "../../stores/services";
 
@@ -6,7 +7,7 @@ import type { Operation } from "../../stores/services";
 export type Availability<K extends Operation> = Record<K, string | null>;
 
 export type ContainerOperation = Operation;
-export type ServiceOperation = Exclude<Operation, "remove">;
+export type ServiceOperation = Operation;
 
 const IN_TRANSITION = "en transition";
 const RUNNING = "déjà en marche";
@@ -58,25 +59,39 @@ export function containerAvailability(
   }
 }
 
+/** Pourquoi un service ne peut pas être supprimé (`Service.deleteBlock`). */
+export const DELETE_BLOCK_REASON: Record<DeleteBlock, string> = {
+  invalidName: "nom hors du format accepté",
+  masked: "unité masquée : démasquez-la avant de la supprimer",
+  templateInstance: "instance d'un gabarit : elle n'a pas de fichier propre",
+  linked: "lien vers un fichier situé ailleurs (systemctl link)",
+};
+
 /**
- * Actions possibles sur un service pilotable selon son état. Une unité
- * masquée ou non pilotable n'a que l'action Logs (aucun bouton d'action).
+ * Actions possibles sur un service selon son état. Une unité masquée ou non
+ * pilotable n'a ni démarrage, ni arrêt, ni redémarrage (aucun bouton). La
+ * suppression ne dépend que du fichier d'unité (`deleteBlock`) : un service
+ * en transition, qui redémarre en boucle par exemple, peut être supprimé.
  */
 export function serviceAvailability(
   service: Service,
 ): Availability<ServiceOperation> {
+  const remove = service.deleteBlock
+    ? DELETE_BLOCK_REASON[service.deleteBlock]
+    : null;
   switch (service.state) {
     case "transition":
       return {
         start: IN_TRANSITION,
         stop: IN_TRANSITION,
         restart: IN_TRANSITION,
+        remove,
       };
     case "nominal":
-      return { start: RUNNING, stop: null, restart: null };
+      return { start: RUNNING, stop: null, restart: null, remove };
     case "stopped":
     case "failed":
-      return { start: null, stop: STOPPED, restart: null };
+      return { start: null, stop: STOPPED, restart: null, remove };
   }
 }
 

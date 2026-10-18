@@ -169,6 +169,15 @@ function rawState(service: Service): string {
               :unavailable="logsUnavailable(service)"
               @click="emit('logs', service)"
             />
+            <span class="separator" aria-hidden="true" />
+            <IconButton
+              icon="trash"
+              tone="danger"
+              :label="`Supprimer ${service.unit}`"
+              :unavailable="row.reason('remove')"
+              :busy-since="row.busySince('remove')"
+              @click="emit('operate', service, 'remove')"
+            />
           </div>
         </td>
       </tr>
@@ -187,9 +196,11 @@ function rawState(service: Service): string {
 
 /* La description prend la largeur restante. */
 
-/* Quatre actions et la place d'un chrono T+. */
+/* Cinq actions, un séparateur, et la place d'un chrono T+. */
 .actions {
-  width: calc(4 * var(--icon-button-size) + 2 * var(--sp-4) + var(--sp-7));
+  width: calc(
+    5 * var(--icon-button-size) + 2 * var(--sp-4) + var(--sp-3) + var(--sp-7)
+  );
 }
 
 .actions-head {
@@ -201,6 +212,13 @@ function rawState(service: Service): string {
   align-items: center;
   justify-content: flex-end;
   gap: var(--sp-1);
+}
+
+/* Isole la suppression des autres actions. */
+.separator {
+  align-self: stretch;
+  margin: var(--sp-1) var(--sp-1);
+  border-left: var(--border-width) solid var(--color-border-strong);
 }
 
 .unit-cell {

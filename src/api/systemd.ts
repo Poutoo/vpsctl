@@ -1,5 +1,6 @@
 import type { Action } from "../bindings/Action";
 import type { Service } from "../bindings/Service";
+import type { ServiceDeleteInfo } from "../bindings/ServiceDeleteInfo";
 import { call } from "./invoke";
 
 // Services systemd utilisateur (docs/04-contrat-commandes.md).
@@ -15,4 +16,18 @@ export function listServices(): Promise<Service[]> {
  */
 export function serviceAction(unit: string, action: Action): Promise<void> {
   return call("service_action", { unit, action });
+}
+
+/** Fichier et dossier de surcharge qu'une suppression retirerait (GO / NO GO). */
+export function serviceDeleteInfo(unit: string): Promise<ServiceDeleteInfo> {
+  return call("service_delete_info", { unit });
+}
+
+/**
+ * Arrête, désactive et supprime un service (fichier et dossier de surcharge),
+ * puis recharge systemd. Rend la main à la fin de la séquence ; un échec en
+ * cours de route est un `ServiceStepFailed`.
+ */
+export function deleteService(unit: string): Promise<void> {
+  return call("service_delete", { unit });
 }
