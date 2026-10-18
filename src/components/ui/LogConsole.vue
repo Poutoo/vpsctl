@@ -328,9 +328,13 @@ const counts = computed(() => {
   border: var(--border-width) solid var(--color-border);
 }
 
+/*
+ * Une seule ligne : les boutons gardent leur taille, l'identification de la
+ * source prend la place restante et coupe sa commande (« … »).
+ */
 .head {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
@@ -341,7 +345,8 @@ const counts = computed(() => {
 
 .ident {
   display: flex;
-  align-items: baseline;
+  flex: 1;
+  align-items: center;
   gap: var(--sp-3);
   min-width: 0;
 }
@@ -349,6 +354,7 @@ const counts = computed(() => {
 /* Boutons compacts : l'en-tête reste une barre fine au-dessus des logs. */
 .controls {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--sp-2);
 }

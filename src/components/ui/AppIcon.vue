@@ -18,6 +18,7 @@ export type AppIconName =
   | "stop"
   | "logs"
   | "edit"
+  | "copy"
   | "trash"
   | "arrow-down"
   | "arrow-right"
@@ -107,6 +108,11 @@ defineProps<{
     />
     <!-- Télémétrie : lignes de journal. -->
     <path v-else-if="name === 'logs'" d="M3 4.5h10M3 8h10M3 11.5h6" />
+    <!-- Copier : deux feuilles décalées. -->
+    <g v-else-if="name === 'copy'">
+      <rect x="5.5" y="5.5" width="7.5" height="8" rx="1" />
+      <path d="M3 10.5V3.5a1 1 0 0 1 1-1h6" />
+    </g>
     <!-- Modifier : crayon. -->
     <g v-else-if="name === 'edit'">
       <path d="M10.5 3l2.5 2.5-7 7H3.5V10z" />
