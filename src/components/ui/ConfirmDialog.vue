@@ -85,7 +85,7 @@ function focusNoGo(event: Event) {
               <span v-if="typeof item === 'string'">{{ item }}</span>
               <span v-else class="cited">
                 {{ item.label }} :
-                <pre class="code">{{ item.code }}</pre>
+                <pre class="cited-code">{{ item.code }}</pre>
               </span>
             </li>
           </AlertDialogDescription>
@@ -223,7 +223,8 @@ function focusNoGo(event: Event) {
   gap: var(--sp-1);
 }
 
-.code {
+/* Classe distincte de `.code`, l'étiquette GO / NO GO des boutons. */
+.cited-code {
   max-height: calc(8 * var(--console-line-height) + 2 * var(--sp-2));
   margin: 0;
   overflow: auto;
