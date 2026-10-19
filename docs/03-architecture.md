@@ -308,6 +308,25 @@ src/
 - **Barre d'état** : affiche `server_info` (système, Docker, systemd), récupéré une fois après la connexion.
 - **Erreurs** : chaque `kind` de `AppError` est traduit en message clair. `HostKeyMismatch` redirige vers un écran d'alerte dédié, jamais une simple notification.
 
+### Permissions (capabilities)
+
+`src-tauri/capabilities/default.json` n'accorde que ce que le frontend appelle ; pas de `core:default` (menus, barre système, images, émission d'événements… inutilisés). Les commandes de l'application ne sont pas soumises aux permissions (pas de manifeste d'application), ni la récupération des messages d'un `Channel` (exception explicite de Tauri). Le presse-papiers passe par `navigator.clipboard`, hors permissions.
+
+| Permission | Usage |
+|---|---|
+| `core:app:allow-version` | version dans la barre d'état (`getVersion`) |
+| `core:event:allow-listen`, `core:event:allow-unlisten` | `onResized`, `onFocusChanged`, `onCloseRequested` |
+| `core:path:allow-resolve-directory`, `core:path:allow-join` | dossier Téléchargements proposé à l'enregistrement (`downloadDir`, `join`) |
+| `core:window:allow-is-minimized`, `core:window:allow-is-maximized` | visibilité réelle de la fenêtre, état agrandi |
+| `core:window:allow-start-dragging`, `core:window:allow-internal-toggle-maximize` | `data-tauri-drag-region` : déplacement et double-clic |
+| `core:window:allow-minimize`, `core:window:allow-toggle-maximize`, `core:window:allow-close` | boutons de la barre de titre |
+| `core:window:allow-destroy` | fermeture après le GO / NO GO (`onCloseRequested` ferme par `destroy()`) |
+| `core:webview:allow-internal-toggle-devtools` | Ctrl+Maj+I en développement (sous Linux, l'inspecteur n'a pas d'autre raccourci) ; sans effet en production, où l'inspecteur n'est pas compilé |
+| `dialog:allow-open`, `dialog:allow-save` | fichiers à envoyer, emplacement d'un téléchargement |
+| `opener:allow-reveal-item-in-dir` | « Afficher » après un téléchargement |
+
+Une nouvelle API de Tauri utilisée dans `src/api/` demande d'ajouter sa permission ici et dans le fichier.
+
 ### Routes
 
 | Route | Vue | Connexion requise |
