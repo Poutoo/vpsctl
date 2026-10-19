@@ -33,10 +33,14 @@ zeroize = "1.9.1"
 tokio = { version = "1.53.2", features = ["net", "time", "sync", "rt", "macros", "fs", "io-util"] }
 
 
-# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+# Build de publication : https://tauri.app/concept/size/#cargo-configuration
+# - opt-level 3 plutôt que "s" : chiffrement SSH et transferts SFTP en
+#   profitent ;
+# - pas de panic = "abort" : une panique dans une tâche (flux, transfert)
+#   n'arrête que cette tâche au lieu de tuer l'application sans le
+#   nettoyage de fermeture.
 [profile.release]
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
 strip = true

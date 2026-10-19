@@ -355,3 +355,21 @@ Définie dans `tauri.conf.json` (`app.security.csp`) : tout vient de l'applicati
 | `/scripts` | ScriptsView | oui |
 | `/telemetry/:tab?` | TelemetryView (onglets des flux ; section d'origine surlignée : Scripts ou Tableau de bord) | oui |
 | `/settings` | SettingsView (profils) | oui |
+
+## Packaging
+
+Installateurs produits par `npm run tauri build` (`bundle.targets`) : NSIS sous Windows, .deb et AppImage sous Linux. Publication par `.github/workflows/release.yml` (voir README).
+
+| | Valeur | Où |
+|---|---|---|
+| Nom affiché | « Atlas » (fenêtre, menu Démarrer, menu des applications) | `productName`, `Name=` du modèle `src-tauri/linux/atlas-vps.desktop` |
+| Exécutable | `atlas-vps` (`atlas-vps.exe`) | `mainBinaryName` |
+| Paquet .deb, fichiers .deb et AppImage, `.desktop`, icônes `hicolor` | `atlas-vps` | `src-tauri/tauri.linux.conf.json` (`productName`, fusionné sous Linux) |
+| Identifiant, dossier de configuration, service du trousseau | `dev.poutoo.atlas` | `identifier`, `secrets::SERVICE` (test qui les compare) |
+
+- Le bundler de Tauri dérive le nom du paquet .deb, des fichiers produits et du `.desktop` de `productName`, sans option dédiée : d'où la surcharge de `productName` sous Linux, et le modèle `.desktop` qui garde « Atlas » comme nom affiché. Le reste de l'application n'utilise pas `productName` (titre de fenêtre fixé dans `app.windows`, dossiers et trousseau tirés de l'identifiant).
+- Sous Linux, la fenêtre est rattachée à son entrée de menu par le nom de l'exécutable (GTK sans identifiant d'application, `StartupWMClass=atlas-vps`).
+- NSIS : installation pour l'utilisateur courant (`%LOCALAPPDATA%\Atlas`), en français, icône de l'installateur et du désinstalleur `icons/icon.ico`.
+- .deb : Tauri déclare `libwebkit2gtk-4.1-0` et `libgtk-3-0` ; `libdbus-1-3` (lié par `tao`) est ajouté. `gnome-keyring | org.freedesktop.secrets` est recommandé : sans service Secret Service, la passphrase ne peut pas être mémorisée.
+- Icônes : `npm run icons` (voir `scripts/icons.js`) ; l'entrée 16 × 16 du .ico et `16x16.png` viennent de `atlas-icone-16.svg`.
+- Profil `release` : `opt-level = 3`, LTO, une seule unité de compilation, symboles retirés ; pas de `panic = "abort"` (une panique n'arrête que sa tâche).
