@@ -13,7 +13,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write . && cargo fmt --manifest-path src-tauri/Cargo.toml",
     "format:check": "prettier --check . && cargo fmt --manifest-path src-tauri/Cargo.toml --check",
-    "bindings": "cargo test --manifest-path src-tauri/Cargo.toml export_bindings"
+    "bindings": "cargo test --manifest-path src-tauri/Cargo.toml export_bindings",
+    "icons": "node scripts/icons.js"
   },
   "dependencies": {
     "@tanstack/vue-virtual": "3.13.39",
