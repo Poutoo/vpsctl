@@ -43,6 +43,7 @@ Chaque jalon doit produire quelque chose d'utilisable.
 - Glisser/Déposer de dossiers entier dans le gestionnaire
 - Gestion des droits pour MCP Claude (écriture, périmètre d'accès...)
 - Tests frontend (outil de test pour les fonctions pures) et jeux de cas partagés entre Rust et TypeScript pour les règles de validation dupliquées (`serviceRules.ts`)
+- Automatique MAJ app
 
 ### Accès pour Claude (serveur MCP local)
 
