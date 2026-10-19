@@ -327,6 +327,23 @@ src/
 
 Une nouvelle API de Tauri utilisée dans `src/api/` demande d'ajouter sa permission ici et dans le fichier.
 
+### Politique de sécurité du contenu (CSP)
+
+Définie dans `tauri.conf.json` (`app.security.csp`) : tout vient de l'application elle-même, rien d'autre n'est autorisé.
+
+| Directive | Valeur | Raison |
+|---|---|---|
+| `default-src`, `script-src` | `'self'` | modules JS du build, aucun script en ligne |
+| `style-src` | `'self'` | feuilles CSS du build ; pas de `'unsafe-inline'` |
+| `img-src`, `font-src` | `'self'` | image de fond et polices embarquées |
+| `connect-src` | `ipc: http://ipc.localhost` | IPC de Tauri (`ipc:` sous Linux, `http://ipc.localhost` sous Windows) |
+| `object-src`, `base-uri`, `form-action`, `frame-src` | `'none'` | inutilisés |
+
+- Les styles calculés (`:style` de Vue : console virtualisée, radar, orbite) passent par l'API de style du DOM, que la CSP ne bloque pas. Un `<style>` ou un attribut `style="…"` inséré dans le HTML serait bloqué : à éviter (Reka UI n'en insère que dans son Splitter, non utilisé).
+- Vite intègre en URI `data:` les fichiers importés de moins de 4 Ko : un tel import serait bloqué par `img-src` ou `font-src`. Aujourd'hui, aucun fichier n'est dans ce cas.
+- Pas de `frame-ancestors` : ignorée dans une balise meta, forme sous laquelle Tauri injecte la CSP sous Linux.
+- **La CSP n'est pas appliquée en `tauri dev`** sur ordinateur : la webview charge directement le serveur de Vite (le relais de Tauri n'existe que sur mobile). Pour la vérifier avec l'inspecteur : `npm run tauri build -- --debug --no-bundle`, puis lancer `src-tauri/target/debug/atlas-vps` (fichiers embarqués, vraie CSP, inspecteur disponible).
+
 ### Routes
 
 | Route | Vue | Connexion requise |
