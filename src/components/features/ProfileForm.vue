@@ -96,7 +96,7 @@ function submit() {
       <span class="verbatim">{{ isNew ? "nouveau" : profile.name }}</span>
     </template>
     <template #aside>
-      <span class="caps" :class="{ default: profile.isDefault }">{{
+      <span class="caps" :class="{ 'is-default': profile.isDefault }">{{
         profile.isDefault ? "Par défaut" : "Secondaire"
       }}</span>
     </template>
@@ -244,7 +244,7 @@ function submit() {
 </template>
 
 <style scoped>
-.default {
+.is-default {
   color: var(--color-action);
 }
 

@@ -35,6 +35,14 @@ const props = withDefaults(
   },
 );
 
+// Pas de classe pour la taille par défaut : le style local d'un parent
+// s'applique aussi à la racine de ce composant, et une classe aussi
+// générique que `default` y reprenait ses règles (texte ambre).
+const classes = computed(() => [
+  props.variant,
+  { compact: props.size === "compact" },
+]);
+
 const elapsed = useElapsed(toRef(props, "busySince"));
 const chrono = computed(() =>
   elapsed.value === null ? null : formatElapsed(elapsed.value, "s"),
@@ -42,19 +50,14 @@ const chrono = computed(() =>
 </script>
 
 <template>
-  <RouterLink
-    v-if="to && !disabled"
-    :to="to"
-    class="button"
-    :class="[variant, size]"
-  >
+  <RouterLink v-if="to && !disabled" :to="to" class="button" :class="classes">
     <slot />
   </RouterLink>
   <button
     v-else
     :type="type"
     class="button"
-    :class="[variant, size]"
+    :class="classes"
     :disabled="disabled"
     :aria-busy="chrono !== null || undefined"
   >
