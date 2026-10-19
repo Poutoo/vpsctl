@@ -1,0 +1,102 @@
+# Publication : un tag vX.Y.Z construit les installateurs Windows et Linux
+# et les attache à une release en brouillon. La publication reste manuelle,
+# depuis la page Releases de GitHub.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+# Une seule publication à la fois pour un même tag.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  draft:
+    name: Release en brouillon
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.create.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # Le tag doit correspondre à la version des trois fichiers.
+      - name: Version du tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          npm_version=$(node -p "require('./package.json').version")
+          tauri_version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          cargo_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' src-tauri/Cargo.toml | head -n 1)
+          echo "tag $tag, package.json $npm_version, tauri.conf.json $tauri_version, Cargo.toml $cargo_version"
+          if [ "$tag" != "$npm_version" ] || [ "$tag" != "$tauri_version" ] || [ "$tag" != "$cargo_version" ]; then
+            echo "::error::Le tag $GITHUB_REF_NAME ne correspond pas à la version de l'application."
+            exit 1
+          fi
+
+      # Créée une seule fois, avant les builds : deux builds en parallèle
+      # créeraient sinon chacun leur brouillon.
+      - name: Créer le brouillon
+        id: create
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+            --title "Atlas $GITHUB_REF_NAME" \
+            --notes "Installation et avertissement SmartScreen : voir le README."
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\" and .draft) | .id" | head -n 1)
+          echo "release_id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: draft
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            bundles: nsis
+          - platform: ubuntu-24.04
+            bundles: deb,appimage
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Dépendances système de Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libxdo-dev libssl-dev build-essential file
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      # Installe la version figée dans rust-toolchain.toml.
+      - name: Toolchain Rust
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2.9.2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          releaseId: ${{ needs.draft.outputs.release_id }}
+          tagName: ${{ github.ref_name }}
+          releaseDraft: true
+          uploadUpdaterJson: false
+          args: --bundles ${{ matrix.bundles }}
