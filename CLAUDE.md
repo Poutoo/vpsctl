@@ -53,6 +53,13 @@ Lire le document concerné avant de travailler sur une partie :
 - Les actions destructrices (suppression de fichier, de conteneur, de service, script marqué `requireConfirmation`) passent toujours par une confirmation explicite.
 - Tester régulièrement le rendu sur Windows (WebView2) et Linux (WebKitGTK).
 
+### Versions et changelog
+
+- Versionnage sémantique, règles en tête de `CHANGELOG.md` : correctif pour des corrections seules, mineur pour une nouvelle fonction, majeur pour un changement incompatible pour l'utilisateur.
+- Tout changement visible par l'utilisateur (fonction, correction, comportement, sécurité, installateurs) ajoute une ligne sous `## [Non publié]` de `CHANGELOG.md`, **dans le même commit**, dans la bonne catégorie (Ajouté, Modifié, Corrigé, Retiré, Sécurité). Une ligne décrit l'effet pour l'utilisateur, pas le code. Pas d'entrée pour la documentation, les tests, la CI ou une réorganisation interne sans effet visible.
+- La version est identique dans `package.json`, `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json` (vérifié par `src-tauri/tests/version.rs` et par le workflow de publication).
+- Préparer une version uniquement sur demande explicite : choisir le numéro d'après les entrées de « Non publié », renommer cette section en `## [X.Y.Z] - AAAA-MM-JJ` et rouvrir une section « Non publié » vide, mettre à jour les liens de comparaison en bas du fichier, changer la version dans les trois fichiers (et les fichiers de verrouillage), en un commit. Ne jamais créer de tag ni pousser : la publication (tag `vX.Y.Z`, release en brouillon publiée à la main) reste à l'utilisateur.
+
 ## Périmètre
 
 Ne rien ajouter qui soit listé « hors MVP » dans `docs/01-perimetre-mvp.md` sans demande explicite.

@@ -79,4 +79,6 @@ npm run tauri build    # installateurs (src-tauri/target/release/bundle/)
 
 Documentation du projet dans [docs/](docs/), à commencer par [docs/03-architecture.md](docs/03-architecture.md). Les icônes se régénèrent depuis `src/assets/logo/` avec `npm run icons`.
 
-Publication : pousser un tag `vX.Y.Z` (même version dans `package.json`, `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json`). Le workflow `release.yml` construit les installateurs et les attache à une release en brouillon, à publier depuis GitHub.
+Historique des versions : [CHANGELOG.md](CHANGELOG.md).
+
+Publication : compléter le changelog, puis pousser un tag `vX.Y.Z` (même version dans `package.json`, `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json`). Le workflow `release.yml` construit les installateurs et les attache à une release en brouillon, à publier depuis GitHub.
