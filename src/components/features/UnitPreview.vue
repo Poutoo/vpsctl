@@ -10,7 +10,7 @@
  *   avant toute saisie valide, le gabarit avec « … » (illustration, pas le
  *   fichier).
  */
-import { onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { errorMessage, toAppError } from "../../api/errors";
 import { previewUnit } from "../../api/systemd";
 import type { ServiceDef } from "../../bindings/ServiceDef";
@@ -74,6 +74,12 @@ watch(
   { immediate: true, deep: true },
 );
 
+/** Lignes affichées : une ligne trop longue est coupée par « … ». */
+const lines = computed(() =>
+  // Le fichier se termine par un retour à la ligne : pas de ligne vide en plus.
+  (text.value ?? SKELETON).replace(/\n$/, "").split("\n"),
+);
+
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer);
   request++;
@@ -83,17 +89,20 @@ onBeforeUnmount(() => {
 <template>
   <PanelCard class="preview" aria-label="Aperçu du fichier d'unité">
     <template #kicker>
-      Aperçu ·
-      <span class="verbatim">{{ def.name || "nom" }}.service</span>
+      <span class="title" :title="`${def.name || 'nom'}.service`">
+        Aperçu ·
+        <span class="verbatim">{{ def.name || "nom" }}.service</span>
+      </span>
     </template>
     <template #aside>
       <span v-if="fresh" class="caps live">Live</span>
     </template>
-    <pre
-      class="unit"
-      :class="{ stale: !fresh }"
-      aria-live="off"
-    ><code>{{ text ?? SKELETON }}</code></pre>
+    <pre class="unit" :class="{ stale: !fresh }" aria-live="off"><code><span
+      v-for="(line, i) in lines"
+      :key="i"
+      class="line"
+      :title="line || undefined"
+    >{{ line }}</span></code></pre>
     <p v-if="problem ?? refused" class="pending" role="status">
       <StatusIcon class="shape" name="half" />
       <span>{{ problem ?? refused }}</span>
@@ -102,15 +111,33 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.title {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Le texte ne dépasse jamais de la carte. */
 .unit {
+  min-width: 0;
   margin: 0;
-  overflow-x: auto;
+  overflow: hidden;
   color: var(--color-text);
   font-family: var(--font-mono);
   font-size: var(--fs-data);
   line-height: var(--console-line-height);
   white-space: pre;
   transition: color var(--dur-fast) var(--ease-out);
+}
+
+/* Une ligne par bloc : trop longue, elle est coupée par « … » (texte complet
+   en infobulle). Une ligne vide garde sa hauteur. */
+.line {
+  display: block;
+  min-height: var(--console-line-height);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Texte qui ne correspond plus à la saisie : en retrait, jamais masqué. */

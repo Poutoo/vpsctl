@@ -120,7 +120,12 @@ async function create(current: ServiceDef) {
         @submit="create"
         @cancel="backToDashboard"
       />
-      <UnitPreview v-if="def" class="aside" :def="def" :problem="problem" />
+      <UnitPreview
+        v-if="def"
+        class="preview-column"
+        :def="def"
+        :problem="problem"
+      />
     </div>
   </div>
 </template>
@@ -146,7 +151,8 @@ async function create(current: ServiceDef) {
   gap: var(--sp-5);
 }
 
-.aside {
+/* Pas « aside » : PanelCard emploie déjà cette classe pour son bandeau. */
+.preview-column {
   position: sticky;
   top: 0;
 }
