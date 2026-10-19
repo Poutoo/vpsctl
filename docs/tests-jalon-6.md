@@ -13,36 +13,36 @@ Tous les services de test sont nommés `vpsctl-t-*` et les fichiers annexes sont
 
 ## 1. Écran de création
 
-- [ ] Tableau de bord : l'en-tête de « Services systemd » a un bouton « Nouveau service ».
-- [ ] Clic : écran « I · NOUVELLE UNITÉ / Créer un service systemd », `~/.config/systemd/user/` à droite du titre ; la navigation surligne **Tableau de bord**.
-- [ ] Mise en page conforme aux captures (`docs/design/ecran/systemd-create/`) :
+- [y] Tableau de bord : l'en-tête de « Services systemd » a un bouton « Nouveau service ».
+- [y] Clic : écran « I · NOUVELLE UNITÉ / Créer un service systemd », `~/.config/systemd/user/` à droite du titre ; la navigation surligne **Tableau de bord**.
+- [y] Mise en page conforme aux captures (`docs/design/ecran/systemd-create/`) :
   - panneau « Identité et exécution » (nom avec suffixe `.service` accolé, description, commande, dossier de travail pré-rempli avec `~`) ;
   - panneau « Politique de redémarrage » : trois cartes `no`, `on-failure` (choisie par défaut, bordée d'ambre), `always`, chacune avec sa description ; `RestartSec=5` à droite du bandeau ;
   - panneau « Variables d'environnement » avec « Ajouter » ;
   - Annuler et « Créer le service » sous les panneaux, à droite ;
   - aperçu à droite, « APERÇU · nom.service ».
-- [ ] Les cartes de redémarrage se choisissent à la souris et au clavier (Tab jusqu'au groupe, puis flèches).
-- [ ] Lingering actif : aucun avertissement.
-- [ ] Annuler : retour au tableau de bord, rien n'est créé.
-- [ ] Fenêtre étroite (navigation réduite aux numéraux) : le numéral I reste surligné, formulaire et aperçu restent lisibles.
+- [y] Les cartes de redémarrage se choisissent à la souris et au clavier (Tab jusqu'au groupe, puis flèches).
+- [y] Lingering actif : aucun avertissement.
+- [y] Annuler : retour au tableau de bord, rien n'est créé.
+- [y] Fenêtre étroite (navigation réduite aux numéraux) : le numéral I reste surligné, formulaire et aperçu restent lisibles.
 
 ## 2. Validation instantanée et aperçu
 
 Saisir chaque valeur et vérifier le message sous le champ dès la saisie. Le bouton « Créer le service » refuse l'envoi tant qu'un problème subsiste.
 
-- [ ] Nom `Bot` ou `bot_1` : « Minuscules, chiffres et tirets, sans tiret au début. » ; `-bot` : idem ; `bot.service` : « Saisissez le nom sans « .service ». » ; 65 caractères : « 64 caractères au plus. »
-- [ ] Commande vide : « La commande est requise. »
-- [ ] Commande `-/bin/true`, `@/bin/true`, `|echo x`, `"-/bin/true"` : « Le préfixe spécial « … » de systemd n'est pas pris en charge… »
-- [ ] Commande `~/bin/x` : « systemd ne développe pas ~… » ; `bin/x` ou `./x` : « Le programme est un chemin absolu ou un simple nom. »
-- [ ] Commande `/bin/echo a ; /bin/rm x` : message sur le `;` isolé. `/bin/echo a\; b` et `/bin/sh -c 'a ; b'` sont acceptés.
-- [ ] Commande `/bin/echo 'a` : « Guillemet non fermé. » ; `/bin/echo a \` : « Ne doit pas se terminer par « \ ». »
-- [ ] Description `C:\` : « Ne doit pas se terminer par « \ ». »
-- [ ] Dossier `srv/app`, `-/srv`, `~user/x`, `/srv/../etc`, vide : message sous le champ.
-- [ ] Variable : clé `1A` ou `A-B` : « Lettres, chiffres et _, sans chiffre au début. » ; deux fois la même clé : « Clé en double. » ; valeur sans clé : « Clé requise. » ; ligne entièrement vide : ignorée, sans message.
-- [ ] Coller dans la commande un texte sur deux lignes : le champ n'a qu'une ligne (le retour à la ligne disparaît ou le message « Retour à la ligne… » s'affiche) ; dans tous les cas, rien n'atteint le fichier.
-- [ ] Aperçu avant toute saisie valide : gabarit avec « … », sans étiquette LIVE, et le problème en cours sous le gabarit.
-- [ ] Saisie valide : environ 300 ms après la dernière frappe, le texte exact du fichier s'affiche avec l'étiquette LIVE. Taper vite : l'aperçu ne clignote pas à chaque touche.
-- [ ] Rendre un champ invalide : le dernier aperçu valide reste affiché, en retrait, sans LIVE, avec le problème en dessous.
+- [y] Nom `Bot` ou `bot_1` : « Minuscules, chiffres et tirets, sans tiret au début. » ; `-bot` : idem ; `bot.service` : « Saisissez le nom sans « .service ». » ; 65 caractères : « 64 caractères au plus. »
+- [y] Commande vide : « La commande est requise. »
+- [y] Commande `-/bin/true`, `@/bin/true`, `|echo x`, `"-/bin/true"` : « Le préfixe spécial « … » de systemd n'est pas pris en charge… »
+- [y] Commande `~/bin/x` : « systemd ne développe pas ~… » ; `bin/x` ou `./x` : « Le programme est un chemin absolu ou un simple nom. »
+- [y] Commande `/bin/echo a ; /bin/rm x` : message sur le `;` isolé. `/bin/echo a\; b` et `/bin/sh -c 'a ; b'` sont acceptés.
+- [y] Commande `/bin/echo 'a` : « Guillemet non fermé. » ; `/bin/echo a \` : « Ne doit pas se terminer par « \ ». »
+- [y] Description `C:\` : « Ne doit pas se terminer par « \ ». »
+- [y] Dossier `srv/app`, `-/srv`, `~user/x`, `/srv/../etc`, vide : message sous le champ.
+- [y] Variable : clé `1A` ou `A-B` : « Lettres, chiffres et _, sans chiffre au début. » ; deux fois la même clé : « Clé en double. » ; valeur sans clé : « Clé requise. » ; ligne entièrement vide : ignorée, sans message.
+- [y] Coller dans la commande un texte sur deux lignes : le champ n'a qu'une ligne (le retour à la ligne disparaît ou le message « Retour à la ligne… » s'affiche) ; dans tous les cas, rien n'atteint le fichier.
+- [y] Aperçu avant toute saisie valide : gabarit avec « … », sans étiquette LIVE, et le problème en cours sous le gabarit.
+- [y] Saisie valide : environ 300 ms après la dernière frappe, le texte exact du fichier s'affiche avec l'étiquette LIVE. Taper vite : l'aperçu ne clignote pas à chaque touche.
+- [y] Rendre un champ invalide : le dernier aperçu valide reste affiché, en retrait, sans LIVE, avec le problème en dessous.
 
 ## 3. Service qui fonctionne
 
@@ -56,12 +56,12 @@ Créer `vpsctl-t-ok` :
 | Dossier de travail | `~` |
 | Redémarrage | `on-failure` |
 
-- [ ] « Créer le service » : chrono « Création T+… » sur le bouton, puis retour au tableau de bord. La ligne `vpsctl-t-ok.service` apparaît aussitôt « En transition » (« Démarrage » et chrono), puis environ 2,5 s plus tard « Nominal », avec l'animation d'allumage et la notification « Service créé et démarré ».
-- [ ] Sur le VPS, `systemctl --user cat vpsctl-t-ok.service` : après la ligne de commentaire `# /home/<compte>/.config/systemd/user/vpsctl-t-ok.service`, le texte est **identique** à l'aperçu affiché avant la création.
-- [ ] `systemctl --user is-enabled vpsctl-t-ok` : `enabled` ; `ls -l $U/default.target.wants/` contient le lien `vpsctl-t-ok.service`.
-- [ ] `stat -c %a $U/vpsctl-t-ok.service` : `644`. `ls -a $U` : aucun fichier `.vpsctl-t-ok.service.atlas-*.part`.
-- [ ] Logs (bouton Télémétrie de la ligne) : une ligne « tic » toutes les 5 s.
-- [ ] Si `~/.config/systemd/user` n'existait pas avant (compte neuf), il a été créé, ainsi que ses parents.
+- [y] « Créer le service » : chrono « Création T+… » sur le bouton, puis retour au tableau de bord. La ligne `vpsctl-t-ok.service` apparaît aussitôt « En transition » (« Démarrage » et chrono), puis environ 2,5 s plus tard « Nominal », avec l'animation d'allumage et la notification « Service créé et démarré ».
+- [y] Sur le VPS, `systemctl --user cat vpsctl-t-ok.service` : après la ligne de commentaire `# /home/<compte>/.config/systemd/user/vpsctl-t-ok.service`, le texte est **identique** à l'aperçu affiché avant la création.
+- [y] `systemctl --user is-enabled vpsctl-t-ok` : `enabled` ; `ls -l $U/default.target.wants/` contient le lien `vpsctl-t-ok.service`.
+- [y] `` : `644`. `ls -a $U` : aucun fichier `.vpsctl-t-ok.service.atlas-*.part`.
+- [y] Logs (bouton Télémétrie de la ligne) : une ligne « tic » toutes les 5 s.
+- [y] Si `~/.config/systemd/user` n'existait pas avant (compte neuf), il a été créé, ainsi que ses parents.
 
 ## 4. %, guillemets et variable avec caractères spéciaux
 
@@ -86,8 +86,8 @@ Créer `vpsctl-t-escape` :
   Environment="VPSCTL_T_VAR=a \"b\" \\c %%h $USER"
   ```
 
-- [ ] Le service passe « Nominal ». Dans le tableau de bord, la description affichée est `Test 100% "échappé"`.
-- [ ] Logs : exactement quatre lignes, avec l'année en cours et le dossier personnel :
+- [y] Le service passe « Nominal ». Dans le tableau de bord, la description affichée est `Test 100% "échappé"`.
+- [y] Logs : exactement quatre lignes, avec l'année en cours et le dossier personnel :
 
   ```
   annee=2026
@@ -97,29 +97,29 @@ Créer `vpsctl-t-escape` :
   ```
 
   (`%h` et `$USER` arrivent tels quels : aucune substitution par systemd.)
-- [ ] `systemctl --user show vpsctl-t-escape -p WorkingDirectory --value` : `/home/<compte>/vpsctl-t-dir`.
+- [y] `systemctl --user show vpsctl-t-escape -p WorkingDirectory --value` : `/home/<compte>/vpsctl-t-dir`.
 
 ## 5. Service qui échoue au démarrage
 
 Créer `vpsctl-t-echec` : commande `/bin/sh -c 'echo "démarrage impossible" >&2; exit 3'`, redémarrage `no`.
 
-- [ ] Retour au tableau de bord, « En transition », puis « En échec » avec la notification d'erreur persistante « Échec du démarrage · vpsctl-t-echec.service · failed/failed » et « Voir la télémétrie ».
-- [ ] « Voir la télémétrie » : la ligne « démarrage impossible » et les messages de systemd (`status=3/NOTIMPLEMENTED`…).
-- [ ] Le service reste créé : `ls $U/vpsctl-t-echec.service` existe, `systemctl --user is-enabled vpsctl-t-echec` : `enabled`.
-- [ ] Variante : `vpsctl-t-absent`, commande `/usr/bin/vpsctl-t-introuvable`. Même verdict « En échec » ; les logs indiquent que l'exécutable est introuvable (`203/EXEC`).
+- [y] Retour au tableau de bord, « En transition », puis « En échec » avec la notification d'erreur persistante « Échec du démarrage · vpsctl-t-echec.service · failed/failed » et « Voir la télémétrie ».
+- [y] « Voir la télémétrie » : la ligne « démarrage impossible » et les messages de systemd (`status=3/NOTIMPLEMENTED`…).
+- [y] Le service reste créé : `ls $U/vpsctl-t-echec.service` existe, `systemctl --user is-enabled vpsctl-t-echec` : `enabled`.
+- [y] Variante : `vpsctl-t-absent`, commande `/usr/bin/vpsctl-t-introuvable`. Même verdict « En échec » ; les logs indiquent que l'exécutable est introuvable (`203/EXEC`).
 
 ## 6. Nom déjà pris
 
-- [ ] Saisir `vpsctl-t-ok` dans le formulaire : « Un service porte déjà ce nom : vpsctl-t-ok.service. » dès la saisie, création refusée.
-- [ ] Contrôle du backend, même nom, depuis la console de développement (clic droit → Inspecter, en mode développement) :
+- [y] Saisir `vpsctl-t-ok` dans le formulaire : « Un service porte déjà ce nom : vpsctl-t-ok.service. » dès la saisie, création refusée.
+- [y] Contrôle du backend, même nom, depuis la console de développement (clic droit → Inspecter, en mode développement) :
 
   ```js
   await window.__TAURI_INTERNALS__.invoke("service_create", { def: { name: "vpsctl-t-ok", description: "", execStart: "/bin/true", workingDir: "~", restart: "no", env: [] } })
   ```
 
   Erreur `AlreadyExists` avec le chemin du fichier ; `systemctl --user cat vpsctl-t-ok` montre le texte d'origine (« tic »), intact.
-- [ ] Unité du même nom ailleurs : sur le VPS, `mkdir -p ~/.local/share/systemd/user && printf '[Service]\nExecStart=/bin/true\n' > ~/.local/share/systemd/user/vpsctl-t-ailleurs.service && systemctl --user daemon-reload`. Créer `vpsctl-t-ailleurs` dans l'application : message « Un élément porte déjà ce nom : /home/<compte>/.local/share/systemd/user/vpsctl-t-ailleurs.service », rien n'est écrit dans `$U`.
-- [ ] Dossier de surcharge orphelin : `mkdir $U/vpsctl-t-reste.service.d`. Créer `vpsctl-t-reste` : « Un dossier porte déjà ce nom : …/vpsctl-t-reste.service.d », aucun fichier `vpsctl-t-reste.service` créé.
+- [y] Unité du même nom ailleurs : sur le VPS, `mkdir -p ~/.local/share/systemd/user && printf '[Service]\nExecStart=/bin/true\n' > ~/.local/share/systemd/user/vpsctl-t-ailleurs.service && systemctl --user daemon-reload`. Créer `vpsctl-t-ailleurs` dans l'application : message « Un élément porte déjà ce nom : /home/<compte>/.local/share/systemd/user/vpsctl-t-ailleurs.service », rien n'est écrit dans `$U`.
+- [y] Dossier de surcharge orphelin : `mkdir $U/vpsctl-t-reste.service.d`. Créer `vpsctl-t-reste` : « Un dossier porte déjà ce nom : …/vpsctl-t-reste.service.d », aucun fichier `vpsctl-t-reste.service` créé.
 
 ## 7. Suppression
 
@@ -140,10 +140,10 @@ systemctl --user daemon-reload
 systemctl --user start vpsctl-t-gab@1.service
 ```
 
-- [ ] `vpsctl-t-gab@1.service` : corbeille grisée, infobulle « instance d'un gabarit : elle n'a pas de fichier propre ».
-- [ ] `vpsctl-t-masque.service` : corbeille grisée, « unité masquée : démasquez-la avant de la supprimer ».
-- [ ] `vpsctl-t-lie.service` : corbeille grisée, « lien vers un fichier situé ailleurs (systemctl link) ».
-- [ ] Dans chaque ligne, la corbeille est séparée des autres actions par un trait vertical, comme pour les conteneurs.
+- [y] `vpsctl-t-gab@1.service` : corbeille grisée, infobulle « instance d'un gabarit : elle n'a pas de fichier propre ».
+- [y] `vpsctl-t-masque.service` : corbeille grisée, « unité masquée : démasquez-la avant de la supprimer ».
+- [y] `vpsctl-t-lie.service` : corbeille grisée, « lien vers un fichier situé ailleurs (systemctl link) ».
+- [y] Dans chaque ligne, la corbeille est séparée des autres actions par un trait vertical, comme pour les conteneurs.
 
 ### Service avec dossier de surcharge
 
@@ -161,9 +161,9 @@ systemctl --user daemon-reload
   - « Fichier d'unité supprimé » et le chemin complet `/home/<compte>/.config/systemd/user/vpsctl-t-ok.service` ;
   - « Dossier de surcharge supprimé, avec son élément » et son chemin ;
   - le rechargement de systemd.
-- [ ] NO GO (ou Échap) : rien ne change.
-- [ ] GO : la ligne passe « En transition » (« Suppression » et chrono), puis disparaît ; notification « Service supprimé ».
-- [ ] Vérification sur le VPS, il ne reste rien :
+- [y] NO GO (ou Échap) : rien ne change.
+- [y] GO : la ligne passe « En transition » (« Suppression » et chrono), puis disparaît ; notification « Service supprimé ».
+- [y] Vérification sur le VPS, il ne reste rien :
 
   ```sh
   systemctl --user list-unit-files 'vpsctl-t-ok*'      # « 0 unit files listed. »
@@ -174,17 +174,17 @@ systemctl --user daemon-reload
 
 ### Autres suppressions
 
-- [ ] `vpsctl-t-echec.service` (en échec, sans dossier de surcharge) : la fenêtre indique « Service arrêté » en condition vérifiée et pas d'arrêt dans les conséquences. Après GO, `systemctl --user list-units --all --failed | grep vpsctl-t-echec` ne renvoie rien (`reset-failed` effectué).
-- [ ] Service qui redémarre en boucle : créer `vpsctl-t-boucle` (commande `/bin/false`, redémarrage `always`). Sa ligne alterne entre « En transition » et « En échec » ; Supprimer reste disponible et la suppression aboutit.
-- [ ] Échec en cours de séquence : recréer `vpsctl-t-ok` (section 3), puis `mkdir $U/vpsctl-t-ok.service.d && touch $U/vpsctl-t-ok.service.d/a.conf && chmod 500 $U/vpsctl-t-ok.service.d`. Supprimer → GO : notification d'erreur persistante « Échec de la suppression », « Arrêt à l'étape « suppression du dossier de surcharge » : Accès refusé sur le VPS : … Service arrêté et désactivé, fichier en place, dossier de surcharge peut-être partiellement supprimé. » La ligne reste, « Arrêté ».
-- [ ] `chmod 700 $U/vpsctl-t-ok.service.d`, puis Supprimer à nouveau : la suppression aboutit.
+- [y] `vpsctl-t-echec.service` (en échec, sans dossier de surcharge) : la fenêtre indique « Service arrêté » en condition vérifiée et pas d'arrêt dans les conséquences. Après GO, `systemctl --user list-units --all --failed | grep vpsctl-t-echec` ne renvoie rien (`reset-failed` effectué).
+- [y] Service qui redémarre en boucle : créer `vpsctl-t-boucle` (commande `/bin/false`, redémarrage `always`). Sa ligne alterne entre « En transition » et « En échec » ; Supprimer reste disponible et la suppression aboutit.
+- [y] Échec en cours de séquence : recréer `vpsctl-t-ok` (section 3), puis `mkdir $U/vpsctl-t-ok.service.d && touch $U/vpsctl-t-ok.service.d/a.conf && chmod 500 $U/vpsctl-t-ok.service.d`. Supprimer → GO : notification d'erreur persistante « Échec de la suppression », « Arrêt à l'étape « suppression du dossier de surcharge » : Accès refusé sur le VPS : … Service arrêté et désactivé, fichier en place, dossier de surcharge peut-être partiellement supprimé. » La ligne reste, « Arrêté ».
+- [y] `chmod 700 $U/vpsctl-t-ok.service.d`, puis Supprimer à nouveau : la suppression aboutit.
 
 ## 8. Survie après la fin des sessions (lingering)
 
-- [ ] Créer `vpsctl-t-linger` : commande `/bin/sh -c 'while true; do date +%T; sleep 10; done'`. « Nominal ».
-- [ ] Couper la liaison dans l'application et fermer **toutes** les sessions SSH du compte. Depuis une autre machine ou un autre compte, si possible, `loginctl list-sessions` ne montre plus de session pour ce compte.
-- [ ] Attendre au moins 2 minutes, se reconnecter : `vpsctl-t-linger.service` est toujours « Nominal » ; ses logs montrent une heure toutes les 10 s **sans interruption** pendant l'absence ; `systemctl --user show vpsctl-t-linger -p ActiveEnterTimestamp` est antérieur à la déconnexion.
-- [ ] Facultatif, si le compte peut modifier son lingering : `loginctl disable-linger`, puis ouvrir l'écran de création : avertissement « Lingering inactif pour ce compte… » avec `loginctl enable-linger`. Rétablir avec `loginctl enable-linger` et vérifier `Linger=yes`.
+- [y] Créer `vpsctl-t-linger` : commande `/bin/sh -c 'while true; do date +%T; sleep 10; done'`. « Nominal ».
+- [y] Couper la liaison dans l'application et fermer **toutes** les sessions SSH du compte. Depuis une autre machine ou un autre compte, si possible, `loginctl list-sessions` ne montre plus de session pour ce compte.
+- [y] Attendre au moins 2 minutes, se reconnecter : `vpsctl-t-linger.service` est toujours « Nominal » ; ses logs montrent une heure toutes les 10 s **sans interruption** pendant l'absence ; `systemctl --user show vpsctl-t-linger -p ActiveEnterTimestamp` est antérieur à la déconnexion.
+- [y] Facultatif, si le compte peut modifier son lingering : `loginctl disable-linger`, puis ouvrir l'écran de création : avertissement « Lingering inactif pour ce compte… » avec `loginctl enable-linger`. Rétablir avec `loginctl enable-linger` et vérifier `Linger=yes`.
 
 ## 9. Entrées hostiles (console de développement)
 
@@ -200,7 +200,7 @@ await window.__TAURI_INTERNALS__.invoke("service_delete", { unit: "x; touch /tmp
 await window.__TAURI_INTERNALS__.invoke("service_delete", { unit: "dbus.service" })
 ```
 
-- [ ] Chaque appel est refusé avec `InvalidInput`, dont le message nomme le champ. Sur le VPS, `ls /tmp/vpsctl-pwned` : fichier absent ; `ls $U | grep vpsctl-t-h` : rien.
+- [y] Chaque appel est refusé avec `InvalidInput`, dont le message nomme le champ. Sur le VPS, `ls /tmp/vpsctl-pwned` : fichier absent ; `ls $U | grep vpsctl-t-h` : rien.
 
 ## 10. Nettoyage
 
@@ -224,4 +224,4 @@ systemctl --user list-units --all 'vpsctl-t-*'
 ls -a $U $U/default.target.wants 2>/dev/null | grep vpsctl-t
 ```
 
-- [ ] Les deux `systemctl` n'affichent aucune unité, le `ls` aucune ligne, et la liste des services de l'application est revenue à l'état de départ.
+- [y] Les deux `systemctl` n'affichent aucune unité, le `ls` aucune ligne, et la liste des services de l'application est revenue à l'état de départ.
