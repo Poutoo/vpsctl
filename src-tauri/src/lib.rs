@@ -8,6 +8,8 @@ pub mod run_state;
 pub mod scripts;
 pub mod secrets;
 pub mod sftp;
+#[cfg(test)]
+mod shared_cases;
 pub mod ssh;
 pub mod state;
 pub mod stream;

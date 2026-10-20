@@ -1,0 +1,15 @@
+{
+  "rule": "Dossier parent d'un chemin distant absolu ; aucun pour la racine",
+  "rust": "sftp::path::split (dossier parent)",
+  "ts": "remoteFiles.parentPath",
+  "cases": [
+    { "input": "/", "expected": null, "why": "la racine n'a pas de parent" },
+    { "input": "/etc", "expected": "/", "why": "élément de la racine" },
+    { "input": "/srv/a.txt", "expected": "/srv", "why": "cas ordinaire" },
+    {
+      "input": "/home/deploy/.ssh/authorized_keys",
+      "expected": "/home/deploy/.ssh",
+      "why": "chemin profond"
+    }
+  ]
+}

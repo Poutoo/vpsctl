@@ -453,4 +453,33 @@ mod tests {
         assert!(store.list().unwrap().is_empty());
         assert!(store.delete(&saved.id).is_err());
     }
+
+    #[test]
+    fn shared_cases() {
+        use crate::shared_cases::{check_valid, shared_cases};
+
+        #[derive(Debug, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Fields {
+            name: String,
+            host: String,
+            port: u16,
+            user: String,
+            key_path: String,
+        }
+
+        check_valid(shared_cases!("profile-fields.json"), |f: &Fields| {
+            normalize(Profile {
+                id: String::new(),
+                name: f.name.clone(),
+                host: f.host.clone(),
+                port: f.port,
+                user: f.user.clone(),
+                key_path: f.key_path.clone(),
+                host_key_fingerprint: None,
+                is_default: false,
+            })
+            .is_ok()
+        });
+    }
 }

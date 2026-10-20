@@ -1,0 +1,80 @@
+{
+  "rule": "Description d'un service créé : facultative, espaces de bord retirés, une seule ligne, 256 caractères au plus, sans « \\ » final",
+  "rust": "systemd::unit::render_unit (champ description)",
+  "ts": "serviceRules.descriptionProblem",
+  "cases": [
+    { "input": "", "valid": true, "why": "facultative" },
+    { "input": "   ", "valid": true, "why": "vide après retrait des espaces" },
+    {
+      "input": "Bot Discord communautaire",
+      "valid": true,
+      "why": "texte ordinaire"
+    },
+    {
+      "input": "Sauvegarde 100% locale",
+      "valid": true,
+      "why": "% est échappé à l'écriture"
+    },
+    {
+      "input": "\u00a0Bot\u00a0",
+      "valid": true,
+      "why": "espaces insécables de bord retirés"
+    },
+    {
+      "input": "Bot\nExecStart=/bin/sh",
+      "valid": false,
+      "why": "retour à la ligne (injection de directive)"
+    },
+    { "input": "a\tb", "valid": false, "why": "tabulation" },
+    {
+      "input": "a\u0085b",
+      "valid": false,
+      "why": "NEL au milieu : caractère de contrôle"
+    },
+    {
+      "input": "Bot\u0085",
+      "valid": true,
+      "why": "NEL en bord : espace Unicode, retiré par str::trim"
+    },
+    {
+      "input": "\u0085",
+      "valid": true,
+      "why": "NEL seul : vide après retrait"
+    },
+    {
+      "input": "\ufeffBot",
+      "valid": true,
+      "why": "U+FEFF n'est ni un espace Unicode ni un caractère de contrôle"
+    },
+    {
+      "input": "fin \\",
+      "valid": false,
+      "why": "« \\ » final : systemd joindrait la ligne suivante"
+    },
+    {
+      "input": "fin \\  ",
+      "valid": false,
+      "why": "« \\ » final après retrait des espaces"
+    },
+    {
+      "input": { "repeat": "é", "times": 256 },
+      "valid": true,
+      "why": "256 caractères (512 octets)"
+    },
+    {
+      "input": { "repeat": "é", "times": 257 },
+      "valid": false,
+      "why": "257 caractères"
+    },
+    {
+      "input": { "repeat": "😀", "times": 256 },
+      "valid": true,
+      "why": "256 points de code hors BMP (512 unités UTF-16)"
+    },
+    {
+      "input": { "repeat": "😀", "times": 257 },
+      "valid": false,
+      "why": "257 points de code"
+    }
+  ]
+}

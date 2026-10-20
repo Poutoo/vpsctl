@@ -833,4 +833,60 @@ WantedBy=default.target
             .collect();
         assert!(refused(&ServiceDef { env: many, ..def() }).contains("au plus"));
     }
+
+    mod shared {
+        use super::*;
+        use crate::shared_cases::{check_valid, shared_cases};
+
+        fn renders(def: ServiceDef) -> bool {
+            render_unit(&def).is_ok()
+        }
+
+        #[test]
+        fn name() {
+            check_valid(shared_cases!("service-name.json"), |name: &String| {
+                unit_name(name).is_ok()
+            });
+        }
+
+        #[test]
+        fn description() {
+            check_valid(shared_cases!("service-description.json"), |d: &String| {
+                renders(ServiceDef {
+                    description: d.clone(),
+                    ..def()
+                })
+            });
+        }
+
+        #[test]
+        fn working_dir() {
+            check_valid(shared_cases!("service-working-dir.json"), |w: &String| {
+                renders(ServiceDef {
+                    working_dir: w.clone(),
+                    ..def()
+                })
+            });
+        }
+
+        #[test]
+        fn exec_start() {
+            check_valid(shared_cases!("service-exec-start.json"), |c: &String| {
+                renders(ServiceDef {
+                    exec_start: c.clone(),
+                    ..def()
+                })
+            });
+        }
+
+        #[test]
+        fn env() {
+            check_valid(shared_cases!("service-env.json"), |env: &Vec<EnvVar>| {
+                renders(ServiceDef {
+                    env: env.clone(),
+                    ..def()
+                })
+            });
+        }
+    }
 }

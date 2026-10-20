@@ -1,0 +1,47 @@
+{
+  "rule": "Nom saisi dans l'explorateur (création, renommage) : ni vide, ni « . », ni « .. », sans « / » ni caractère nul, 255 octets au plus",
+  "rust": "sftp::path::validate_name",
+  "ts": "remoteFiles.nameProblem",
+  "cases": [
+    { "input": "a.txt", "valid": true, "why": "nom ordinaire" },
+    { "input": ".env", "valid": true, "why": "fichier caché" },
+    { "input": "...", "valid": true, "why": "trois points : nom ordinaire" },
+    { "input": "a b", "valid": true, "why": "espace" },
+    {
+      "input": " ",
+      "valid": true,
+      "why": "espace seul : permis par le serveur"
+    },
+    {
+      "input": "a\\b",
+      "valid": true,
+      "why": "« \\ » est un caractère ordinaire sous Linux"
+    },
+    { "input": "café", "valid": true, "why": "lettre accentuée" },
+    { "input": "", "valid": false, "why": "vide" },
+    { "input": ".", "valid": false, "why": "dossier courant" },
+    { "input": "..", "valid": false, "why": "dossier parent" },
+    { "input": "a/b", "valid": false, "why": "« / » sépare les composants" },
+    { "input": "a\u0000b", "valid": false, "why": "caractère nul" },
+    {
+      "input": { "repeat": "a", "times": 255 },
+      "valid": true,
+      "why": "255 octets"
+    },
+    {
+      "input": { "repeat": "a", "times": 256 },
+      "valid": false,
+      "why": "256 octets"
+    },
+    {
+      "input": { "repeat": "é", "times": 127 },
+      "valid": true,
+      "why": "254 octets en UTF-8"
+    },
+    {
+      "input": { "repeat": "é", "times": 128 },
+      "valid": false,
+      "why": "128 caractères mais 256 octets"
+    }
+  ]
+}

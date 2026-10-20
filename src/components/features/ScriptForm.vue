@@ -3,16 +3,14 @@
  * Création ou modification d'un script : nom, description facultative,
  * commande (plusieurs lignes, monospace) et confirmation GO / NO GO
  * obligatoire. La validation complète est faite par le backend ; ici, les
- * champs requis seulement.
+ * champs requis et la longueur du nom (`scriptRules`).
  */
 import { computed, reactive, useId } from "vue";
 import type { Script } from "../../bindings/Script";
+import { scriptProblems } from "../../scriptRules";
 import AppButton from "../ui/AppButton.vue";
 import PanelCard from "../ui/PanelCard.vue";
 import StatusIcon from "../ui/StatusIcon.vue";
-
-/** Longueur maximale du nom (contrôlée aussi par le backend). */
-const MAX_NAME = 64;
 
 const props = defineProps<{
   /** Script édité ; `id` vide pour un nouveau script. */
@@ -31,14 +29,7 @@ const touched = reactive({ name: false, command: false });
 
 const isNew = computed(() => props.script.id === "");
 
-const problems = computed(() => ({
-  name: !draft.name.trim()
-    ? "Le nom du script est requis."
-    : draft.name.trim().length > MAX_NAME
-      ? `${MAX_NAME} caractères au plus.`
-      : null,
-  command: draft.command.trim() ? null : "La commande est requise.",
-}));
+const problems = computed(() => scriptProblems(draft));
 
 const shown = computed(() => ({
   name: touched.name ? problems.value.name : null,

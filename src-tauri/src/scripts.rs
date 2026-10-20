@@ -877,4 +877,27 @@ mod tests {
             .collect();
         assert_eq!(names, vec![std::ffi::OsString::from(FILE_NAME)]);
     }
+
+    #[test]
+    fn shared_cases() {
+        use crate::shared_cases::{check_valid, shared_cases};
+
+        #[derive(Debug, serde::Deserialize)]
+        struct Fields {
+            name: String,
+            command: String,
+        }
+
+        check_valid(shared_cases!("script-fields.json"), |f: &Fields| {
+            normalize(Script {
+                id: String::new(),
+                name: f.name.clone(),
+                description: String::new(),
+                command: f.command.clone(),
+                require_confirmation: false,
+                last_run: None,
+            })
+            .is_ok()
+        });
+    }
 }

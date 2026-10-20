@@ -375,4 +375,36 @@ mod tests {
         assert!(ssh_access("/", "/.ssh/authorized_keys"));
         assert!(!ssh_access("/", "/"));
     }
+
+    mod shared {
+        use super::*;
+        use crate::shared_cases::{check_expected, check_valid, shared_cases};
+
+        #[derive(Debug, serde::Deserialize)]
+        struct JoinInput {
+            dir: String,
+            name: String,
+        }
+
+        #[test]
+        fn name() {
+            check_valid(shared_cases!("remote-name.json"), |name: &String| {
+                validate_name(name).is_ok()
+            });
+        }
+
+        #[test]
+        fn join_path() {
+            check_expected(shared_cases!("remote-join.json"), |i: &JoinInput| {
+                join(&i.dir, &i.name)
+            });
+        }
+
+        #[test]
+        fn parent() {
+            check_expected(shared_cases!("remote-parent.json"), |p: &String| {
+                split(p).map(|(parent, _)| parent.to_owned())
+            });
+        }
+    }
 }

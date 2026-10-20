@@ -1,0 +1,61 @@
+{
+  "rule": "Dossier de travail d'un service créé : ~, ~/chemin ou chemin absolu, sans « \\ », « . » ni « .. », une seule ligne, 4 096 octets au plus",
+  "rust": "systemd::unit::render_unit (champ workingDir)",
+  "ts": "serviceRules.workingDirProblem",
+  "cases": [
+    { "input": "~", "valid": true, "why": "dossier personnel" },
+    { "input": "~/", "valid": true, "why": "équivaut à ~" },
+    { "input": "~/backup", "valid": true, "why": "sous le dossier personnel" },
+    { "input": "/srv/app", "valid": true, "why": "chemin absolu" },
+    { "input": "/", "valid": true, "why": "racine" },
+    { "input": "/srv//app", "valid": true, "why": "composant vide toléré" },
+    {
+      "input": "/srv/100%",
+      "valid": true,
+      "why": "% est échappé à l'écriture"
+    },
+    {
+      "input": "  ~/backup  ",
+      "valid": true,
+      "why": "espaces de bord retirés"
+    },
+    { "input": "", "valid": false, "why": "requis" },
+    { "input": "   ", "valid": false, "why": "vide après retrait des espaces" },
+    { "input": "srv/app", "valid": false, "why": "chemin relatif" },
+    {
+      "input": "~deploy/app",
+      "valid": false,
+      "why": "~utilisateur non pris en charge"
+    },
+    { "input": "/srv/../etc", "valid": false, "why": "composant .." },
+    { "input": "~/./app", "valid": false, "why": "composant ." },
+    { "input": "/srv/.", "valid": false, "why": "composant . final" },
+    { "input": "C:\\srv", "valid": false, "why": "« \\ » interdit" },
+    { "input": "/srv/a\nb", "valid": false, "why": "retour à la ligne" },
+    {
+      "input": "/srv\u0085",
+      "valid": true,
+      "why": "NEL en bord : retiré par str::trim"
+    },
+    {
+      "input": "\ufeff/srv",
+      "valid": false,
+      "why": "U+FEFF n'est pas retiré : le chemin ne commence pas par /"
+    },
+    {
+      "input": { "repeat": "a", "times": 4095, "before": "/" },
+      "valid": true,
+      "why": "4 096 octets"
+    },
+    {
+      "input": { "repeat": "a", "times": 4096, "before": "/" },
+      "valid": false,
+      "why": "4 097 octets"
+    },
+    {
+      "input": { "repeat": "é", "times": 2048, "before": "/" },
+      "valid": false,
+      "why": "2 049 caractères mais 4 097 octets en UTF-8"
+    }
+  ]
+}

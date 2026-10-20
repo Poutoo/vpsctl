@@ -1,0 +1,89 @@
+{
+  "rule": "Variables d'environnement d'un service créé (lignes vides déjà retirées par l'interface) : 32 au plus, clé ^[A-Za-z_][A-Za-z0-9_]*$ de 128 caractères au plus et sans doublon, valeur d'une seule ligne de 4 096 octets au plus",
+  "rust": "systemd::unit::render_unit (champ env)",
+  "ts": "serviceRules.envProblems",
+  "cases": [
+    { "input": [], "valid": true, "why": "aucune variable" },
+    {
+      "input": [{ "key": "PORT", "value": "8080" }],
+      "valid": true,
+      "why": "variable ordinaire"
+    },
+    {
+      "input": [{ "key": "_X", "value": "" }],
+      "valid": true,
+      "why": "souligné en tête, valeur vide"
+    },
+    {
+      "input": [{ "key": "TOKEN", "value": " a \"b\" \\c 100% " }],
+      "valid": true,
+      "why": "guillemets, « \\ », % et espaces conservés puis échappés"
+    },
+    {
+      "input": [{ "key": "", "value": "x" }],
+      "valid": false,
+      "why": "clé requise"
+    },
+    {
+      "input": [{ "key": "1A", "value": "x" }],
+      "valid": false,
+      "why": "chiffre en tête"
+    },
+    {
+      "input": [{ "key": "A-B", "value": "x" }],
+      "valid": false,
+      "why": "tiret dans la clé"
+    },
+    {
+      "input": [{ "key": "CLÉ", "value": "x" }],
+      "valid": false,
+      "why": "lettre accentuée dans la clé"
+    },
+    {
+      "input": [
+        { "key": "A", "value": "1" },
+        { "key": "A", "value": "2" }
+      ],
+      "valid": false,
+      "why": "clé en double"
+    },
+    {
+      "input": [
+        { "key": "A", "value": "1" },
+        { "key": "a", "value": "2" }
+      ],
+      "valid": true,
+      "why": "la casse distingue les clés"
+    },
+    {
+      "input": [{ "key": "A", "value": "1\nExecStart=/bin/sh" }],
+      "valid": false,
+      "why": "retour à la ligne dans la valeur"
+    },
+    {
+      "input": [{ "key": "A", "value": "a\u0085b" }],
+      "valid": false,
+      "why": "NEL dans la valeur"
+    },
+    {
+      "input": [{ "key": { "repeat": "K", "times": 128 }, "value": "x" }],
+      "valid": true,
+      "why": "clé de 128 caractères"
+    },
+    {
+      "input": [{ "key": { "repeat": "K", "times": 129 }, "value": "x" }],
+      "valid": false,
+      "why": "clé de 129 caractères"
+    },
+    {
+      "input": [{ "key": "A", "value": { "repeat": "v", "times": 4096 } }],
+      "valid": true,
+      "why": "valeur de 4 096 octets"
+    },
+    {
+      "input": [{ "key": "A", "value": { "repeat": "é", "times": 2049 } }],
+      "valid": false,
+      "why": "valeur de 4 098 octets"
+    }
+  ]
+}

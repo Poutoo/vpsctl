@@ -1,0 +1,117 @@
+{
+  "rule": "Profil de connexion : nom, hôte, utilisateur et chemin de clé requis après retrait des espaces ; port de 1 à 65 535. Le backend contrôle seul la longueur du nom, le format de l'hôte et de l'utilisateur (hors de ces cas) ; un port au-delà de 65 535 n'atteint pas le backend (u16).",
+  "rust": "config::normalize",
+  "ts": "profileRules.profileProblems",
+  "cases": [
+    {
+      "input": {
+        "name": "vps-prod-01",
+        "host": "51.178.42.17",
+        "port": 22,
+        "user": "deploy",
+        "keyPath": "~/.ssh/id_ed25519"
+      },
+      "valid": true,
+      "why": "profil ordinaire"
+    },
+    {
+      "input": {
+        "name": " vps ",
+        "host": " vps.example ",
+        "port": 2222,
+        "user": " deploy ",
+        "keyPath": " C:\\cles\\id "
+      },
+      "valid": true,
+      "why": "espaces de bord retirés"
+    },
+    {
+      "input": {
+        "name": "vps",
+        "host": "vps.example",
+        "port": 1,
+        "user": "deploy",
+        "keyPath": "k"
+      },
+      "valid": true,
+      "why": "port minimal"
+    },
+    {
+      "input": {
+        "name": "vps",
+        "host": "vps.example",
+        "port": 65535,
+        "user": "deploy",
+        "keyPath": "k"
+      },
+      "valid": true,
+      "why": "port maximal"
+    },
+    {
+      "input": {
+        "name": "vps",
+        "host": "vps.example",
+        "port": 0,
+        "user": "deploy",
+        "keyPath": "k"
+      },
+      "valid": false,
+      "why": "port 0"
+    },
+    {
+      "input": {
+        "name": "",
+        "host": "vps.example",
+        "port": 22,
+        "user": "deploy",
+        "keyPath": "k"
+      },
+      "valid": false,
+      "why": "nom requis"
+    },
+    {
+      "input": {
+        "name": "\u0085",
+        "host": "vps.example",
+        "port": 22,
+        "user": "deploy",
+        "keyPath": "k"
+      },
+      "valid": false,
+      "why": "nom vide après str::trim"
+    },
+    {
+      "input": {
+        "name": "vps",
+        "host": "  ",
+        "port": 22,
+        "user": "deploy",
+        "keyPath": "k"
+      },
+      "valid": false,
+      "why": "hôte requis"
+    },
+    {
+      "input": {
+        "name": "vps",
+        "host": "vps.example",
+        "port": 22,
+        "user": "",
+        "keyPath": "k"
+      },
+      "valid": false,
+      "why": "utilisateur requis"
+    },
+    {
+      "input": {
+        "name": "vps",
+        "host": "vps.example",
+        "port": 22,
+        "user": "deploy",
+        "keyPath": " "
+      },
+      "valid": false,
+      "why": "chemin de clé requis"
+    }
+  ]
+}

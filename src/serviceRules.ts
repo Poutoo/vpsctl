@@ -7,6 +7,8 @@
  * Chaque fonction renvoie le problème à afficher sous le champ, ou `null`.
  */
 
+import { charCount, trimLikeRust } from "./text";
+
 export const MAX_NAME_CHARS = 64;
 export const MAX_DESCRIPTION_CHARS = 256;
 /** Commande, dossier et valeur d'une variable, en octets. */
@@ -39,7 +41,7 @@ export function nameProblem(name: string): string | null {
   if (!NAME.test(name)) {
     return "Minuscules, chiffres et tirets, sans tiret au début.";
   }
-  if (name.length > MAX_NAME_CHARS) {
+  if (charCount(name) > MAX_NAME_CHARS) {
     return `${MAX_NAME_CHARS} caractères au plus.`;
   }
   return null;
@@ -47,10 +49,10 @@ export function nameProblem(name: string): string | null {
 
 /** Description facultative. */
 export function descriptionProblem(description: string): string | null {
-  const value = description.trim();
+  const value = trimLikeRust(description);
   if (value === "") return null;
   if (CONTROL.test(value)) return SINGLE_LINE;
-  if ([...value].length > MAX_DESCRIPTION_CHARS) {
+  if (charCount(value) > MAX_DESCRIPTION_CHARS) {
     return `${MAX_DESCRIPTION_CHARS} caractères au plus.`;
   }
   if (value.endsWith("\\")) return TRAILING_BACKSLASH;
@@ -59,7 +61,7 @@ export function descriptionProblem(description: string): string | null {
 
 /** Dossier de travail : `~`, `~/chemin` ou chemin absolu. */
 export function workingDirProblem(dir: string): string | null {
-  const value = dir.trim();
+  const value = trimLikeRust(dir);
   if (value === "") return "Requis (~ pour le dossier personnel).";
   if (CONTROL.test(value)) return SINGLE_LINE;
   const long = tooLong(value);
@@ -128,7 +130,7 @@ const PREFIXES = new Set(["-", "@", ":", "+", "!", "|", ";"]);
 
 /** Commande (`ExecStart=`). */
 export function execStartProblem(command: string): string | null {
-  const value = command.trim();
+  const value = trimLikeRust(command);
   if (value === "") return "La commande est requise.";
   if (CONTROL.test(value)) return SINGLE_LINE;
   const long = tooLong(value);
@@ -187,7 +189,7 @@ export function envProblems(rows: EnvRow[]): EnvProblems {
       if (row.key === "") key = "Clé requise.";
       else if (!ENV_KEY.test(row.key)) {
         key = "Lettres, chiffres et _, sans chiffre au début.";
-      } else if (row.key.length > MAX_ENV_KEY_CHARS) {
+      } else if (charCount(row.key) > MAX_ENV_KEY_CHARS) {
         key = `${MAX_ENV_KEY_CHARS} caractères au plus.`;
       } else if (seen.has(row.key)) key = "Clé en double.";
       seen.add(row.key);

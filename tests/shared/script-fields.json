@@ -1,0 +1,70 @@
+{
+  "rule": "Script enregistré : nom requis après retrait des espaces, 64 caractères au plus ; commande requise après retrait des espaces. Le backend contrôle seul les caractères de contrôle du nom, le caractère nul et la taille de la commande (hors de ces cas).",
+  "rust": "scripts::normalize",
+  "ts": "scriptRules.scriptProblems",
+  "cases": [
+    {
+      "input": {
+        "name": "backup-db.sh",
+        "command": "bash ~/scripts/backup-db.sh"
+      },
+      "valid": true,
+      "why": "script ordinaire"
+    },
+    {
+      "input": { "name": "  Déploiement  ", "command": "echo a\necho b" },
+      "valid": true,
+      "why": "espaces de bord retirés, commande sur plusieurs lignes"
+    },
+    {
+      "input": { "name": "", "command": "true" },
+      "valid": false,
+      "why": "nom requis"
+    },
+    {
+      "input": { "name": "   ", "command": "true" },
+      "valid": false,
+      "why": "nom vide après retrait des espaces"
+    },
+    {
+      "input": { "name": "\u0085", "command": "true" },
+      "valid": false,
+      "why": "NEL seul : vide après str::trim"
+    },
+    {
+      "input": { "name": "\ufeff", "command": "true" },
+      "valid": true,
+      "why": "U+FEFF n'est pas retiré par str::trim (ni caractère de contrôle)"
+    },
+    {
+      "input": { "name": "x", "command": "" },
+      "valid": false,
+      "why": "commande requise"
+    },
+    {
+      "input": { "name": "x", "command": "  \n\t " },
+      "valid": false,
+      "why": "commande vide après retrait des espaces"
+    },
+    {
+      "input": { "name": { "repeat": "a", "times": 64 }, "command": "true" },
+      "valid": true,
+      "why": "64 caractères"
+    },
+    {
+      "input": { "name": { "repeat": "a", "times": 65 }, "command": "true" },
+      "valid": false,
+      "why": "65 caractères"
+    },
+    {
+      "input": { "name": { "repeat": "😀", "times": 64 }, "command": "true" },
+      "valid": true,
+      "why": "64 points de code (128 unités UTF-16)"
+    },
+    {
+      "input": { "name": { "repeat": "😀", "times": 65 }, "command": "true" },
+      "valid": false,
+      "why": "65 points de code"
+    }
+  ]
+}

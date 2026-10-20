@@ -356,6 +356,29 @@ Définie dans `tauri.conf.json` (`app.security.csp`) : tout vient de l'applicati
 | `/telemetry/:tab?` | TelemetryView (onglets des flux ; section d'origine surlignée : Scripts ou Tableau de bord) | oui |
 | `/settings` | SettingsView (profils) | oui |
 
+## Tests
+
+- **Backend** : `cargo test`, sans réseau ni VPS (fonctions pures, `MemFs`, exécutions simulées). `tests/ssh_integration.rs` vise un vrai serveur et reste ignoré par défaut.
+- **Frontend** : Vitest (`npm test`), environnement `happy-dom`, fichiers `src/**/*.test.ts`. Les modules de `src/api/` sont remplacés par des simulations (`vi.mock`) : aucun `invoke` réel. Ciblent la logique : stores, `logSession`, validations, formats. `@vue/test-utils` sert uniquement aux composables liés au cycle de vie d'un composant (`useDockedStream`). Pas de tests d'instantané.
+
+### Cas partagés Rust / TypeScript
+
+`tests/shared/*.json` : entrée, verdict ou résultat attendu, justification (format dans `tests/shared/README.md`). Chaque fichier est lu par `cargo test` (`include_str!`, module `shared_cases`) et par `npm test` (`src/sharedCases.test.ts`). Le backend fait foi.
+
+| Fichier | Rust | TypeScript |
+|---|---|---|
+| `service-name.json` | `systemd::unit::unit_name` | `serviceRules.nameProblem` |
+| `service-description.json`, `service-working-dir.json`, `service-exec-start.json`, `service-env.json` | `systemd::unit::render_unit` (un champ varié) | `serviceRules.*Problem`, `envProblems` |
+| `remote-name.json` | `sftp::path::validate_name` | `remoteFiles.nameProblem` |
+| `remote-join.json`, `remote-parent.json` | `sftp::path::join`, `split` | `remoteFiles.joinPath`, `parentPath` |
+| `script-fields.json` | `scripts::normalize` (nom requis et longueur, commande requise) | `scriptRules.scriptProblems` |
+| `profile-fields.json` | `config::normalize` (champs requis, port) | `profileRules.profileProblems` |
+
+- Espaces de bord et longueurs : `src/text.ts` reproduit `str::trim` (propriété Unicode White_Space, différente de `String.prototype.trim` pour U+0085 et U+FEFF) et `chars().count()` (points de code, pas unités UTF-16).
+- Règles présentes d'un seul côté, donc sans cas partagés :
+  - backend seul : regex large des unités (`^[a-zA-Z0-9@._-]+\.service$`, l'interface reçoit `controllable`), états Docker et systemd (`RunState`), texte du fichier d'unité (échappements de `ExecStart=`, `WorkingDirectory=`, `Environment=` ; l'aperçu vient de `service_unit_preview`), IDs Docker, résidus, `sshAccess`, séquences ANSI, durées Docker, contrôles des profils et scripts au-delà des champs requis ;
+  - interface seule : tri de l'explorateur, formats d'affichage, ligne d'erreur du journal (priorité ≤ 3).
+
 ## Packaging
 
 Installateurs produits par `npm run tauri build` (`bundle.targets`) : NSIS sous Windows, .deb et AppImage sous Linux. Publication par `.github/workflows/release.yml` (voir README).

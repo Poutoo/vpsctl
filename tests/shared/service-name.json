@@ -1,0 +1,43 @@
+{
+  "rule": "Nom saisi d'un service créé : ^[a-z0-9][a-z0-9-]*$, sans « .service », 64 caractères au plus",
+  "rust": "systemd::unit::unit_name",
+  "ts": "serviceRules.nameProblem",
+  "cases": [
+    { "input": "bot-discord", "valid": true, "why": "minuscules et tiret" },
+    { "input": "a", "valid": true, "why": "une seule lettre" },
+    {
+      "input": "9lives",
+      "valid": true,
+      "why": "un chiffre peut commencer le nom"
+    },
+    {
+      "input": "bot-",
+      "valid": true,
+      "why": "le tiret final est permis par la regex"
+    },
+    { "input": "", "valid": false, "why": "nom requis" },
+    { "input": "-bot", "valid": false, "why": "tiret au début" },
+    { "input": "Bot", "valid": false, "why": "majuscule" },
+    { "input": "bot_discord", "valid": false, "why": "souligné" },
+    { "input": "bot.discord", "valid": false, "why": "point" },
+    { "input": "bot.service", "valid": false, "why": "suffixe saisi" },
+    { "input": "bot discord", "valid": false, "why": "espace" },
+    { "input": "bot;rm", "valid": false, "why": "point-virgule (injection)" },
+    { "input": "café", "valid": false, "why": "lettre accentuée" },
+    {
+      "input": " bot",
+      "valid": false,
+      "why": "le nom n'est pas nettoyé : espace refusé"
+    },
+    {
+      "input": { "repeat": "a", "times": 64 },
+      "valid": true,
+      "why": "64 caractères"
+    },
+    {
+      "input": { "repeat": "a", "times": 65 },
+      "valid": false,
+      "why": "65 caractères"
+    }
+  ]
+}

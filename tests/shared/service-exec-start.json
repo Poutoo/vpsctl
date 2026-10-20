@@ -1,0 +1,117 @@
+{
+  "rule": "Commande (ExecStart=) d'un service créé : syntaxe de systemd, programme absolu ou simple nom, sans préfixe spécial ni « ; » isolé, une seule ligne, 4 096 octets au plus",
+  "rust": "systemd::unit::render_unit (champ execStart)",
+  "ts": "serviceRules.execStartProblem",
+  "cases": [
+    {
+      "input": "/usr/bin/node dist/server.js",
+      "valid": true,
+      "why": "chemin absolu et argument"
+    },
+    {
+      "input": "node server.js",
+      "valid": true,
+      "why": "simple nom, cherché dans le PATH de systemd"
+    },
+    {
+      "input": "  /bin/true  ",
+      "valid": true,
+      "why": "espaces de bord retirés"
+    },
+    {
+      "input": "/bin/echo   a",
+      "valid": true,
+      "why": "espaces multiples entre les mots"
+    },
+    {
+      "input": "'/usr/bin/x' a",
+      "valid": true,
+      "why": "programme entre apostrophes"
+    },
+    {
+      "input": "/bin/x \"a b\" c",
+      "valid": true,
+      "why": "argument entre guillemets"
+    },
+    {
+      "input": "/bin/sh -c 'echo $HOME; date'",
+      "valid": true,
+      "why": "« ; » entre apostrophes"
+    },
+    { "input": "/bin/a \\; /bin/b", "valid": true, "why": "« ; » échappé" },
+    { "input": "/bin/a;", "valid": true, "why": "« ; » collé à un mot" },
+    {
+      "input": "/bin/echo 100%",
+      "valid": true,
+      "why": "% est échappé à l'écriture"
+    },
+    {
+      "input": "/bin/echo a\\ b",
+      "valid": true,
+      "why": "« \\ » permis dans un argument"
+    },
+    { "input": "", "valid": false, "why": "requise" },
+    { "input": "./run.sh", "valid": false, "why": "programme relatif" },
+    { "input": "bin/run", "valid": false, "why": "programme relatif" },
+    {
+      "input": "~/bin/run",
+      "valid": false,
+      "why": "systemd ne développe pas ~"
+    },
+    {
+      "input": "-/usr/bin/x",
+      "valid": false,
+      "why": "préfixe - (neutraliserait Restart=on-failure)"
+    },
+    { "input": "@/usr/bin/x a", "valid": false, "why": "préfixe @" },
+    { "input": ":/usr/bin/x", "valid": false, "why": "préfixe :" },
+    { "input": "+/usr/bin/x", "valid": false, "why": "préfixe +" },
+    { "input": "!/usr/bin/x", "valid": false, "why": "préfixe !" },
+    { "input": "|/usr/bin/x", "valid": false, "why": "préfixe |" },
+    { "input": "; /bin/x", "valid": false, "why": "« ; » en tête" },
+    {
+      "input": "'-/usr/bin/x'",
+      "valid": false,
+      "why": "préfixe reconnu après retrait des apostrophes"
+    },
+    { "input": "\"\"", "valid": false, "why": "programme vide" },
+    { "input": "\"/usr/bin/x", "valid": false, "why": "guillemet non fermé" },
+    {
+      "input": "/bin/a ; /bin/b",
+      "valid": false,
+      "why": "« ; » isolé : deux commandes"
+    },
+    {
+      "input": "/usr/bin/x\\ y",
+      "valid": false,
+      "why": "« \\ » dans le programme"
+    },
+    { "input": "/usr/bin/x arg\\", "valid": false, "why": "« \\ » final" },
+    { "input": "/bin/echo\ta", "valid": false, "why": "tabulation" },
+    {
+      "input": "/bin/true\nExecStartPost=/bin/x",
+      "valid": false,
+      "why": "retour à la ligne (injection de directive)"
+    },
+    {
+      "input": "\u0085/bin/true",
+      "valid": true,
+      "why": "NEL en bord : retiré par str::trim"
+    },
+    {
+      "input": "\ufeff/bin/true",
+      "valid": false,
+      "why": "U+FEFF reste dans le programme, qui n'est plus un chemin absolu"
+    },
+    {
+      "input": { "repeat": "a", "times": 4086, "before": "/bin/echo " },
+      "valid": true,
+      "why": "10 + 4 086 = 4 096 octets"
+    },
+    {
+      "input": { "repeat": "a", "times": 4087, "before": "/bin/echo " },
+      "valid": false,
+      "why": "4 097 octets"
+    }
+  ]
+}

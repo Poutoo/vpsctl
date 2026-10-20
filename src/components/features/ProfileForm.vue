@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, useId, watch } from "vue";
 import type { Profile } from "../../bindings/Profile";
+import { profileProblems } from "../../profileRules";
+import { trimLikeRust } from "../../text";
 import AppButton from "../ui/AppButton.vue";
 import PanelCard from "../ui/PanelCard.vue";
 import StatusIcon from "../ui/StatusIcon.vue";
@@ -43,18 +45,7 @@ watch(
 
 const isNew = computed(() => props.profile.id === "");
 
-const problems = computed(() => ({
-  name: draft.name.trim() ? null : "Le nom du profil est requis.",
-  host: draft.host.trim() ? null : "L'hôte est requis.",
-  port:
-    Number.isInteger(draft.port) && draft.port >= 1 && draft.port <= 65535
-      ? null
-      : "Le port doit être compris entre 1 et 65535.",
-  user: draft.user.trim() ? null : "L'utilisateur est requis.",
-  keyPath: draft.keyPath.trim()
-    ? null
-    : "Le chemin de la clé privée est requis.",
-}));
+const problems = computed(() => profileProblems(draft));
 
 /** Erreurs affichées : après le premier passage dans le champ (le port, toujours). */
 const shown = computed(() => ({
@@ -74,7 +65,7 @@ const endpointChanged = computed(
   () =>
     !isNew.value &&
     props.profile.hostKeyFingerprint !== null &&
-    (draft.host.trim() !== props.profile.host ||
+    (trimLikeRust(draft.host) !== props.profile.host ||
       draft.port !== props.profile.port),
 );
 

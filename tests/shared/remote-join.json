@@ -1,0 +1,27 @@
+{
+  "rule": "Chemin d'un élément d'un dossier distant : dossier, « / », nom (sans « / » doublé)",
+  "rust": "sftp::path::join",
+  "ts": "remoteFiles.joinPath",
+  "cases": [
+    {
+      "input": { "dir": "/", "name": "etc" },
+      "expected": "/etc",
+      "why": "élément de la racine"
+    },
+    {
+      "input": { "dir": "/srv", "name": "a.txt" },
+      "expected": "/srv/a.txt",
+      "why": "cas ordinaire"
+    },
+    {
+      "input": { "dir": "/srv/", "name": "a.txt" },
+      "expected": "/srv/a.txt",
+      "why": "« / » final non doublé"
+    },
+    {
+      "input": { "dir": "/home/deploy", "name": ".ssh" },
+      "expected": "/home/deploy/.ssh",
+      "why": "nom caché"
+    }
+  ]
+}

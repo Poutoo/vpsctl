@@ -15,6 +15,8 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 ### Corrigé
 
 - Réglages : le texte des boutons du formulaire de profil avait la mauvaise couleur ; « Enregistrer » était invisible (ambre sur ambre).
+- Scripts : un nom contenant des émojis était refusé par le formulaire avant 64 caractères, alors que l'application l'acceptait.
+- Formulaires (service, script, profil) : un caractère invisible en début ou en fin de champ (U+0085, U+FEFF) pouvait donner un verdict différent de celui de l'enregistrement.
 
 ## [1.0.0] - 2026-10-19
 
