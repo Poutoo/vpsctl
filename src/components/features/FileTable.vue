@@ -52,6 +52,7 @@ import {
 import type { BusyRow } from "../../stores/files";
 import AppIcon, { type AppIconName } from "../ui/AppIcon.vue";
 import AppTooltip from "../ui/AppTooltip.vue";
+import HighlightText from "../ui/HighlightText.vue";
 import RunStateLabel from "../ui/RunStateLabel.vue";
 import FileMenu, { type FileAction } from "./FileMenu.vue";
 import FolderMenu, { type FolderAction } from "./FolderMenu.vue";
@@ -61,7 +62,12 @@ export type Draft =
   { mode: "create"; kind: "file" | "dir" } | { mode: "rename"; path: string };
 
 const props = defineProps<{
+  /** Entrées affichées : triées, puis filtrées. */
   entries: FileEntry[];
+  /** Toutes les entrées du dossier, pour refuser un nom déjà pris. */
+  siblings: FileEntry[];
+  /** Filtre en cours, surligné dans les noms. */
+  query: string;
   selected: string | null;
   sort: SortOrder;
   busy: Record<string, BusyRow>;
@@ -601,7 +607,7 @@ const draftProblem = computed(() => {
   if (name === "" && !attempted.value) return null;
   const problem = nameProblem(name);
   if (problem) return problem;
-  const clash = props.entries.some(
+  const clash = props.siblings.some(
     (entry) =>
       entry.name === name &&
       !(draft.mode === "rename" && entry.path === draft.path),
@@ -815,6 +821,12 @@ function onDraftBlur() {
           </div>
 
           <div
+            v-if="entries.length === 0 && draft?.mode !== 'create'"
+            class="empty-row"
+          >
+            <slot name="empty" />
+          </div>
+          <div
             :key="listKey"
             class="body"
             :style="{ height: `${totalHeight}px` }"
@@ -869,9 +881,9 @@ function onDraftBlur() {
                   >
                 </template>
                 <template v-else>
-                  <span class="name truncate" :title="entry.name">{{
-                    entry.name
-                  }}</span>
+                  <span class="name truncate" :title="entry.name"
+                    ><HighlightText :text="entry.name" :query="query"
+                  /></span>
                   <span class="visually-hidden">, {{ kindLabel(entry) }}</span>
                   <span
                     v-if="entry.link"
@@ -1020,6 +1032,12 @@ function onDraftBlur() {
 .head {
   flex-shrink: 0;
   background: var(--color-surface-raised);
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+/* Filtre sans résultat : une ligne sous les en-têtes. */
+.empty-row {
+  padding: 0 var(--sp-4);
   border-bottom: var(--border-width) solid var(--color-border);
 }
 

@@ -135,6 +135,11 @@
   /* arc de l'orbite de transfert, dans la file d'attente */
   --transfer-list-height: 200px;
   /* file d'attente des transferts : au-delà, elle défile */
+  --filter-width: 240px;
+  --filter-width-compact: 200px;
+  /* champ de filtre des listes ; compact en fenêtre étroite */
+  --underline-offset: 2px;
+  /* soulignement d'une correspondance du filtre */
   --switch-width: 32px;
   --switch-height: 18px;
 

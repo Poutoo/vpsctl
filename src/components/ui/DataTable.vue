@@ -9,11 +9,13 @@
  * - ligne `.placeholder` : registre tracé et vide pendant un chargement ;
  * - `<TransitionGroup name="row-in" tag="tbody" appear>` : fondu des lignes
  *   à leur apparition uniquement.
+ *
+ * Le tableau peut recevoir le focus par programme (Échap dans le filtre).
  */
 </script>
 
 <template>
-  <table class="table">
+  <table class="table" tabindex="-1">
     <slot />
   </table>
 </template>
@@ -60,6 +62,10 @@
 
 .table :deep(tbody tr) {
   transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.table :deep(tbody tr.no-match-row:hover) {
+  background: none;
 }
 
 .table :deep(tbody tr:hover) {

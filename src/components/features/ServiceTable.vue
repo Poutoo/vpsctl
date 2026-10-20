@@ -10,6 +10,8 @@ import {
   useServicesStore,
 } from "../../stores/services";
 import DataTable from "../ui/DataTable.vue";
+import FilterNoMatch from "../ui/FilterNoMatch.vue";
+import HighlightText from "../ui/HighlightText.vue";
 import IconButton from "../ui/IconButton.vue";
 import RunStateLabel from "../ui/RunStateLabel.vue";
 import {
@@ -18,15 +20,24 @@ import {
   type ServiceOperation,
 } from "./availability";
 
-const props = defineProps<{
-  services: Service[];
-  /** Premier chargement : registre tracé et vide. */
-  loading?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** Services affichés, déjà filtrés. */
+    services: Service[];
+    /** Premier chargement : registre tracé et vide. */
+    loading?: boolean;
+    /** Filtre en cours, surligné dans les unités et les descriptions. */
+    query?: string;
+    /** Services de la liste complète, avant le filtre. */
+    total?: number;
+  }>(),
+  { loading: false, query: "", total: 0 },
+);
 
 const emit = defineEmits<{
   logs: [service: Service];
   operate: [service: Service, operation: ServiceOperation];
+  clearFilter: [];
 }>();
 
 const store = useServicesStore();
@@ -113,6 +124,17 @@ function rawState(service: Service): string {
         <td />
       </tr>
     </tbody>
+    <tbody v-else-if="services.length === 0 && total > 0">
+      <tr class="no-match-row">
+        <td colspan="4">
+          <FilterNoMatch
+            :total="total"
+            :query="query"
+            @clear="emit('clearFilter')"
+          />
+        </td>
+      </tr>
+    </tbody>
     <TransitionGroup v-else name="row-in" tag="tbody" appear>
       <tr
         v-for="{ service, row } in rows"
@@ -121,9 +143,9 @@ function rawState(service: Service): string {
       >
         <td>
           <div class="unit-cell">
-            <span class="truncate" :title="service.unit">{{
-              service.unit
-            }}</span>
+            <span class="truncate" :title="service.unit">
+              <HighlightText :text="service.unit" :query="query" />
+            </span>
             <span
               v-if="service.masked"
               class="caps tag"
@@ -154,7 +176,7 @@ function rawState(service: Service): string {
           class="truncate description-cell"
           :title="service.description"
         >
-          {{ service.description }}
+          <HighlightText :text="service.description" :query="query" />
         </td>
         <td v-else class="muted" title="Unité non chargée par systemd.">—</td>
         <td>

@@ -7,6 +7,7 @@ import ServiceTable from "../components/features/ServiceTable.vue";
 import PageHeader from "../components/layout/PageHeader.vue";
 import AppButton from "../components/ui/AppButton.vue";
 import AppIcon from "../components/ui/AppIcon.vue";
+import FilterField from "../components/ui/FilterField.vue";
 import { formatElapsed, useElapsed } from "../composables/useElapsed";
 import { useDockedStream } from "../composables/useDockedStream";
 import { useServiceActions } from "../composables/useServiceActions";
@@ -73,6 +74,13 @@ function refreshNow() {
   void trigger();
 }
 
+const content = ref<HTMLElement | null>(null);
+
+/** Échap dans un filtre déjà vide : le focus revient au premier tableau. */
+function focusTables() {
+  content.value?.querySelector<HTMLElement>("table")?.focus();
+}
+
 const refreshedLabel = computed(() => {
   const at = store.refreshedAt;
   if (at === null) return "Actualisation…";
@@ -84,8 +92,13 @@ const refreshedLabel = computed(() => {
 
 <template>
   <div class="dashboard">
-    <div class="content">
+    <div ref="content" class="content">
       <PageHeader section="dashboard" title="Tableau de bord">
+        <FilterField
+          v-model="store.filter"
+          label="Filtrer les tableaux"
+          @leave="focusTables"
+        />
         <div v-if="connection.lost" class="refresh frozen">
           <span class="refreshed" aria-live="off">
             <AppIcon name="pause" />
@@ -120,6 +133,7 @@ const refreshedLabel = computed(() => {
         title="Conteneurs Docker"
         command="docker ps -a"
         :section="store.containers"
+        :shown="store.shownContainers.length"
         :frozen-at="store.frozenAt"
         empty-kicker="0 conteneur"
         empty-detail="docker ps -a"
@@ -127,8 +141,11 @@ const refreshedLabel = computed(() => {
         empty-text="Aucun conteneur, même arrêté, sur ce serveur."
       >
         <ContainerTable
-          :containers="store.containers.items"
+          :containers="store.shownContainers"
+          :total="store.containers.items.length"
+          :query="store.filter"
           :loading="loading"
+          @clear-filter="store.filter = ''"
           @logs="(c) => telemetry.showLogs(containerLogTarget(c.id, c.name))"
           @operate="onContainer"
         />
@@ -138,6 +155,7 @@ const refreshedLabel = computed(() => {
         title="Services systemd"
         command="systemctl --user list-units"
         :section="store.services"
+        :shown="store.shownServices.length"
         :frozen-at="store.frozenAt"
         empty-kicker="0 unité gérée"
         empty-detail="~/.config/systemd/user/"
@@ -155,8 +173,11 @@ const refreshedLabel = computed(() => {
         </template>
         <template #default="{ loading }">
           <ServiceTable
-            :services="store.services.items"
+            :services="store.shownServices"
+            :total="store.services.items.length"
+            :query="store.filter"
             :loading="loading"
+            @clear-filter="store.filter = ''"
             @logs="(s) => telemetry.showLogs(serviceLogTarget(s.unit))"
             @operate="onService"
           />

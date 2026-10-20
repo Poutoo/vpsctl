@@ -10,6 +10,7 @@ import type { RunState } from "../bindings/RunState";
 import type { Service } from "../bindings/Service";
 import type { ServiceDef } from "../bindings/ServiceDef";
 import { useNotify } from "../composables/useNotify";
+import { filterItems } from "../listFilter";
 import { useConnectionStore } from "./connection";
 import {
   containerLogTarget,
@@ -139,6 +140,20 @@ export const useServicesStore = defineStore("services", () => {
   const pending = ref<Record<string, Pending>>({});
   /** Animations de changement d'état à jouer, par ligne. */
   const arrivals = ref<Record<string, Arrival>>({});
+  /**
+   * Filtre du tableau de bord, commun aux deux listes. Gardé en changeant
+   * d'écran et pendant un LOS ; vidé à la fin de la session.
+   */
+  const filter = ref("");
+  const shownContainers = computed(() =>
+    filterItems(containers.value.items, filter.value, (c) => [c.name, c.image]),
+  );
+  const shownServices = computed(() =>
+    filterItems(services.value.items, filter.value, (s) => [
+      s.unit,
+      s.description,
+    ]),
+  );
 
   let inFlight: Promise<void> | null = null;
   /** Dernières listes lues sans erreur, montrées figées pendant un LOS. */
@@ -224,6 +239,7 @@ export const useServicesStore = defineStore("services", () => {
     refreshedAt.value = null;
     pending.value = {};
     arrivals.value = {};
+    filter.value = "";
   }
 
   /** État réel d'une ligne dans la dernière liste, ou `null` si elle a disparu. */
@@ -456,6 +472,9 @@ export const useServicesStore = defineStore("services", () => {
     frozenAt,
     pending,
     arrivals,
+    filter,
+    shownContainers,
+    shownServices,
     refresh,
     perform,
     create,

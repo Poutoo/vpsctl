@@ -1,6 +1,7 @@
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import App from "./App.vue";
+import { installFindShortcut } from "./findShortcut";
 import { installProductionGuards } from "./productionGuards";
 import { router } from "./router";
 import "./styles/fonts.css";
@@ -18,5 +19,6 @@ if (import.meta.env.DEV) {
 // Pas de rechargement ni de menu du moteur web en production ; en
 // développement, F5 et l'inspecteur restent disponibles.
 if (import.meta.env.PROD) installProductionGuards();
+installFindShortcut();
 
 createApp(App).use(createPinia()).use(router).mount("#app");

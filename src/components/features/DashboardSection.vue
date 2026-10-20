@@ -31,6 +31,8 @@ const props = defineProps<{
   emptyText: string;
   /** LOS : données figées depuis cette heure (dernière lecture réussie). */
   frozenAt?: number | null;
+  /** Éléments affichés après le filtre : le compteur passe à « 2 sur 4 ». */
+  shown?: number;
 }>();
 
 defineSlots<{
@@ -43,6 +45,13 @@ const counts = computed(() =>
 );
 
 const loading = computed(() => !props.section.loaded);
+
+/** « 4 », ou « 2 sur 4 » quand le filtre masque des éléments. */
+const countLabel = computed(() => {
+  const total = props.section.items.length;
+  const shown = props.shown ?? total;
+  return shown === total ? `${total}` : `${shown} sur ${total}`;
+});
 
 /** Chrono du premier chargement, depuis l'affichage de la section. */
 const mountedAt = ref<number | null>(null);
@@ -68,7 +77,7 @@ const skippedWarning = computed(() => {
       <span class="command">
         {{ command
         }}<template v-if="section.loaded && !section.error">
-          · {{ section.items.length }}</template
+          · {{ countLabel }}</template
         >
       </span>
       <ul v-if="counts.length" class="counts">

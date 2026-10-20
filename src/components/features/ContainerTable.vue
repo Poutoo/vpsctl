@@ -11,19 +11,30 @@ import {
   type Operation,
 } from "../../stores/services";
 import DataTable from "../ui/DataTable.vue";
+import FilterNoMatch from "../ui/FilterNoMatch.vue";
+import HighlightText from "../ui/HighlightText.vue";
 import IconButton from "../ui/IconButton.vue";
 import RunStateLabel from "../ui/RunStateLabel.vue";
 import { containerAvailability, OPERATION_PROGRESS } from "./availability";
 
-const props = defineProps<{
-  containers: Container[];
-  /** Premier chargement : registre tracé et vide. */
-  loading?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** Conteneurs affichés, déjà filtrés. */
+    containers: Container[];
+    /** Premier chargement : registre tracé et vide. */
+    loading?: boolean;
+    /** Filtre en cours, surligné dans les noms et les images. */
+    query?: string;
+    /** Conteneurs de la liste complète, avant le filtre. */
+    total?: number;
+  }>(),
+  { loading: false, query: "", total: 0 },
+);
 
 const emit = defineEmits<{
   logs: [container: Container];
   operate: [container: Container, operation: Operation];
+  clearFilter: [];
 }>();
 
 const store = useServicesStore();
@@ -104,15 +115,28 @@ function exitDetail(container: Container): string | null {
         <td />
       </tr>
     </tbody>
+    <tbody v-else-if="containers.length === 0 && total > 0">
+      <tr class="no-match-row">
+        <td colspan="5">
+          <FilterNoMatch
+            :total="total"
+            :query="query"
+            @clear="emit('clearFilter')"
+          />
+        </td>
+      </tr>
+    </tbody>
     <TransitionGroup v-else name="row-in" tag="tbody" appear>
       <tr
         v-for="{ container, row } in rows"
         :key="container.id"
         :class="{ failed: row.state === 'failed' }"
       >
-        <td class="truncate" :title="container.name">{{ container.name }}</td>
+        <td class="truncate" :title="container.name">
+          <HighlightText :text="container.name" :query="query" />
+        </td>
         <td class="truncate muted" :title="container.image">
-          {{ container.image }}
+          <HighlightText :text="container.image" :query="query" />
         </td>
         <td>
           <RunStateLabel

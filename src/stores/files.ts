@@ -4,6 +4,7 @@ import type { RouteLocationRaw } from "vue-router";
 import * as api from "../api/files";
 import type { AppError } from "../bindings/AppError";
 import type { FileEntry } from "../bindings/FileEntry";
+import { filterItems } from "../listFilter";
 import { pathSegments, sortEntries, type SortOrder } from "../remoteFiles";
 import { useConnectionStore } from "./connection";
 
@@ -45,7 +46,17 @@ export const useFilesStore = defineStore("files", () => {
   let lastGood: { path: string; entries: FileEntry[]; at: number } | null =
     null;
 
+  /**
+   * Filtre du dossier affiché : vidé quand on change de dossier et à la fin
+   * de la session, gardé en changeant d'écran et pendant un LOS.
+   */
+  const filter = ref("");
+
   const sorted = computed(() => sortEntries(entries.value, sort.value));
+  /** Entrées triées puis filtrées, telles que la liste les affiche. */
+  const shown = computed(() =>
+    filterItems(sorted.value, filter.value, (entry) => [entry.name]),
+  );
   const loading = computed(() => loadingSince.value !== null);
   /** Ouverture d'un autre dossier : la liste affichée est celle du précédent. */
   const navigating = computed(
@@ -82,7 +93,10 @@ export const useFilesStore = defineStore("files", () => {
   async function open(target: string, select?: string | null) {
     if (connection.lost) return;
     const current = ++request;
-    if (target !== path.value) again = false;
+    if (target !== path.value) {
+      again = false;
+      filter.value = "";
+    }
     if (select !== undefined) selected.value = select;
     else if (target !== path.value) selected.value = null;
     path.value = target;
@@ -164,6 +178,7 @@ export const useFilesStore = defineStore("files", () => {
     loadingSince.value = null;
     selected.value = null;
     busy.value = {};
+    filter.value = "";
   }
 
   /**
@@ -197,6 +212,8 @@ export const useFilesStore = defineStore("files", () => {
     loadedPath,
     entries,
     sorted,
+    filter,
+    shown,
     error,
     loading,
     navigating,

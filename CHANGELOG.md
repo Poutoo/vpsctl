@@ -15,6 +15,7 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 ### Ajouté
 
 - Perte de liaison : l'application reste sur l'écran affiché avec un bandeau LOS (durée, dernier échange, cause) et un bouton « Rétablir la liaison » ; aucune reconnexion automatique. Les tableaux et l'explorateur restent lisibles, figés sur leur dernière lecture.
+- Filtre de recherche sur le tableau de bord (conteneurs et services) et dans l'explorateur de fichiers, sans tenir compte de la casse ni des accents, avec Ctrl+F pour y placer le curseur et Échap pour le vider ; il reste utilisable pendant une perte de liaison.
 - Après une perte de liaison : « Reprendre » relance un flux de logs à partir de cet instant, « Relancer » un script (signalé « Liaison perdue · issue inconnue »), « Réessayer » un transfert depuis le début et « Reprendre la file » les transferts en attente.
 
 ### Modifié

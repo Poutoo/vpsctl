@@ -19,6 +19,8 @@ import TransferPanel from "../components/features/TransferPanel.vue";
 import PageHeader from "../components/layout/PageHeader.vue";
 import AppButton from "../components/ui/AppButton.vue";
 import AppIcon from "../components/ui/AppIcon.vue";
+import FilterField from "../components/ui/FilterField.vue";
+import FilterNoMatch from "../components/ui/FilterNoMatch.vue";
 import IconButton from "../components/ui/IconButton.vue";
 import StateMessage from "../components/ui/StateMessage.vue";
 import { formatElapsed, useElapsed } from "../composables/useElapsed";
@@ -28,6 +30,7 @@ import {
 } from "../composables/useFileActions";
 import { useNotify } from "../composables/useNotify";
 import { useTransferActions } from "../composables/useTransferActions";
+import { matchesFilter } from "../listFilter";
 import { isDirLike, parentPath, pathFromSegments } from "../remoteFiles";
 import { useConnectionStore } from "../stores/connection";
 import { filesRoute, useFilesStore } from "../stores/files";
@@ -121,6 +124,8 @@ const draftBusy = ref(false);
 function startDraft(next: Draft) {
   // Pendant l'ouverture d'un autre dossier, la liste affichée est périmée.
   if (draftBusy.value || files.navigating) return;
+  // L'élément créé doit rester visible, quel que soit son nom.
+  if (next.mode === "create") files.filter = "";
   draftError.value = null;
   draft.value = next;
 }
@@ -148,6 +153,10 @@ async function commitDraft(name: string) {
     }
   } finally {
     draftBusy.value = false;
+  }
+  // Renommé hors du filtre : le filtre est vidé pour que l'élément reste visible.
+  if (outcome === "done" && !matchesFilter([name], files.filter)) {
+    files.filter = "";
   }
   if (outcome === "done" || outcome === "cancelled") draft.value = null;
   else draftError.value = outcome.error;
@@ -255,8 +264,12 @@ const loadingElapsed = useElapsed(computed(() => files.loadingSince));
 
 const countLabel = computed(() => {
   const count = files.entries.length;
-  return count === 1 ? "1 entrée" : `${count} entrées`;
+  const label = count === 1 ? "1 entrée" : `${count} entrées`;
+  const shown = files.shown.length;
+  return shown === count ? label : `${shown} sur ${label}`;
 });
+
+const table = ref<InstanceType<typeof FileTable> | null>(null);
 
 /** Titre de l'erreur de lecture, selon sa cause. */
 const errorTitle = computed(() => {
@@ -296,14 +309,23 @@ const errorTitle = computed(() => {
       </AppButton>
     </PageHeader>
 
-    <FileItinerary
-      v-if="files.path !== null"
-      :path="files.path"
-      :server="server"
-      :busy="files.loading || connection.lost"
-      :frozen-at="files.frozenAt"
-      @navigate="navigate"
-    />
+    <div class="route">
+      <FileItinerary
+        v-if="files.path !== null"
+        class="itinerary"
+        :path="files.path"
+        :server="server"
+        :busy="files.loading || connection.lost"
+        :frozen-at="files.frozenAt"
+        @navigate="navigate"
+      />
+      <FilterField
+        v-model="files.filter"
+        label="Filtrer le dossier"
+        :shortcut-enabled="draft === null"
+        @leave="table?.focus()"
+      />
+    </div>
 
     <section
       class="listing"
@@ -358,9 +380,12 @@ const errorTitle = computed(() => {
 
       <FileTable
         v-else
+        ref="table"
         class="table"
         :class="{ stale: files.navigating }"
-        :entries="files.sorted"
+        :entries="files.shown"
+        :siblings="files.entries"
+        :query="files.filter"
         :selected="files.selected"
         :sort="files.sort"
         :busy="files.busy"
@@ -379,7 +404,15 @@ const errorTitle = computed(() => {
         @commit-draft="commitDraft"
         @cancel-draft="cancelDraft"
         @edit-draft="draftError = null"
-      />
+      >
+        <template #empty>
+          <FilterNoMatch
+            :total="files.entries.length"
+            :query="files.filter"
+            @clear="files.filter = ''"
+          />
+        </template>
+      </FileTable>
 
       <footer class="status">
         <span class="mono path" :title="files.path ?? ''">{{
@@ -411,6 +444,23 @@ const errorTitle = computed(() => {
 </template>
 
 <style scoped>
+/* Itinéraire, puis le filtre du dossier à sa droite. */
+.route {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.route .itinerary {
+  flex: 1;
+  min-width: 0;
+}
+
+.route > :last-child {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 /* Écran plein cadre : la liste occupe la hauteur disponible et défile seule. */
 .files {
   display: flex;

@@ -247,3 +247,47 @@ describe("liaison", () => {
     expect(services.frozenAt).toBeNull();
   });
 });
+
+describe("filtre du tableau de bord", () => {
+  it("filtre les deux listes avec le même texte", async () => {
+    units = [
+      { ...service("api-reseau.service", "nominal"), description: "API" },
+      { ...service("bot.service", "stopped"), description: "Bot Réseau" },
+      service("cron.service", "stopped"),
+    ];
+    const services = useServicesStore();
+    await services.refresh();
+    services.filter = "RESEAU";
+    expect(services.shownServices.map((s) => s.unit)).toEqual([
+      "api-reseau.service",
+      "bot.service",
+    ]);
+    expect(services.shownContainers).toHaveLength(0);
+    services.filter = "caddy:2";
+    expect(services.shownContainers).toHaveLength(1);
+  });
+
+  it("garde le filtre sur les données figées pendant un LOS", async () => {
+    const connection = linked();
+    units = [
+      service("bot.service", "stopped"),
+      service("api.service", "nominal"),
+    ];
+    const services = useServicesStore();
+    await services.refresh();
+    services.filter = "bot";
+    connection.linkLost(lossEvent());
+    expect(services.filter).toBe("bot");
+    expect(services.shownServices.map((s) => s.unit)).toEqual(["bot.service"]);
+  });
+
+  it("vide le filtre à la fin de la session", async () => {
+    const connection = linked();
+    vi.mocked(connectionApi.disconnect).mockResolvedValue();
+    const services = useServicesStore();
+    await services.refresh();
+    services.filter = "bot";
+    await connection.disconnect();
+    expect(services.filter).toBe("");
+  });
+});

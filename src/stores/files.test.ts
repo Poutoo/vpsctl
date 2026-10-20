@@ -98,3 +98,45 @@ describe("explorateur et perte de liaison", () => {
     expect(files.entries).toHaveLength(0);
   });
 });
+
+describe("filtre du dossier", () => {
+  beforeEach(() => {
+    vi.mocked(api.listDir).mockResolvedValue([
+      entry("deploy.sh"),
+      entry("Été.txt"),
+      entry("notes.md"),
+    ]);
+  });
+
+  it("filtre les entrées triées, sans casse ni accents", async () => {
+    linked();
+    const files = useFilesStore();
+    await files.open("/srv");
+    files.filter = ".SH";
+    expect(files.shown.map((e) => e.name)).toEqual(["deploy.sh"]);
+    files.filter = "ete";
+    expect(files.shown.map((e) => e.name)).toEqual(["Été.txt"]);
+  });
+
+  it("garde le filtre en relisant le même dossier, le vide en changeant de dossier", async () => {
+    linked();
+    const files = useFilesStore();
+    await files.open("/srv");
+    files.filter = "notes";
+    await files.refresh();
+    expect(files.filter).toBe("notes");
+    await files.open("/etc");
+    expect(files.filter).toBe("");
+  });
+
+  it("garde le filtre pendant un LOS et le vide à la fin de la session", async () => {
+    const connection = linked();
+    const files = useFilesStore();
+    await files.open("/srv");
+    files.filter = "notes";
+    connection.linkLost(lossEvent());
+    expect(files.shown.map((e) => e.name)).toEqual(["notes.md"]);
+    await connection.disconnect();
+    expect(files.filter).toBe("");
+  });
+});
