@@ -14,8 +14,10 @@ use crate::stream::{self, LineParser, LogLine, Raw};
 
 /// `--no-trunc` : ID complet, utilisé pour les actions.
 const LIST_COMMAND: &str = "docker ps -a --no-trunc --format '{{json .}}'";
-/// Délai maximal de `docker_list`.
-pub const LIST_TIMEOUT: Duration = Duration::from_secs(10);
+/// Délai maximal de `docker_list`. Plus long que la détection d'une perte
+/// silencieuse (20 s au plus) : une coupure brève retarde la liste au lieu
+/// de l'afficher en échec, une coupure plus longue donne un LOS.
+pub const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Délai maximal de `docker start`.
 const START_TIMEOUT: Duration = Duration::from_secs(20);
 /// Délai maximal de `docker stop` et `docker restart`.

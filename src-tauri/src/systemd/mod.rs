@@ -31,8 +31,9 @@ const LIST_COMMAND: &str =
 /// Dossier des fichiers d'unité de l'utilisateur, relatif au dossier personnel
 /// (point de départ des chemins SFTP).
 pub const UNIT_DIR: &str = ".config/systemd/user";
-/// Délai maximal de `services_list`.
-pub const LIST_TIMEOUT: Duration = Duration::from_secs(10);
+/// Délai maximal de `services_list`. Plus long que la détection d'une perte
+/// silencieuse (20 s au plus), comme `docker::LIST_TIMEOUT`.
+pub const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Délai maximal de `service_action` (relecture de la liste et commande).
 const ACTION_TIMEOUT: Duration = Duration::from_secs(20);
 

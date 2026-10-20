@@ -32,10 +32,10 @@ Débrancher le câble ou couper le Wi-Fi donne parfois une erreur immédiate du 
 
 ### Windows
 
-- [ ] `npm ci` puis `npm test` : tous les tests passent (stores, `logSession`, formats, cas partagés).
-- [ ] `cd src-tauri && cargo test` : tous les tests passent, dont `link_loss` (serveur SSH local, 9 tests, une vingtaine de secondes) et les modules `shared` des cas partagés.
-- [ ] Lancer deux fois de suite `cargo test --test link_loss` : aucun échec intermittent.
-- [ ] `npm run lint`, `npm run typecheck`, `npx prettier --check .`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` : rien à signaler.
+- [y] `npm ci` puis `npm test` : tous les tests passent (stores, `logSession`, formats, cas partagés).
+- [y] `cd src-tauri && cargo test` : tous les tests passent, dont `link_loss` (serveur SSH local, 9 tests, une vingtaine de secondes) et les modules `shared` des cas partagés.
+- [y] Lancer deux fois de suite `cargo test --test link_loss` : aucun échec intermittent.
+- [y] `npm run lint`, `npm run typecheck`, `npx prettier --check .`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` : rien à signaler.
 
 ### Linux
 
@@ -43,20 +43,20 @@ Débrancher le câble ou couper le Wi-Fi donne parfois une erreur immédiate du 
 
 ### Cas partagés : une divergence fait échouer les deux côtés
 
-- [ ] Dans `tests/shared/service-name.json`, passer le premier cas (`bot-discord`) à `"valid": false`.
-- [ ] `npm test` échoue sur ce cas (nom de la justification affiché) ; `cargo test shared` échoue aussi, en listant `"bot-discord" : attendu invalide, obtenu valide`.
-- [ ] Remettre `"valid": true` : les deux passent.
+- [y] Dans `tests/shared/service-name.json`, passer le premier cas (`bot-discord`) à `"valid": false`.
+- [y] `npm test` échoue sur ce cas (nom de la justification affiché) ; `cargo test shared` échoue aussi, en listant `"bot-discord" : attendu invalide, obtenu valide`.
+- [y] Remettre `"valid": true` : les deux passent.
 
 ### Formulaires alignés sur le backend
 
-- [ ] Scripts : un nom de 64 émojis est accepté par le formulaire et enregistré ; 65 est refusé avant l'envoi (« 64 caractères au plus »).
-- [ ] Nouveau service : un dossier de travail `/srv/app` suivi d'un caractère NEL (U+0085, à coller) n'est pas signalé en erreur, et l'aperçu s'affiche.
+- [y] Scripts : un nom de 64 émojis est accepté par le formulaire et enregistré ; 65 est refusé avant l'envoi (« 64 caractères au plus »).
+- [y] Nouveau service : un dossier de travail `/srv/app` suivi d'un caractère NEL (U+0085, à coller) n'est pas signalé en erreur, et l'aperçu s'affiche.
 
 ## 2. Liaison au repos
 
-- [ ] Établir la liaison et ne rien faire pendant **5 minutes**, fenêtre au premier plan puis réduite : aucun LOS, l'indicateur reste AOS, la latence se met à jour toutes les 30 s.
-- [ ] **Coupure brève** : couper au pare-feu, attendre **5 s**, rétablir. Aucun LOS ; le tableau de bord reprend son rafraîchissement dans les secondes qui suivent.
-- [ ] Coupure de 10 s puis rétablissement : toujours aucun LOS (le seuil est 15 à 20 s).
+- [y] Établir la liaison et ne rien faire pendant **5 minutes**, fenêtre au premier plan puis réduite : aucun LOS, l'indicateur reste AOS, la latence se met à jour toutes les 30 s.
+- [y] **Coupure brève** : couper au pare-feu, attendre **5 s**, rétablir. Aucun LOS ; le tableau de bord reprend son rafraîchissement dans les secondes qui suivent.
+- [ ] Coupure de 10 s puis rétablissement : toujours aucun LOS (le seuil est 15 à 20 s). Les sections Docker et systemd n'affichent pas d'erreur : « Interrogation · T+ » peut apparaître pendant la coupure, puis les listes se mettent à jour.
 
 ## 3. Détection de la perte
 

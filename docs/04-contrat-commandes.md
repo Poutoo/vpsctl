@@ -119,6 +119,7 @@ Détection (russh 0.63, `ssh/link.rs`) :
 
 - Fermeture par le serveur (FIN, RST, message de déconnexion) : détection immédiate.
 - Un serveur qui ferme la connexion alors que des données du client ne sont pas encore lues provoque un RST, qui peut faire perdre le message de déconnexion : la cause affichée est alors `reset` au lieu de `closed` (redémarrage du VPS, par exemple).
+- Listes du tableau de bord (`docker_list`, `services_list`) : délai de 30 s pour la même raison. Une coupure plus courte que la détection retarde le rafraîchissement (« Interrogation · T+ ») sans afficher d'échec.
 - Requêtes SFTP : délai de 30 s (10 s par défaut dans russh-sftp), plus long que la détection d'une perte silencieuse. Sur une liaison coupée, la perte est constatée avant que les requêtes n'expirent : leur échec devient `LinkLost`. Exception : une écriture bloquée (jusqu'à 60 s) peut encore expirer avant la détection ; l'interface suspend alors la file (voir `docs/03-architecture.md`).
 - Liaison au repos : chaque réponse à un keepalive réarme aussi `inactivity_timeout`, qui ne se déclenche donc pas (vérifié dans `client/mod.rs` : le minuteur d'inactivité n'est réarmé qu'après un tour de boucle sans envoi de keepalive, c'est-à-dire à la réception de la réponse).
 
@@ -180,7 +181,7 @@ Toutes les opérations passent par la session SFTP partagée : aucune commande s
 ## Docker
 
 ```ts
-docker_list(): ContainerList    // délai maximal 10 s
+docker_list(): ContainerList    // délai maximal 30 s
 docker_action(id: string, action: "start" | "stop" | "restart"): void
 docker_remove(id: string): void
 ```
@@ -201,7 +202,7 @@ docker_remove(id: string): void
 ## Systemd
 
 ```ts
-services_list(): Service[]      // délai maximal 10 s ; trié par nom d'unité
+services_list(): Service[]      // délai maximal 30 s ; trié par nom d'unité
 service_action(unit: string, action: "start" | "stop" | "restart"): void
 service_unit_preview(def: ServiceDef): string   // texte du fichier d'unité, sans connexion
 service_create(def: ServiceDef): Service

@@ -23,6 +23,7 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 
 ### Corrigé
 
+- Tableau de bord : une coupure réseau de quelques secondes n'affiche plus les sections Docker et systemd en échec au bout de 10 s ; le rafraîchissement attend le retour de la liaison.
 - Télémétrie : l'onglet d'un script coupé par une perte de liaison indique « Issue inconnue » au lieu d'« Interrompu ».
 - Transferts : après une erreur réseau, la file est suspendue (« Reprendre la file ») au lieu de lancer les transferts suivants, qui échouaient l'un après l'autre ; un transfert coupé par une perte de liaison avant d'avoir commencé revient en attente.
 - Transferts : un envoi retenu par une perte de liaison ne remplace plus un fichier existant sans redemander la confirmation à la reprise de la file.
