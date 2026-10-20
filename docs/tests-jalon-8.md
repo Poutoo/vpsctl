@@ -56,7 +56,7 @@ Débrancher le câble ou couper le Wi-Fi donne parfois une erreur immédiate du 
 
 - [y] Établir la liaison et ne rien faire pendant **5 minutes**, fenêtre au premier plan puis réduite : aucun LOS, l'indicateur reste AOS, la latence se met à jour toutes les 30 s.
 - [y] **Coupure brève** : couper au pare-feu, attendre **5 s**, rétablir. Aucun LOS ; le tableau de bord reprend son rafraîchissement dans les secondes qui suivent.
-- [ ] Coupure de 10 s puis rétablissement : toujours aucun LOS (le seuil est 15 à 20 s). Les sections Docker et systemd n'affichent pas d'erreur : « Interrogation · T+ » peut apparaître pendant la coupure, puis les listes se mettent à jour.
+- [y] Coupure de 10 s puis rétablissement : toujours aucun LOS (le seuil est 15 à 20 s). Les sections Docker et systemd n'affichent pas d'erreur : « Interrogation · T+ » peut apparaître pendant la coupure, puis les listes se mettent à jour.
 
 ## 3. Détection de la perte
 
@@ -71,12 +71,12 @@ Pour chaque cas : bandeau LOS au-dessus du contenu, indicateur de la barre de ti
 | VPS redémarré (console Hetzner, « Redémarrer ») | connexion fermée par le serveur, ou réinitialisée par l'hôte | quelques secondes | | |
 | VPS réinitialisé (« Reset », coupure électrique) — facultatif | le serveur ne répond plus | 15 à 20 s | | |
 
-- [ ] Pare-feu : délai et cause conformes.
-- [ ] Câble ou Wi-Fi : délai et cause notés.
-- [ ] Veille courte, puis veille longue : comportement noté. Sous Linux, l'horloge de l'application ne compte pas le temps de veille : le délai se compte depuis le réveil.
-- [ ] Redémarrage du VPS : délai et cause notés.
-- [ ] Le bandeau ne se ferme pas, n'a pas de croix ; « Rétablir la liaison » est le seul bouton d'action. Le contenu sous le bandeau défile, le bandeau reste en place.
-- [ ] Un seul bandeau et une seule perte par coupure : aucune notification d'erreur en plus (ni « Échec », ni « Procédure interrompue », ni « Envoi interrompu »).
+- [y] Pare-feu : délai et cause conformes.
+- [y] Câble ou Wi-Fi : délai et cause notés.
+- [y] Veille courte, puis veille longue : comportement noté. Sous Linux, l'horloge de l'application ne compte pas le temps de veille : le délai se compte depuis le réveil.
+- [y] Redémarrage du VPS : délai et cause notés.
+- [y] Le bandeau ne se ferme pas, n'a pas de croix ; « Rétablir la liaison » est le seul bouton d'action. Le contenu sous le bandeau défile, le bandeau reste en place.
+- [y] Un seul bandeau et une seule perte par coupure : aucune notification d'erreur en plus (ni « Échec », ni « Procédure interrompue », ni « Envoi interrompu »).
 
 ## 4. Perte pendant une opération
 
@@ -84,63 +84,63 @@ Coupure au pare-feu sauf mention contraire.
 
 ### Tableau de bord
 
-- [ ] Pendant le LOS : les deux tableaux restent affichés, contour pointillé, contenu atténué, pastille « FIGÉ · hh:mm:ss » ; bloc d'actualisation « Figé · dernière actualisation hh:mm:ss », « Actualiser » désactivé. Toutes les actions d'une ligne sont grisées (infobulle « liaison perdue »), « Nouveau service » aussi.
-- [ ] Les tableaux ne se vident pas, même si une relecture a échoué juste avant la détection (attendre 20 s après la coupure).
+- [y] Pendant le LOS : les deux tableaux restent affichés, contour pointillé, contenu atténué, pastille « FIGÉ · hh:mm:ss » ; bloc d'actualisation « Figé · dernière actualisation hh:mm:ss », « Actualiser » désactivé. Toutes les actions d'une ligne sont grisées (infobulle « liaison perdue »), « Nouveau service » aussi.
+- [y] Les tableaux ne se vident pas, même si une relecture a échoué juste avant la détection (attendre 20 s après la coupure).
 
 ### Juste après une action Docker ou systemd
 
-- [ ] Redémarrer le service de test, couper le pare-feu **dans les 2 s** : la ligne quitte « En transition » au LOS, **aucune** notification d'échec. Après rétablissement, l'état réel est affiché (normalement « Nominal »).
-- [ ] Même chose avec un démarrage de conteneur.
-- [ ] Couper **avant** de cliquer (puis cliquer pendant les 15 s où la perte n'est pas encore vue) : à la détection, aucune notification « Échec du démarrage » ; vérifier sur le VPS si la commande a été reçue (`systemctl --user status test-atlas`).
+- [y] Redémarrer le service de test, couper le pare-feu **dans les 2 s** : la ligne quitte « En transition » au LOS, **aucune** notification d'échec. Après rétablissement, l'état réel est affiché (normalement « Nominal »).
+- [y] Même chose avec un démarrage de conteneur.
+- [y] Couper **avant** de cliquer (puis cliquer pendant les 15 s où la perte n'est pas encore vue) : à la détection, aucune notification « Échec du démarrage » ; vérifier sur le VPS si la commande a été reçue (`systemctl --user status test-atlas`).
 
 ### Flux de logs
 
-- [ ] Panneau ancré ouvert sur un conteneur actif : au LOS, bannière « LOS · Liaison perdue · flux interrompu · hh:mm:ss » rouge, lignes gardées, bouton « Reprendre » désactivé.
-- [ ] Onglet Télémétrie sur les logs d'un service : pastille « INTERROMPU » dans l'onglet, même bannière.
-- [ ] Quitter le tableau de bord puis y revenir pendant le LOS : le panneau ne relance rien.
+- [y] Panneau ancré ouvert sur un conteneur actif : au LOS, bannière « LOS · Liaison perdue · flux interrompu · hh:mm:ss » rouge, lignes gardées, bouton « Reprendre » désactivé.
+- [y] Onglet Télémétrie sur les logs d'un service : pastille « INTERROMPU » dans l'onglet, même bannière.
+- [y] Quitter le tableau de bord puis y revenir pendant le LOS : le panneau ne relance rien.
 
 ### Transfert
 
-- [ ] Téléchargement de `gros.bin`, couper à mi-parcours : la ligne passe en « Erreur », « LOS à X Mo sur 500 Mo · relance au rétablissement », « Réessayer » désactivé. Délai mesuré : ____ s.
-- [ ] Envoi du fichier de 500 Mo, couper à mi-parcours : même affichage. **Délai mesuré : ____ s** (jusqu'à 60 s si l'écriture était bloquée).
-- [ ] Un second transfert mis en file avant la coupure : « En attente · File suspendue pendant la coupure », « Retirer » disponible.
-- [ ] Le panneau des transferts a un contour rouge pendant le LOS.
-- [ ] Trois transferts en file (envoi du fichier de 500 Mo, puis deux téléchargements). Couper au pare-feu pendant le premier. Attendu : le premier passe en erreur (« LOS à X Mo… »), sans notification ; les deux autres restent « En attente · File suspendue pendant la coupure » ; **aucun** ne démarre, même pendant les 20 s qui précèdent le bandeau. Délai mesuré : ____ s.
-- [ ] Même scénario en coupant pendant que l'envoi écrit (débit maximal) : si une erreur réseau arrive avant le bandeau, la file se suspend aussitôt (« File suspendue après une erreur réseau »), aucun deuxième transfert n'échoue.
-- [ ] Après « Rétablir la liaison » : rien ne repart ; « Reprendre la file » lance le deuxième transfert, puis le troisième. Un envoi qui devait écraser un fichier redemande le GO / NO GO.
+- [y] Téléchargement de `gros.bin`, couper à mi-parcours : la ligne passe en « Erreur », « LOS à X Mo sur 500 Mo · relance au rétablissement », « Réessayer » désactivé. Délai mesuré : ____ s.
+- [y] Envoi du fichier de 500 Mo, couper à mi-parcours : même affichage. **Délai mesuré : ____ s** (jusqu'à 60 s si l'écriture était bloquée).
+- [y] Un second transfert mis en file avant la coupure : « En attente · File suspendue pendant la coupure », « Retirer » disponible.
+- [y] Le panneau des transferts a un contour rouge pendant le LOS.
+- [y] Trois transferts en file (envoi du fichier de 500 Mo, puis deux téléchargements). Couper au pare-feu pendant le premier. Attendu : le premier passe en erreur (« LOS à X Mo… »), sans notification ; les deux autres restent « En attente · File suspendue pendant la coupure » ; **aucun** ne démarre, même pendant les 20 s qui précèdent le bandeau. Délai mesuré : ____ s.
+- [y] Même scénario en coupant pendant que l'envoi écrit (débit maximal) : si une erreur réseau arrive avant le bandeau, la file se suspend aussitôt (« File suspendue après une erreur réseau »), aucun deuxième transfert n'échoue.
+- [y] Après « Rétablir la liaison » : rien ne repart ; « Reprendre la file » lance le deuxième transfert, puis le troisième. Un envoi qui devait écraser un fichier redemande le GO / NO GO.
 
 ### Script
 
-- [ ] Lancer « compteur », couper vers la ligne 30 : pastille « ISSUE INCONNUE » dans l'onglet, en-tête « Liaison perdue · issue inconnue », séparateur « LOS · Liaison perdue · issue inconnue · hh:mm:ss » puis le message « Le script a été interrompu sur le serveur, probablement en cours d'exécution. Vérifiez l'état du serveur avant de le relancer. » « Relancer » désactivé ; l'écran Scripts a ses boutons « Exécuter » désactivés.
-- [ ] Sur le VPS, noter si `compteur` tourne encore (`pgrep -af seq`) : il n'est arrêté que lorsque sshd constate la coupure (sans `ClientAliveInterval`, cela peut prendre longtemps). Relevé : ____.
-- [ ] Changer d'écran pendant le LOS puis revenir : l'onglet est toujours là, rien n'a été relancé.
+- [y] Lancer « compteur », couper vers la ligne 30 : pastille « ISSUE INCONNUE » dans l'onglet, en-tête « Liaison perdue · issue inconnue », séparateur « LOS · Liaison perdue · issue inconnue · hh:mm:ss » puis le message « Le script a été interrompu sur le serveur, probablement en cours d'exécution. Vérifiez l'état du serveur avant de le relancer. » « Relancer » désactivé ; l'écran Scripts a ses boutons « Exécuter » désactivés.
+- [y] Sur le VPS, noter si `compteur` tourne encore (`pgrep -af seq`) : il n'est arrêté que lorsque sshd constate la coupure (sans `ClientAliveInterval`, cela peut prendre longtemps). Relevé : ____.
+- [y] Changer d'écran pendant le LOS puis revenir : l'onglet est toujours là, rien n'a été relancé.
 
 ### Explorateur
 
-- [ ] Pendant le LOS : liste figée (pointillés, atténuée, « FIGÉ · hh:mm:ss » dans l'itinéraire), étapes de l'itinéraire, « Nouveau dossier », « Nouveau fichier », « Téléverser », actualisation et ouverture d'un dossier inactifs. « Copier le chemin » fonctionne.
+- [y] Pendant le LOS : liste figée (pointillés, atténuée, « FIGÉ · hh:mm:ss » dans l'itinéraire), étapes de l'itinéraire, « Nouveau dossier », « Nouveau fichier », « Téléverser », actualisation et ouverture d'un dossier inactifs. « Copier le chemin » fonctionne.
 
 ## 5. Déconnexion volontaire : jamais de LOS
 
-- [ ] « Couper la liaison » (avec un script en cours : GO / NO GO) : retour direct à l'écran de connexion, aucun bandeau LOS, aucune notification d'erreur.
-- [ ] Couper la liaison puis couper le pare-feu juste après : toujours aucun LOS.
-- [ ] Pendant un LOS, « Couper la liaison » : retour à l'écran de connexion, transferts et onglets vidés.
-- [ ] Fermer l'application pendant une liaison : rien ne s'affiche au relancement (pas de LOS hérité).
+- [y] « Couper la liaison » (avec un script en cours : GO / NO GO) : retour direct à l'écran de connexion, aucun bandeau LOS, aucune notification d'erreur.
+- [y] Couper la liaison puis couper le pare-feu juste après : toujours aucun LOS.
+- [y] Pendant un LOS, « Couper la liaison » : retour à l'écran de connexion, transferts et onglets vidés.
+- [y] Fermer l'application pendant une liaison : rien ne s'affiche au relancement (pas de LOS hérité).
 
 ## 6. Reconnexion manuelle
 
-- [ ] Pendant le LOS, pare-feu toujours fermé : « Rétablir la liaison » affiche « ACQ · Rétablissement de la liaison… · Tentative 1 · user@hôte:port · mm:ss · coupure de mm:ss » (contour pointillé ambre dans la barre de titre), « Annuler » interrompt et revient au LOS. Laisser échouer : retour au LOS avec « Tentative 1 échouée : … ».
-- [ ] Un deuxième clic affiche « Tentative 2 » : le compteur compte les clics, aucune tentative ne part seule (attendre 2 minutes sans cliquer pour le vérifier).
-- [ ] Passphrase non mémorisée (la retirer du trousseau avant le test) : « Rétablissement suspendu · passphrase requise », le panneau « Déverrouiller la clé privée » s'ouvre par-dessus l'écran. « Annuler » revient au LOS ; la bonne passphrase rétablit la liaison.
-- [ ] Rouvrir le pare-feu puis « Rétablir la liaison » : bandeau vert « AOS · Liaison rétablie · Coupure de mm:ss · données actualisées à hh:mm:ss » (plus « flux de journal à reprendre dans la console » si des logs étaient ouverts), refermé après 5 s ou par « Fermer ». Indicateur « AOS » et latence.
+- [y] Pendant le LOS, pare-feu toujours fermé : « Rétablir la liaison » affiche « ACQ · Rétablissement de la liaison… · Tentative 1 · user@hôte:port · mm:ss · coupure de mm:ss » (contour pointillé ambre dans la barre de titre), « Annuler » interrompt et revient au LOS. Laisser échouer : retour au LOS avec « Tentative 1 échouée : … ».
+- [y] Un deuxième clic affiche « Tentative 2 » : le compteur compte les clics, aucune tentative ne part seule (attendre 2 minutes sans cliquer pour le vérifier).
+- [y] Passphrase non mémorisée (la retirer du trousseau avant le test) : « Rétablissement suspendu · passphrase requise », le panneau « Déverrouiller la clé privée » s'ouvre par-dessus l'écran. « Annuler » revient au LOS ; la bonne passphrase rétablit la liaison.
+- [y] Rouvrir le pare-feu puis « Rétablir la liaison » : bandeau vert « AOS · Liaison rétablie · Coupure de mm:ss · données actualisées à hh:mm:ss » (plus « flux de journal à reprendre dans la console » si des logs étaient ouverts), refermé après 5 s ou par « Fermer ». Indicateur « AOS » et latence.
 
 ### Tout refonctionne
 
-- [ ] Tableau de bord : listes relues aussitôt, rafraîchissement toutes les 5 s, actions possibles (redémarrer le service de test : « En transition » puis « Nominal »).
-- [ ] Logs : « Reprendre » (bouton principal) relance le flux à la suite des anciennes lignes, avec un avis « Flux interrompu à hh:mm:ss, repris à hh:mm:ss · lignes de l'intervalle non récupérées » ; les lignes émises pendant la coupure n'apparaissent pas.
-- [ ] Script : séparateur neutre « Script interrompu à hh:mm:ss · pas de code de sortie », message conservé ; « Relancer » (avec GO / NO GO si le script le demande) lance une nouvelle exécution. Écran Scripts : la dernière exécution est « interrompue » (pas de code de sortie).
-- [ ] Transferts : rien n'est reparti seul. « Réessayer » sur le transfert coupé repart de 0 %. « Reprendre la file » lance le transfert retenu. Un nouvel envoi lancé après le rétablissement part directement, sans libérer la file retenue.
-- [ ] Explorateur : dossier relu ; le temporaire d'un envoi coupé apparaît avec la pastille « Résidu de transfert » ; le supprimer fonctionne (session SFTP neuve).
-- [ ] Nouveau flux de logs, nouveau script, nouveau transfert : la limite de 4 flux simultanés est intacte (les flux coupés ne comptent plus).
+- [y] Tableau de bord : listes relues aussitôt, rafraîchissement toutes les 5 s, actions possibles (redémarrer le service de test : « En transition » puis « Nominal »).
+- [y] Logs : « Reprendre » (bouton principal) relance le flux à la suite des anciennes lignes, avec un avis « Flux interrompu à hh:mm:ss, repris à hh:mm:ss · lignes de l'intervalle non récupérées » ; les lignes émises pendant la coupure n'apparaissent pas.
+- [y] Script : séparateur neutre « Script interrompu à hh:mm:ss · pas de code de sortie », message conservé ; « Relancer » (avec GO / NO GO si le script le demande) lance une nouvelle exécution. Écran Scripts : la dernière exécution est « interrompue » (pas de code de sortie).
+- [y] Transferts : rien n'est reparti seul. « Réessayer » sur le transfert coupé repart de 0 %. « Reprendre la file » lance le transfert retenu. Un nouvel envoi lancé après le rétablissement part directement, sans libérer la file retenue.
+- [y] Explorateur : dossier relu ; le temporaire d'un envoi coupé apparaît avec la pastille « Résidu de transfert » ; le supprimer fonctionne (session SFTP neuve).
+- [y] Nouveau flux de logs, nouveau script, nouveau transfert : la limite de 4 flux simultanés est intacte (les flux coupés ne comptent plus).
 
 ## 7. Relevé des délais
 
