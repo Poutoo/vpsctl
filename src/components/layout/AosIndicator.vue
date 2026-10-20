@@ -5,6 +5,8 @@
  * sans la couleur. Exclu de la zone de déplacement de la fenêtre.
  */
 import { computed } from "vue";
+import { useElapsed } from "../../composables/useElapsed";
+import { outageLabel } from "../../linkText";
 import { useConnectionStore } from "../../stores/connection";
 import { useProfilesStore } from "../../stores/profiles";
 import AppIcon, { type AppIconName } from "../ui/AppIcon.vue";
@@ -22,8 +24,35 @@ interface Signal {
   tooltip: string;
 }
 
+const lostFor = useElapsed(
+  computed(() => connection.loss?.since ?? null),
+  { clock: () => Date.now(), tickMs: 1_000 },
+);
+
 const signal = computed<Signal>(() => {
   const name = profiles.byId(connection.profileId)?.name ?? "profil";
+  const loss = connection.loss;
+  if (loss) {
+    const reacquiring =
+      connection.phase === "connecting" || connection.phase === "passphrase";
+    return reacquiring
+      ? {
+          tone: "acquisition",
+          icon: "dish",
+          code: "ACQ",
+          detail: `${name} · tentative ${loss.attempts}${connection.phase === "passphrase" ? " · passphrase requise" : ""}`,
+          latency: null,
+          tooltip: "Rétablissement de la liaison en cours",
+        }
+      : {
+          tone: "lost",
+          icon: "signal-lost",
+          code: "LOS",
+          detail: `${name} · depuis ${outageLabel(lostFor.value ?? 0)}`,
+          latency: null,
+          tooltip: "Liaison perdue : « Rétablir la liaison » dans le bandeau",
+        };
+  }
   if (connection.isConnected) {
     const latency = connection.info?.latencyMs;
     return {
@@ -153,7 +182,9 @@ const label = computed(() =>
   color: var(--color-success);
 }
 
+/* Réacquisition : contour pointillé, lisible sans la couleur. */
 .acquisition {
+  border-style: dashed;
   border-color: var(--color-warning);
 }
 

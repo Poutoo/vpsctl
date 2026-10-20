@@ -10,6 +10,8 @@
  */
 import { computed, onMounted, ref } from "vue";
 import { errorMessage } from "../../api/errors";
+import { timeLabel } from "../../linkText";
+import AppIcon from "../ui/AppIcon.vue";
 import type { RunState } from "../../bindings/RunState";
 import { formatElapsed, useElapsed } from "../../composables/useElapsed";
 import type { Section } from "../../stores/services";
@@ -27,6 +29,8 @@ const props = defineProps<{
   emptyDetail: string;
   emptyTitle: string;
   emptyText: string;
+  /** LOS : données figées depuis cette heure (dernière lecture réussie). */
+  frozenAt?: number | null;
 }>();
 
 defineSlots<{
@@ -74,9 +78,13 @@ const skippedWarning = computed(() => {
         </li>
       </ul>
       <div v-if="$slots.actions" class="actions"><slot name="actions" /></div>
+      <span v-if="frozenAt" class="caps frozen-label">
+        <AppIcon name="pause" />
+        Figé · {{ timeLabel(frozenAt) }}
+      </span>
     </header>
 
-    <div class="card">
+    <div class="card" :class="{ frozen: frozenAt }">
       <p v-if="loading" class="probe" role="status">
         <StatusIcon class="probe-shape" name="half" />
         <span class="caps"
@@ -179,6 +187,30 @@ const skippedWarning = computed(() => {
   overflow: hidden;
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-border);
+}
+
+/* LOS : rien n'est effacé, contour pointillé et contenu atténué. */
+.card.frozen {
+  border-style: dashed;
+  border-color: var(--color-border-strong);
+}
+
+.card.frozen > :deep(*) {
+  opacity: var(--opacity-frozen);
+}
+
+.frozen-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+.counts + .frozen-label,
+.actions + .frozen-label {
+  margin-left: 0;
 }
 
 .probe {

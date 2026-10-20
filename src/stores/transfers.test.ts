@@ -4,9 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api/files";
 import type { Progress } from "../bindings/Progress";
 import { useNotify } from "../composables/useNotify";
-import { lastToast } from "../testUtils";
-import { useConnectionStore } from "./connection";
-import { useTransfersStore, type TransferSpec } from "./transfers";
+import * as connectionApi from "../api/connection";
+import { lastToast, linked, lossEvent } from "../testUtils";
+import { cutByLoss, useTransfersStore, type TransferSpec } from "./transfers";
 
 vi.mock("../api/files");
 vi.mock("../api/local");
@@ -147,14 +147,114 @@ describe("file d'attente des transferts", () => {
     started[0].onProgress({ type: "done" });
     expect(transfers.items[0].status).toBe("cancelled");
   });
+});
 
-  it("vide la file à une nouvelle liaison", async () => {
-    const connection = useConnectionStore();
+describe("perte de liaison", () => {
+  async function twoQueued() {
     const transfers = useTransfersStore();
-    transfers.enqueue(upload("a.tar"));
+    transfers.enqueue(upload("assets-v2.tar"));
+    transfers.enqueue(upload("dump.sql.gz"));
     await flushPromises();
-    connection.info = { profileId: "p", connectedAt: 1, latencyMs: null };
+    started[0].onProgress({ type: "progress", transferred: 41, total: 100 });
+    return transfers;
+  }
+
+  it("marque le transfert actif en échec et retient la file", async () => {
+    const connection = linked();
+    const transfers = await twoQueued();
+    connection.linkLost(lossEvent());
+
+    expect(transfers.items[0]).toMatchObject({
+      status: "error",
+      transferred: 41,
+      error: { kind: "LinkLost" },
+    });
+    expect(cutByLoss(transfers.items[0])).toBe(true);
+    expect(transfers.items[1]).toMatchObject({ status: "queued", held: true });
+    expect(transfers.held).toBe(true);
+    expect(started).toHaveLength(1);
+    expect(useNotify().items).toHaveLength(0);
+
+    started[0].onProgress({ type: "cancelled" });
+    expect(transfers.items[0].status).toBe("error");
+  });
+
+  it("ne relance rien pendant le LOS ni au rétablissement", async () => {
+    const connection = linked();
+    vi.mocked(connectionApi.connect).mockResolvedValue({
+      profileId: "p1",
+      connectedAt: 5,
+      latencyMs: null,
+    });
+    const transfers = await twoQueued();
+    connection.linkLost(lossEvent());
+    transfers.retry(transfers.items[0].key);
+    transfers.resumeQueue();
+    expect(transfers.items[0].status).toBe("error");
+
+    await connection.reacquire();
     await flushPromises();
+    expect(started).toHaveLength(1);
+    expect(transfers.items[1].status).toBe("queued");
+  });
+
+  it("reprend la file sur demande, et « Réessayer » repart de zéro", async () => {
+    const connection = linked();
+    vi.mocked(connectionApi.connect).mockResolvedValue({
+      profileId: "p1",
+      connectedAt: 5,
+      latencyMs: null,
+    });
+    const transfers = await twoQueued();
+    connection.linkLost(lossEvent());
+    await connection.reacquire();
+
+    transfers.resumeQueue();
+    await flushPromises();
+    expect(transfers.items[1].status).toBe("active");
+    expect(transfers.held).toBe(false);
+
+    transfers.retry(transfers.items[0].key);
+    expect(transfers.items[0]).toMatchObject({
+      status: "queued",
+      transferred: 0,
+    });
+  });
+
+  it("démarre un nouvel envoi après le rétablissement sans libérer la file retenue", async () => {
+    const connection = linked();
+    vi.mocked(connectionApi.connect).mockResolvedValue({
+      profileId: "p1",
+      connectedAt: 5,
+      latencyMs: null,
+    });
+    const transfers = await twoQueued();
+    connection.linkLost(lossEvent());
+    await connection.reacquire();
+
+    transfers.enqueue(upload("nouveau.txt"));
+    await flushPromises();
+    expect(transfers.items.map((i) => [i.name, i.status])).toEqual([
+      ["assets-v2.tar", "error"],
+      ["dump.sql.gz", "queued"],
+      ["nouveau.txt", "active"],
+    ]);
+  });
+
+  it("ignore une erreur LinkLost arrivée avant l'événement", async () => {
+    linked();
+    const transfers = await twoQueued();
+    started[0].onProgress({ type: "error", error: { kind: "LinkLost" } });
+    await flushPromises();
+    expect(useNotify().items).toHaveLength(0);
+    expect(started).toHaveLength(1);
+    expect(transfers.items[1].status).toBe("queued");
+  });
+
+  it("vide la file à la fin de la session", async () => {
+    const connection = linked();
+    const transfers = await twoQueued();
+    await connection.disconnect();
     expect(transfers.items).toHaveLength(0);
   });
 });

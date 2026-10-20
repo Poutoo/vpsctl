@@ -145,6 +145,8 @@
   /* fenêtre étroite : numéraux seuls */
   --border-width-accent: 2px;
   /* trait d'action (sélection, section active) */
+  --opacity-frozen: 0.6;
+  /* données figées pendant un LOS : lisibles, atténuées */
 
   /* ---------- Superposition ---------- */
   --z-background: 0;

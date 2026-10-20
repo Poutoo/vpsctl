@@ -16,6 +16,7 @@ export type AppIconName =
   | "signal-lost"
   | "play"
   | "stop"
+  | "pause"
   | "logs"
   | "edit"
   | "copy"
@@ -97,6 +98,8 @@ defineProps<{
       d="M5 3.5l7.5 4.5L5 12.5z"
       fill="currentColor"
     />
+    <!-- Données figées (LOS). -->
+    <path v-else-if="name === 'pause'" d="M6 4v8M10 4v8" />
     <rect
       v-else-if="name === 'stop'"
       x="4"

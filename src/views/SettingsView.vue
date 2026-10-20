@@ -37,7 +37,7 @@ const edited = computed<Profile | null>(() => {
 });
 
 const linkedId = computed(() =>
-  connection.isConnected ? connection.profileId : null,
+  connection.hasSession ? connection.profileId : null,
 );
 
 onMounted(async () => {
@@ -103,7 +103,7 @@ function makeDefault() {
 <template>
   <div class="settings">
     <PageHeader section="settings" title="Réglages">
-      <AppButton v-if="!connection.isConnected" :to="{ name: 'connect' }">
+      <AppButton v-if="!connection.hasSession" :to="{ name: 'connect' }">
         Retour à la connexion
       </AppButton>
       <AppButton variant="primary" :disabled="busy" @click="select('')">

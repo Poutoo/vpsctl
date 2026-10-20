@@ -9,6 +9,7 @@
 import { computed, reactive, ref, useId, watch } from "vue";
 import type { RestartPolicy } from "../../bindings/RestartPolicy";
 import type { ServiceDef } from "../../bindings/ServiceDef";
+import { useConnectionStore } from "../../stores/connection";
 import {
   descriptionProblem,
   envProblems,
@@ -31,6 +32,8 @@ const props = defineProps<{
   /** Refus du backend, affiché au-dessus des boutons. */
   error: string | null;
 }>();
+
+const connection = useConnectionStore();
 
 const emit = defineEmits<{
   /** À chaque saisie : définition courante et premier problème éventuel. */
@@ -361,7 +364,12 @@ function describedBy(field: Field): string {
       <AppButton :disabled="busySince !== null" @click="emit('cancel')">
         Annuler
       </AppButton>
-      <AppButton variant="primary" type="submit" :busy-since="busySince">
+      <AppButton
+        variant="primary"
+        type="submit"
+        :disabled="connection.lost"
+        :busy-since="busySince"
+      >
         {{ busySince !== null ? "Création" : "Créer le service" }}
       </AppButton>
     </div>

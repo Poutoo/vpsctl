@@ -18,10 +18,12 @@ import PageHeader from "../components/layout/PageHeader.vue";
 import StatusIcon from "../components/ui/StatusIcon.vue";
 import { useNotify } from "../composables/useNotify";
 import { SECTIONS } from "../navigation";
+import { useConnectionStore } from "../stores/connection";
 import { useServicesStore } from "../stores/services";
 import { serviceLogTarget, useTelemetryStore } from "../stores/telemetry";
 
 const store = useServicesStore();
+const connection = useConnectionStore();
 const telemetry = useTelemetryStore();
 const router = useRouter();
 const { notify } = useNotify();
@@ -61,6 +63,7 @@ function backToDashboard() {
 }
 
 async function create(current: ServiceDef) {
+  if (connection.lost) return;
   busySince.value = performance.now();
   error.value = null;
   try {
@@ -69,6 +72,8 @@ async function create(current: ServiceDef) {
   } catch (raw) {
     busySince.value = null;
     const failure = toAppError(raw);
+    // Perte de liaison : le LOS la signale, ce n'est pas un refus du serveur.
+    if (failure.kind === "LinkLost") return;
     if (failure.kind === "ServiceStepFailed") {
       // Le fichier est écrit : le service existe, il est affiché en échec
       // ou arrêté sur le tableau de bord.

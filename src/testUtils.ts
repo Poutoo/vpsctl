@@ -1,4 +1,26 @@
+import type { LinkLost } from "./bindings/LinkLost";
 import { useNotify } from "./composables/useNotify";
+import { useConnectionStore } from "./stores/connection";
+
+/** Liaison établie sur le profil `p1`, sans passer par le backend. */
+export function linked() {
+  const connection = useConnectionStore();
+  connection.info = { profileId: "p1", connectedAt: 1, latencyMs: 40 };
+  connection.phase = "connected";
+  connection.profileId = "p1";
+  return connection;
+}
+
+export function lossEvent(overrides: Partial<LinkLost> = {}): LinkLost {
+  return {
+    profileId: "p1",
+    cause: "timeout",
+    detail: null,
+    lastReceivedAt: 1_000,
+    detectedAt: 2_000,
+    ...overrides,
+  };
+}
 
 /** Dernière notification affichée. */
 export function lastToast() {

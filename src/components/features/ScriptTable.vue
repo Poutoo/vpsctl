@@ -11,6 +11,7 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { Script } from "../../bindings/Script";
 import { formatAgo } from "../../format";
+import { useConnectionStore } from "../../stores/connection";
 import { useTelemetryStore } from "../../stores/telemetry";
 import AppButton from "../ui/AppButton.vue";
 import AppIcon from "../ui/AppIcon.vue";
@@ -31,6 +32,7 @@ const emit = defineEmits<{
 }>();
 
 const telemetry = useTelemetryStore();
+const connection = useConnectionStore();
 
 /**
  * Largeur du tableau en dessous de laquelle les actions passent en icônes :
@@ -153,6 +155,7 @@ function lastRunView(script: Script, now: number): LastRunView {
             <div v-if="iconActions" class="row-actions">
               <IconButton
                 :icon="runningSince(script) === null ? 'play' : 'logs'"
+                :unavailable="connection.lost ? 'liaison perdue' : null"
                 :label="
                   runningSince(script) === null
                     ? `Exécuter ${script.name}`
@@ -176,6 +179,7 @@ function lastRunView(script: Script, now: number): LastRunView {
             <div v-else class="row-actions">
               <AppButton
                 size="compact"
+                :disabled="connection.lost"
                 :busy-since="runningSince(script)"
                 :aria-label="
                   runningSince(script) === null

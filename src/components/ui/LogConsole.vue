@@ -11,7 +11,9 @@
  *   l'historique ; le bouton « nouvelles lignes » le rétablit.
  * - Légende selon la source : `out` / `err` neutre (Docker, scripts) ou
  *   `inf` / `wrn` / `ERR` rouge (journal systemd, priorité 0 à 3).
- * - Bannière LOS à la fin du flux.
+ * - Bannière LOS à la fin du flux. Flux coupé par une perte de liaison :
+ *   « Reprendre » (logs, à partir de cet instant) ou « Relancer » (script),
+ *   jamais automatiquement, et seulement une fois la liaison rétablie.
  */
 import { useVirtualizer } from "@tanstack/vue-virtual";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
@@ -40,8 +42,11 @@ const props = withDefaults(
     requestStop?: () => void;
     /** Remplace la relance directe (ex. confirmation avant de relancer un script). */
     requestReplay?: () => void;
+    /** Liaison perdue : relancer ou reprendre est impossible. */
+    linkDown?: boolean;
   }>(),
   {
+    linkDown: false,
     replayLabel: "Rejouer",
     procedure: false,
     requestStop: undefined,
@@ -58,6 +63,11 @@ function replay() {
   if (props.requestReplay) props.requestReplay();
   else void props.stream.replay();
 }
+
+/** Logs coupés par un LOS : reprise à partir de maintenant, sans rattrapage. */
+const resumable = computed(
+  () => props.stream.status === "lost" && !props.procedure,
+);
 
 defineSlots<{
   /** Identification de la source, à gauche de l'en-tête. */
@@ -174,15 +184,44 @@ function lineClass(line: ConsoleLine) {
 
 const startingElapsed = useElapsed(computed(() => props.stream.startingSince));
 
+/** Script coupé par un LOS : son issue sur le serveur est inconnue. */
+const SCRIPT_LOST_MESSAGE =
+  "Le script a été interrompu sur le serveur, probablement en cours d'exécution. Vérifiez l'état du serveur avant de le relancer.";
+
 const los = computed(() => {
   const { status, exitCode, error, endedAt } = props.stream;
-  if (status !== "ended" && status !== "stopped" && status !== "error") {
+  if (
+    status !== "ended" &&
+    status !== "stopped" &&
+    status !== "error" &&
+    status !== "lost"
+  ) {
     return null;
   }
   const at =
     endedAt === null
       ? null
       : new Date(endedAt).toLocaleTimeString("fr-FR", { hour12: false });
+  if (status === "lost") {
+    const what = props.procedure ? "Script interrompu" : "Flux interrompu";
+    return props.linkDown
+      ? {
+          detail: `Liaison perdue · ${props.procedure ? "issue inconnue" : "flux interrompu"}`,
+          at,
+          failed: true,
+          message: props.procedure ? SCRIPT_LOST_MESSAGE : null,
+          signal: true,
+        }
+      : {
+          detail: props.procedure
+            ? `${what} à ${at} · pas de code de sortie`
+            : `${what} à ${at} · Reprendre le relance à partir de maintenant`,
+          at: null,
+          failed: false,
+          message: props.procedure ? SCRIPT_LOST_MESSAGE : null,
+          signal: false,
+        };
+  }
   if (props.procedure) {
     const detail =
       status === "stopped"
@@ -196,6 +235,8 @@ const los = computed(() => {
       detail,
       at,
       failed: status === "error" || (status === "ended" && exitCode !== 0),
+      message: null,
+      signal: true,
     };
   }
   const detail =
@@ -206,7 +247,13 @@ const los = computed(() => {
         : exitCode === null
           ? "Fin du flux"
           : `Fin du flux · code ${exitCode}`;
-  return { detail, at, failed: status === "error" };
+  return {
+    detail,
+    at,
+    failed: status === "error",
+    message: null,
+    signal: true,
+  };
 });
 
 const counts = computed(() => {
@@ -231,7 +278,16 @@ const counts = computed(() => {
         <AppButton v-if="stream.active" size="compact" @click="stop">
           Interrompre le flux
         </AppButton>
-        <AppButton v-else size="compact" @click="replay">
+        <AppButton
+          v-else-if="resumable"
+          size="compact"
+          :variant="linkDown ? 'secondary' : 'primary'"
+          :disabled="linkDown"
+          @click="stream.resume()"
+        >
+          Reprendre
+        </AppButton>
+        <AppButton v-else size="compact" :disabled="linkDown" @click="replay">
           {{ replayLabel }}
         </AppButton>
         <slot name="actions" />
@@ -281,12 +337,13 @@ const counts = computed(() => {
             <span class="rule" aria-hidden="true" />
             <span class="caps los-text">
               <AppIcon name="signal-lost" />
-              LOS · {{ los.detail }}
+              <template v-if="los.signal">LOS · </template>{{ los.detail }}
               <template v-if="los.at"> · {{ los.at }}</template>
             </span>
             <span class="rule" aria-hidden="true" />
           </p>
         </Transition>
+        <p v-if="los?.message" class="los-message">{{ los.message }}</p>
       </div>
 
       <AppButton
@@ -469,6 +526,16 @@ const counts = computed(() => {
   align-items: center;
   gap: var(--sp-2);
   white-space: nowrap;
+}
+
+.los-message {
+  max-width: 72ch;
+  margin: var(--sp-3) auto 0;
+  padding: 0 var(--sp-4);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  text-align: center;
 }
 
 .los-enter-active {

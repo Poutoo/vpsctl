@@ -170,3 +170,44 @@ describe("createLogSession", () => {
     expect(session.lines.map((l) => l.text)).toEqual(["nouvelle"]);
   });
 });
+
+describe("interruption par la perte de liaison", () => {
+  it("passe en lost sans fermer le flux ni appeler onFinish", async () => {
+    const fake = fakeDriver();
+    const onFinish = vi.fn();
+    const session = createLogSession(fake.driver, { onFinish });
+    await session.start();
+    session.interrupt();
+    expect(session.status).toBe("lost");
+    expect(session.active).toBe(false);
+    expect(session.endedAt).not.toBeNull();
+    expect(fake.closed).toEqual([]);
+    expect(onFinish).not.toHaveBeenCalled();
+
+    fake.emit({ type: "error", message: "tardive" });
+    expect(session.status).toBe("lost");
+  });
+
+  it("ne touche pas un flux déjà terminé", async () => {
+    const fake = fakeDriver();
+    const session = createLogSession(fake.driver);
+    await session.start();
+    fake.emit({ type: "ended", exitCode: 0 });
+    session.interrupt();
+    expect(session.status).toBe("ended");
+  });
+
+  it("reprend par `resume` du pilote en gardant les lignes", async () => {
+    const fake = fakeDriver();
+    const resume = vi.fn(async () => "repris");
+    const session = createLogSession({ ...fake.driver, resume });
+    await session.start();
+    fake.emit(lines("avant"));
+    session.interrupt();
+
+    expect(await session.resume()).toBe(true);
+    expect(resume).toHaveBeenCalledOnce();
+    expect(session.status).toBe("live");
+    expect(session.lines.map((l) => l.notice)).toEqual([false, true]);
+  });
+});

@@ -168,6 +168,7 @@ export function useServiceActions() {
     try {
       info = await systemd.serviceDeleteInfo(service.unit);
     } catch (error) {
+      if ((error as AppError).kind === "LinkLost") return;
       notify({
         tone: "error",
         title: "Suppression impossible",

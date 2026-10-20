@@ -1,4 +1,4 @@
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import { defineStore } from "pinia";
 import * as logs from "../api/logs";
 import * as scriptsApi from "../api/scripts";
@@ -53,6 +53,7 @@ function logKey(target: LogTarget): string {
 function logDriver(source: LogSource): StreamDriver {
   return {
     open: (onEvent) => logs.startLogs(source, LOG_TAIL, onEvent),
+    resume: (onEvent) => logs.startLogs(source, 0, onEvent),
     close: logs.stopLogs,
   };
 }
@@ -163,7 +164,9 @@ export const useTelemetryStore = defineStore("telemetry", () => {
   /** Retour sur le tableau de bord : le panneau rouvre son flux. */
   function resumeDock() {
     const session = dock.value?.session;
-    if (session && !session.active) void session.replay();
+    if (session && !session.active && session.status !== "lost") {
+      void session.replay();
+    }
   }
 
   /**
@@ -301,18 +304,23 @@ export const useTelemetryStore = defineStore("telemetry", () => {
     tabs.value.filter((tab) => tab.kind === "script" && tab.session.active),
   );
 
-  /** Flux arrêtés par la déconnexion (ou une liaison perdue) : tout est vidé. */
+  /** Fin de session (déconnexion voulue) : tout est vidé. */
   function reset() {
     closeDock();
     for (const tab of tabs.value) void tab.session.stop();
     tabs.value = [];
   }
 
-  // Les flux appartiennent à la liaison.
-  watch(
-    () => connection.info?.connectedAt,
-    () => reset(),
-  );
+  /** LOS : chaque flux en cours est marqué interrompu, rien n'est relancé. */
+  function interruptAll() {
+    dock.value?.session.interrupt();
+    for (const tab of tabs.value) tab.session.interrupt();
+  }
+
+  connection.on("lost", interruptAll);
+  connection.on("ended", reset);
+  // La dernière exécution des scripts interrompus a été enregistrée.
+  connection.on("restored", () => void scripts.load().catch(() => undefined));
 
   const tabCount = computed(() => tabs.value.length);
 

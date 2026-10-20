@@ -11,6 +11,8 @@ import { formatElapsed, useElapsed } from "../composables/useElapsed";
 import { useDockedStream } from "../composables/useDockedStream";
 import { useServiceActions } from "../composables/useServiceActions";
 import { useVisiblePolling } from "../composables/useVisiblePolling";
+import { timeLabel } from "../linkText";
+import { useConnectionStore } from "../stores/connection";
 import { useServicesStore } from "../stores/services";
 import { containerLogTarget, serviceLogTarget } from "../stores/telemetry";
 
@@ -18,6 +20,7 @@ import { containerLogTarget, serviceLogTarget } from "../stores/telemetry";
 const REFRESH_INTERVAL_MS = 5_000;
 
 const store = useServicesStore();
+const connection = useConnectionStore();
 const telemetry = useDockedStream();
 const { onContainer, onService } = useServiceActions();
 const { trigger } = useVisiblePolling(
@@ -83,7 +86,18 @@ const refreshedLabel = computed(() => {
   <div class="dashboard">
     <div class="content">
       <PageHeader section="dashboard" title="Tableau de bord">
-        <div class="refresh">
+        <div v-if="connection.lost" class="refresh frozen">
+          <span class="refreshed" aria-live="off">
+            <AppIcon name="pause" />
+            Figé · dernière actualisation
+            {{ store.frozenAt ? timeLabel(store.frozenAt) : "inconnue" }}
+          </span>
+          <AppButton disabled>
+            <AppIcon name="refresh" />
+            Actualiser
+          </AppButton>
+        </div>
+        <div v-else class="refresh">
           <span
             v-if="probing !== null"
             class="refreshed probing"
@@ -106,6 +120,7 @@ const refreshedLabel = computed(() => {
         title="Conteneurs Docker"
         command="docker ps -a"
         :section="store.containers"
+        :frozen-at="store.frozenAt"
         empty-kicker="0 conteneur"
         empty-detail="docker ps -a"
         empty-title="Aucun conteneur"
@@ -123,13 +138,18 @@ const refreshedLabel = computed(() => {
         title="Services systemd"
         command="systemctl --user list-units"
         :section="store.services"
+        :frozen-at="store.frozenAt"
         empty-kicker="0 unité gérée"
         empty-detail="~/.config/systemd/user/"
         empty-title="Aucun service utilisateur"
         empty-text="Aucun service dans ~/.config/systemd/user/ sur ce serveur."
       >
         <template #actions>
-          <AppButton size="compact" :to="{ name: 'service-create' }">
+          <AppButton
+            size="compact"
+            :to="{ name: 'service-create' }"
+            :disabled="connection.lost"
+          >
             Nouveau service
           </AppButton>
         </template>
@@ -194,5 +214,15 @@ const refreshedLabel = computed(() => {
 
 .probing {
   color: var(--color-warning);
+}
+
+.refresh.frozen {
+  border-style: dashed;
+}
+
+.frozen .refreshed {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
 }
 </style>

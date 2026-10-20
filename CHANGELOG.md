@@ -12,6 +12,11 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 
 ## [Non publié]
 
+### Ajouté
+
+- Perte de liaison : l'application reste sur l'écran affiché avec un bandeau LOS (durée, dernier échange, cause) et un bouton « Rétablir la liaison » ; aucune reconnexion automatique. Les tableaux et l'explorateur restent lisibles, figés sur leur dernière lecture.
+- Après une perte de liaison : « Reprendre » relance un flux de logs à partir de cet instant, « Relancer » un script (signalé « Liaison perdue · issue inconnue »), « Réessayer » un transfert depuis le début et « Reprendre la file » les transferts en attente.
+
 ### Modifié
 
 - Une liaison coupée sans fermeture (réseau perdu, mise en veille) est détectée en 15 à 20 s, au lieu de 2 minutes environ ; une coupure de quelques secondes reste sans effet.

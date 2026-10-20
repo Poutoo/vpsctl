@@ -64,6 +64,8 @@ let selectOnArrival: string | null = null;
 watch(
   [routePath, () => route.query.depart],
   async ([path, depart]) => {
+    // LOS : la liste reste figée sur le dernier dossier lu.
+    if (connection.lost) return;
     if (depart === "personnel") {
       try {
         await router.replace(filesRoute(await files.ensureHome()));
@@ -89,7 +91,7 @@ watch(
  * la liste affichée étant celle du dossier précédent.
  */
 function navigate(path: string) {
-  if (files.loading) return;
+  if (files.loading || connection.lost) return;
   if (path === files.path) {
     void files.refresh();
     return;
@@ -102,7 +104,7 @@ function openEntry(entry: FileEntry) {
 }
 
 function goUp() {
-  if (files.loading) return;
+  if (files.loading || connection.lost) return;
   const current = files.path;
   const parent = current === null ? null : parentPath(current);
   if (parent === null) return;
@@ -179,7 +181,11 @@ watch(
 
 /** Le dossier affiché accepte une création. */
 const canCreate = computed(
-  () => files.path !== null && files.error === null && !files.loading,
+  () =>
+    files.path !== null &&
+    files.error === null &&
+    !files.loading &&
+    !connection.lost,
 );
 
 // --- Menu du dossier (clic droit dans une zone vide) -------------------------
@@ -224,9 +230,8 @@ function onEmptyMenuOpen(open: boolean) {
 function onAction(entry: FileEntry, action: FileAction) {
   // Pendant l'ouverture d'un autre dossier, la liste affichée est périmée :
   // seule la copie du chemin reste possible.
-  if ((files.navigating || files.busy[entry.path]) && action !== "copyPath") {
-    return;
-  }
+  const blocked = files.navigating || files.busy[entry.path] || connection.lost;
+  if (blocked && action !== "copyPath") return;
   switch (action) {
     case "open":
       if (isDirLike(entry)) openEntry(entry);
@@ -295,11 +300,17 @@ const errorTitle = computed(() => {
       v-if="files.path !== null"
       :path="files.path"
       :server="server"
-      :busy="files.loading"
+      :busy="files.loading || connection.lost"
+      :frozen-at="files.frozenAt"
       @navigate="navigate"
     />
 
-    <section class="listing" aria-label="Dossier" :aria-busy="files.loading">
+    <section
+      class="listing"
+      :class="{ frozen: connection.lost }"
+      aria-label="Dossier"
+      :aria-busy="files.loading"
+    >
       <StateMessage
         v-if="files.error"
         tone="error"
@@ -383,7 +394,13 @@ const errorTitle = computed(() => {
         <IconButton
           icon="refresh"
           label="Actualiser le dossier"
-          :unavailable="files.loading ? 'lecture en cours' : null"
+          :unavailable="
+            connection.lost
+              ? 'liaison perdue'
+              : files.loading
+                ? 'lecture en cours'
+                : null
+          "
           @click="files.refresh()"
         />
       </footer>
@@ -415,6 +432,16 @@ const errorTitle = computed(() => {
 
 .table {
   flex: 1;
+}
+
+/* LOS : rien n'est effacé, contour pointillé et contenu atténué. */
+.listing.frozen {
+  border-style: dashed;
+  border-color: var(--color-border-strong);
+}
+
+.listing.frozen > :not(.status) {
+  opacity: var(--opacity-frozen);
 }
 
 /* État vide ou d'erreur : défile dans le cadre si la hauteur manque. */

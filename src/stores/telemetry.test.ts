@@ -8,8 +8,7 @@ import type { LogEvent } from "../bindings/LogEvent";
 import type { Script } from "../bindings/Script";
 import { useDockedStream } from "../composables/useDockedStream";
 import { useNotify } from "../composables/useNotify";
-import { lastToast } from "../testUtils";
-import { useConnectionStore } from "./connection";
+import { lastToast, linked, lossEvent } from "../testUtils";
 import {
   containerLogTarget,
   serviceLogTarget,
@@ -144,15 +143,61 @@ describe("scripts", () => {
 });
 
 describe("liaison", () => {
-  it("vide tout à une nouvelle liaison", async () => {
-    const connection = useConnectionStore();
+  it("vide tout à la fin de la session", async () => {
+    const connection = linked();
     const telemetry = useTelemetryStore();
     telemetry.openDock(caddy);
     await telemetry.runScript(backup);
-    connection.info = { profileId: "p", connectedAt: 3, latencyMs: null };
-    await flushPromises();
+    await connection.disconnect();
     expect(telemetry.dock).toBeNull();
     expect(telemetry.tabs).toHaveLength(0);
     expect(scriptsApi.stopScript).toHaveBeenCalledWith("run-1");
+  });
+
+  it("marque les flux interrompus au LOS, sans arrêt ni notification", async () => {
+    const connection = linked();
+    const telemetry = useTelemetryStore();
+    telemetry.openDock(caddy);
+    const tab = await telemetry.runScript(backup);
+    await flushPromises();
+
+    connection.linkLost(lossEvent());
+    expect(tab?.session.status).toBe("lost");
+    expect(telemetry.dock?.session.status).toBe("lost");
+    expect(telemetry.runningScripts).toHaveLength(0);
+    expect(telemetry.tabs).toHaveLength(1);
+    expect(scriptsApi.stopScript).not.toHaveBeenCalled();
+    expect(logs.stopLogs).not.toHaveBeenCalled();
+    expect(useNotify().items).toHaveLength(0);
+
+    scriptEvents[0]({ type: "ended", exitCode: 0 });
+    expect(tab?.session.status).toBe("lost");
+  });
+
+  it("ne relance pas le panneau ancré au retour sur le tableau de bord", async () => {
+    const connection = linked();
+    const telemetry = useTelemetryStore();
+    telemetry.openDock(caddy);
+    await flushPromises();
+    connection.linkLost(lossEvent());
+    telemetry.resumeDock();
+    await flushPromises();
+    expect(logs.startLogs).toHaveBeenCalledOnce();
+  });
+
+  it("« Reprendre » rouvre les logs sans historique, à la suite des lignes gardées", async () => {
+    const connection = linked();
+    const telemetry = useTelemetryStore();
+    telemetry.openDock(caddy);
+    await flushPromises();
+    connection.linkLost(lossEvent());
+
+    const session = telemetry.dock!.session;
+    await session.resume();
+    expect(vi.mocked(logs.startLogs).mock.calls[1][1]).toBe(0);
+    expect(session.status).toBe("live");
+    const notice = session.lines[session.lines.length - 1];
+    expect(notice.notice).toBe(true);
+    expect(notice.text).toMatch(/^Flux interrompu à .+, repris à .+/);
   });
 });

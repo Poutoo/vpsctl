@@ -7,6 +7,7 @@
 import { computed } from "vue";
 import { useRoute } from "vue-router";
 import { formatClock, useElapsed } from "../../composables/useElapsed";
+import { outageLabel } from "../../linkText";
 import { NARROW_QUERY, useMediaQuery } from "../../composables/useMediaQuery";
 import { SECTIONS, sectionOf } from "../../navigation";
 import { useConnectionStore } from "../../stores/connection";
@@ -43,6 +44,10 @@ const linkedFor = useElapsed(connectedAt, {
   clock: () => Date.now(),
   tickMs: 1_000,
 });
+const lostFor = useElapsed(
+  computed(() => connection.loss?.since ?? null),
+  { clock: () => Date.now(), tickMs: 1_000 },
+);
 
 /** Scripts en cours : GO / NO GO, ils seront interrompus. */
 async function disconnect() {
@@ -85,7 +90,10 @@ async function disconnect() {
 
     <div class="footer">
       <TelemetryIndicator :narrow="narrow" />
-      <p v-if="linkedFor !== null && !narrow" class="since mono">
+      <p v-if="lostFor !== null && !narrow" class="since mono lost">
+        Liaison perdue · {{ outageLabel(lostFor) }}
+      </p>
+      <p v-else-if="linkedFor !== null && !narrow" class="since mono">
         Liaison depuis {{ formatClock(linkedFor) }}
       </p>
       <AppTooltip v-if="narrow" text="Couper la liaison" side="right">
@@ -220,6 +228,10 @@ async function disconnect() {
 .since {
   color: var(--color-text-muted);
   font-size: var(--fs-sm);
+}
+
+.since.lost {
+  color: var(--color-danger-text);
 }
 
 .icon-button {

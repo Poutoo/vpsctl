@@ -1,5 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ConnectionInfo } from "../bindings/ConnectionInfo";
+import type { LinkLost } from "../bindings/LinkLost";
 import type { ConnectStep } from "../bindings/ConnectStep";
 import type { Profile } from "../bindings/Profile";
 import type { ServerInfo } from "../bindings/ServerInfo";
@@ -58,4 +60,11 @@ export function connectionStatus(): Promise<ConnectionInfo | null> {
 
 export function serverInfo(): Promise<ServerInfo> {
   return call("server_info");
+}
+
+/** Perte de la liaison : un seul événement par liaison perdue (jamais pour une déconnexion volontaire). */
+export function onLinkLost(
+  handler: (event: LinkLost) => void,
+): Promise<UnlistenFn> {
+  return listen<LinkLost>("link-lost", (event) => handler(event.payload));
 }

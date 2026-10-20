@@ -22,7 +22,9 @@ export type StreamStatus =
   | "ended"
   /** Arrêt demandé. */
   | "stopped"
-  | "error";
+  | "error"
+  /** Liaison perdue : issue inconnue, aucune reprise automatique. */
+  | "lost";
 
 /** Ligne affichée comme erreur (style rouge) : priorité syslog de 0 à 3. */
 export function isJournalError(line: LogLine): boolean {
@@ -35,7 +37,14 @@ export function isJournalError(line: LogLine): boolean {
 export interface StreamDriver {
   /** Ouvre le flux et renvoie son identifiant. */
   open(onEvent: (event: LogEvent) => void): Promise<string>;
+  /** Rouvre un flux interrompu à partir de cet instant, sans historique. */
+  resume?(onEvent: (event: LogEvent) => void): Promise<string>;
   close(id: string): Promise<void>;
+}
+
+/** Heure locale `09:41:07`. */
+function clockTime(millis: number): string {
+  return new Date(millis).toLocaleTimeString("fr-FR", { hour12: false });
 }
 
 export interface LogSessionOptions {
@@ -154,7 +163,11 @@ export function createLogSession(
    * Ouvre le flux. Renvoie `false` si l'ouverture a échoué (message dans
    * `error`) ou si le flux a été arrêté pendant l'ouverture.
    */
-  async function start(): Promise<boolean> {
+  function start(): Promise<boolean> {
+    return open(driver.open);
+  }
+
+  async function open(openStream: StreamDriver["open"]): Promise<boolean> {
     const current = ++generation;
     status.value = "starting";
     startingSince.value = performance.now();
@@ -163,7 +176,7 @@ export function createLogSession(
     error.value = null;
     endedAt.value = null;
     try {
-      const id = await driver.open((event) => onEvent(current, event));
+      const id = await openStream((event) => onEvent(current, event));
       if (current !== generation) {
         // Terminé, arrêté ou remplacé pendant l'ouverture : un flux encore
         // ouvert n'a plus d'usage (identifiant inconnu ignoré sinon).
@@ -207,6 +220,31 @@ export function createLogSession(
     return start();
   }
 
+  /**
+   * Liaison perdue : le flux est marqué interrompu, sans appel au backend
+   * (qui l'a déjà arrêté) ni `onFinish`. Ses événements tardifs sont ignorés.
+   */
+  function interrupt() {
+    if (status.value === "live" || status.value === "starting") {
+      finish("lost");
+    }
+  }
+
+  /**
+   * « Reprendre » après un LOS : le flux repart de cet instant, à la suite
+   * des lignes gardées ; ce qui a été émis pendant la coupure n'est pas
+   * récupéré, un avis marque le trou.
+   */
+  function resume(): Promise<boolean> {
+    const interruptedAt = endedAt.value;
+    const gap =
+      interruptedAt === null
+        ? `Flux repris à ${clockTime(Date.now())}`
+        : `Flux interrompu à ${clockTime(interruptedAt)}, repris à ${clockTime(Date.now())} · lignes de l'intervalle non récupérées`;
+    append([notice(gap)]);
+    return open(driver.resume ?? driver.open);
+  }
+
   const active = computed(
     () => status.value === "live" || status.value === "starting",
   );
@@ -227,6 +265,8 @@ export function createLogSession(
     stop,
     clear,
     replay,
+    interrupt,
+    resume,
   });
   return session;
 }

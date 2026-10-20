@@ -36,6 +36,9 @@ const emit = defineEmits<{ close: [tab: TelemetryTab] }>();
           :name="streamState(tab).shape"
         />
         <span class="name" :title="streamName(tab)">{{ streamName(tab) }}</span>
+        <span v-if="tab.session.status === 'lost'" class="caps badge">
+          Interrompu
+        </span>
         <span class="visually-hidden">, {{ streamState(tab).label }}</span>
       </RouterLink>
       <AppTooltip text="Fermer l'onglet">
@@ -53,6 +56,17 @@ const emit = defineEmits<{ close: [tab: TelemetryTab] }>();
 </template>
 
 <style scoped>
+/* Flux coupé par un LOS : pastille encadrée, lisible sans la couleur. */
+.badge {
+  flex-shrink: 0;
+  padding: 0 var(--sp-1);
+  border: var(--border-width) solid var(--color-danger);
+  border-radius: var(--r-1);
+  color: var(--color-danger-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
 .tabs {
   display: flex;
   flex-wrap: wrap;

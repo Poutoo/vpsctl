@@ -14,6 +14,7 @@ import { copyText } from "../../api/local";
 import { useScriptActions } from "../../composables/useScriptActions";
 import { useNotify } from "../../composables/useNotify";
 import { useScriptGuards } from "../../composables/useScriptGuards";
+import { useConnectionStore } from "../../stores/connection";
 import { useScriptsStore } from "../../stores/scripts";
 import type { TelemetryStream } from "../../stores/telemetry";
 import IconButton from "../ui/IconButton.vue";
@@ -24,6 +25,7 @@ const props = defineProps<{ stream: TelemetryStream }>();
 defineSlots<{ actions?(): unknown }>();
 
 const scripts = useScriptsStore();
+const connection = useConnectionStore();
 const { run } = useScriptActions();
 const { confirmStop } = useScriptGuards();
 const { notify } = useNotify();
@@ -98,8 +100,14 @@ const requestReplay = computed(() => {
     :replay-label="stream.kind === 'script' ? 'Relancer' : 'Rejouer'"
     :request-stop="requestStop"
     :request-replay="requestReplay"
+    :link-down="connection.lost"
   >
     <template #title>
+      <span v-if="stream.session.status === 'lost'" class="caps lost">{{
+        stream.kind === "script"
+          ? "Liaison perdue · issue inconnue"
+          : "Interrompu"
+      }}</span>
       <span class="caps kind">{{ ident.kind }}</span>
       <span class="name" :title="ident.name">{{ ident.name }}</span>
       <span class="command" :title="ident.fullCommand">{{
@@ -117,6 +125,11 @@ const requestReplay = computed(() => {
 .kind {
   flex-shrink: 0;
   color: var(--color-text-muted);
+}
+
+.lost {
+  flex-shrink: 0;
+  color: var(--color-danger-text);
 }
 
 /* Le nom ne se coupe qu'en dernier recours ; la commande, d'abord. */

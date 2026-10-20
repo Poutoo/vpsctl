@@ -1,4 +1,4 @@
-import { ref, watch, type Ref } from "vue";
+import { computed, ref, type Ref } from "vue";
 import { defineStore } from "pinia";
 import * as docker from "../api/docker";
 import { errorMessage } from "../api/errors";
@@ -25,6 +25,8 @@ export interface Section<T> {
   error: AppError | null;
   /** Au moins un chargement terminé (réussi ou non). */
   loaded: boolean;
+  /** Fin du dernier chargement réussi (horodatage en ms). */
+  loadedAt: number | null;
 }
 
 /** Action sur une ligne du tableau de bord. */
@@ -59,7 +61,7 @@ const VERIFY_DELAY_MS = 2_500;
 const ARRIVAL_MS = 1_000;
 
 function emptySection<T>(): Section<T> {
-  return { items: [], skipped: 0, error: null, loaded: false };
+  return { items: [], skipped: 0, error: null, loaded: false, loadedAt: null };
 }
 
 interface Fetched<T> {
@@ -139,6 +141,11 @@ export const useServicesStore = defineStore("services", () => {
   const arrivals = ref<Record<string, Arrival>>({});
 
   let inFlight: Promise<void> | null = null;
+  /** Dernières listes lues sans erreur, montrées figées pendant un LOS. */
+  let lastGood: {
+    containers: Section<Container> | null;
+    services: Section<Service> | null;
+  } = { containers: null, services: null };
   /** Incrémenté à chaque remise à zéro : les réponses antérieures sont ignorées. */
   let generation = 0;
   let arrivalToken = 0;
@@ -148,6 +155,7 @@ export const useServicesStore = defineStore("services", () => {
    * renvoie celui-ci : deux rafraîchissements ne se chevauchent jamais.
    */
   function refresh(): Promise<void> {
+    if (connection.lost) return Promise.resolve();
     inFlight ??= run().finally(() => {
       inFlight = null;
     });
@@ -166,8 +174,13 @@ export const useServicesStore = defineStore("services", () => {
     try {
       // Chaque liste gère son propre échec : l'une n'empêche pas l'autre.
       await Promise.all([
-        load(containers, fetchContainers, current),
-        load(services, fetchServices, current),
+        load(
+          containers,
+          fetchContainers,
+          current,
+          (s) => (lastGood.containers = s),
+        ),
+        load(services, fetchServices, current, (s) => (lastGood.services = s)),
       ]);
       if (current === generation) refreshedAt.value = Date.now();
     } finally {
@@ -179,18 +192,33 @@ export const useServicesStore = defineStore("services", () => {
     section: Ref<Section<T>>,
     fetch: () => Promise<Fetched<T>>,
     current: number,
+    keep: (section: Section<T>) => void,
   ) {
     let next: Section<T>;
     try {
-      next = { ...(await fetch()), error: null, loaded: true };
+      next = {
+        ...(await fetch()),
+        error: null,
+        loaded: true,
+        loadedAt: Date.now(),
+      };
     } catch (error) {
-      next = { items: [], skipped: 0, error: error as AppError, loaded: true };
+      next = {
+        items: [],
+        skipped: 0,
+        error: error as AppError,
+        loaded: true,
+        loadedAt: section.value.loadedAt,
+      };
     }
-    if (current === generation) section.value = next;
+    if (current !== generation) return;
+    section.value = next;
+    if (next.error === null) keep(next);
   }
 
   function reset() {
     generation++;
+    lastGood = { containers: null, services: null };
     containers.value = emptySection();
     services.value = emptySection();
     refreshedAt.value = null;
@@ -246,6 +274,8 @@ export const useServicesStore = defineStore("services", () => {
     } catch (raw) {
       if (current !== generation) return;
       delete pending.value[key];
+      // Perte de liaison : ce n'est pas un échec de l'action, le LOS la signale.
+      if ((raw as AppError).kind === "LinkLost") return;
       notify({
         tone: "error",
         title: FAILURE_TITLE[operation],
@@ -389,17 +419,41 @@ export const useServicesStore = defineStore("services", () => {
     }, ARRIVAL_MS);
   }
 
-  // Les listes appartiennent à la liaison : rien ne survit à une déconnexion.
-  watch(
-    () => connection.info?.connectedAt,
-    () => reset(),
-  );
+  /**
+   * LOS : les réponses et vérifications en attente sont abandonnées sans
+   * verdict ; chaque liste revient à sa dernière lecture réussie, figée.
+   */
+  function freeze() {
+    generation++;
+    pending.value = {};
+    arrivals.value = {};
+    if (containers.value.error && lastGood.containers) {
+      containers.value = lastGood.containers;
+    }
+    if (services.value.error && lastGood.services) {
+      services.value = lastGood.services;
+    }
+  }
+
+  /** Heure des données figées : la plus ancienne des deux listes. */
+  const frozenAt = computed(() => {
+    if (!connection.lost) return null;
+    const times = [containers.value.loadedAt, services.value.loadedAt].filter(
+      (at): at is number => at !== null,
+    );
+    return times.length > 0 ? Math.min(...times) : null;
+  });
+
+  connection.on("lost", freeze);
+  connection.on("restored", () => void refresh());
+  connection.on("ended", reset);
 
   return {
     containers,
     services,
     refreshedAt,
     refreshing,
+    frozenAt,
     pending,
     arrivals,
     refresh,

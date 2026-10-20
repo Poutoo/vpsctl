@@ -1,5 +1,6 @@
 import { useRouter } from "vue-router";
 import type { Script } from "../bindings/Script";
+import { useConnectionStore } from "../stores/connection";
 import { useTelemetryStore } from "../stores/telemetry";
 import { useConfirm } from "./useConfirm";
 
@@ -11,6 +12,7 @@ import { useConfirm } from "./useConfirm";
  */
 export function useScriptActions() {
   const telemetry = useTelemetryStore();
+  const connection = useConnectionStore();
   const router = useRouter();
   const { confirm } = useConfirm();
 
@@ -24,6 +26,8 @@ export function useScriptActions() {
       showTab(running.id);
       return;
     }
+    // Jamais de relance pendant un LOS : on attend le rétablissement.
+    if (connection.lost) return;
     if (script.requireConfirmation) {
       const confirmed = await confirm({
         title: "Exécuter la procédure ?",

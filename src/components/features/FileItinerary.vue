@@ -27,15 +27,19 @@ import {
   ref,
   watch,
 } from "vue";
+import { timeLabel } from "../../linkText";
 import { pathFromSegments, pathSegments } from "../../remoteFiles";
+import AppIcon from "../ui/AppIcon.vue";
 import StatusIcon from "../ui/StatusIcon.vue";
 
 const props = defineProps<{
   path: string;
   /** Nom du serveur, affiché à la racine. */
   server: string;
-  /** Lecture en cours : les étapes ne sont plus cliquables. */
+  /** Lecture en cours ou LOS : les étapes ne sont plus cliquables. */
   busy?: boolean;
+  /** LOS : contenu figé depuis cette heure. */
+  frozenAt?: number | null;
 }>();
 
 const emit = defineEmits<{ navigate: [path: string] }>();
@@ -252,10 +256,29 @@ watch(stops, () => void nextTick(measure), { flush: "post" });
         <span class="node more">[ … ]</span>
       </li>
     </ol>
+    <span v-if="frozenAt" class="caps frozen">
+      <AppIcon name="pause" />
+      Figé · {{ timeLabel(frozenAt) }}
+    </span>
   </nav>
 </template>
 
 <style scoped>
+/* LOS : pastille à droite de l'itinéraire, sur la surface de la barre. */
+.frozen {
+  position: absolute;
+  top: 50%;
+  right: var(--sp-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding-left: var(--sp-3);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  transform: translateY(-50%);
+}
+
 .itinerary {
   position: relative;
   background: var(--color-surface);

@@ -1,4 +1,4 @@
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { errorMessage, toAppError } from "../api/errors";
 import * as api from "../api/files";
@@ -37,6 +37,8 @@ export interface Transfer {
   transferId: string | null;
   /** Annulation demandée avant que l'identifiant soit connu. */
   cancelRequested: boolean;
+  /** En attente au moment d'un LOS : ne repart que par « Reprendre la file ». */
+  held: boolean;
 }
 
 export type TransferSpec = Pick<
@@ -47,10 +49,17 @@ export type TransferSpec = Pick<
 /** Fenêtre de calcul du débit. */
 const RATE_WINDOW_MS = 3_000;
 
+/** Échec dû à la perte de liaison : signalé par le LOS, pas par une notification. */
+export function cutByLoss(item: Transfer): boolean {
+  return item.status === "error" && item.error?.kind === "LinkLost";
+}
+
 /**
  * File d'attente des transferts : un seul transfert actif à la fois, le
  * suivant démarre à la fin du précédent. Le store survit au changement
- * d'écran : un transfert continue pendant la navigation.
+ * d'écran : un transfert continue pendant la navigation. Après un LOS, rien
+ * ne repart seul : le transfert coupé se relance depuis le début
+ * (« Réessayer »), la file retenue par « Reprendre la file ».
  */
 export const useTransfersStore = defineStore("transfers", () => {
   const connection = useConnectionStore();
@@ -85,14 +94,22 @@ export const useTransfersStore = defineStore("transfers", () => {
       finishedAt: null,
       transferId: null,
       cancelRequested: false,
+      held: false,
     });
     pump();
   }
 
+  const held = computed(() =>
+    items.value.some((item) => item.status === "queued" && item.held),
+  );
+
   /** Démarre le premier transfert en attente si aucun n'est actif. */
   function pump() {
+    if (connection.lost) return;
     if (items.value.some((item) => item.status === "active")) return;
-    const next = items.value.find((item) => item.status === "queued");
+    const next = items.value.find(
+      (item) => item.status === "queued" && !item.held,
+    );
     if (next) void start(next.key);
   }
 
@@ -175,6 +192,8 @@ export const useTransfersStore = defineStore("transfers", () => {
       finishedAt: Date.now(),
       transferId: null,
     });
+    // Coupé par un LOS : le bandeau le signale, la file attend.
+    if (error?.kind === "LinkLost") return;
     if (item.direction === "upload" && status !== "cancelled") {
       // Envoi terminé, ou temporaire éventuel à faire apparaître.
       files.refreshIfShowing(parentPath(item.remotePath) ?? "/");
@@ -221,6 +240,7 @@ export const useTransfersStore = defineStore("transfers", () => {
 
   /** Remet en attente un transfert annulé ou en erreur. */
   function retry(key: number, overwrite?: boolean) {
+    if (connection.lost) return;
     const item = find(key);
     if (!item || (item.status !== "cancelled" && item.status !== "error")) {
       return;
@@ -233,7 +253,15 @@ export const useTransfersStore = defineStore("transfers", () => {
       error: null,
       finishedAt: null,
       overwrite: overwrite ?? item.overwrite,
+      held: false,
     });
+    pump();
+  }
+
+  /** « Reprendre la file » : les transferts retenus par un LOS repartent. */
+  function resumeQueue() {
+    if (connection.lost) return;
+    for (const item of items.value) item.held = false;
     pump();
   }
 
@@ -253,26 +281,39 @@ export const useTransfersStore = defineStore("transfers", () => {
     }
   }
 
-  // Liaison coupée ou changée : le backend a annulé les transferts en
-  // cours ; une nouvelle liaison repart d'une file vide.
-  watch(
-    () => connection.info?.connectedAt ?? null,
-    (connectedAt) => {
-      if (connectedAt !== null) {
-        items.value = [];
-        return;
+  /**
+   * LOS : le transfert actif échoue (le backend l'a arrêté, son temporaire
+   * distant reste en résidu), ceux en attente sont retenus.
+   */
+  function freeze() {
+    for (const item of items.value) {
+      if (item.status === "active") {
+        Object.assign(item, {
+          status: "error",
+          error: { kind: "LinkLost" },
+          rate: null,
+          finishedAt: Date.now(),
+          transferId: null,
+        });
+      } else if (item.status === "queued") {
+        item.held = true;
       }
-      for (const item of items.value) {
-        if (item.status === "queued" || item.status === "active") {
-          Object.assign(item, {
-            status: "cancelled",
-            finishedAt: Date.now(),
-            transferId: null,
-          });
-        }
-      }
-    },
-  );
+    }
+  }
 
-  return { items, counts, enqueue, cancel, remove, retry, reveal };
+  connection.on("lost", freeze);
+  // Fin de session : le backend a annulé les transferts, la file est vidée.
+  connection.on("ended", () => (items.value = []));
+
+  return {
+    items,
+    counts,
+    held,
+    enqueue,
+    cancel,
+    remove,
+    retry,
+    resumeQueue,
+    reveal,
+  };
 });

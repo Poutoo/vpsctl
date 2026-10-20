@@ -10,13 +10,19 @@ import { computed, ref } from "vue";
 import { errorMessage } from "../../api/errors";
 import { formatBytes, formatClock } from "../../format";
 import { useTransferActions } from "../../composables/useTransferActions";
-import { useTransfersStore, type Transfer } from "../../stores/transfers";
+import { useConnectionStore } from "../../stores/connection";
+import {
+  cutByLoss,
+  useTransfersStore,
+  type Transfer,
+} from "../../stores/transfers";
 import AppButton from "../ui/AppButton.vue";
 import IconButton from "../ui/IconButton.vue";
 import StatusIcon from "../ui/StatusIcon.vue";
 import TransferOrbit from "./TransferOrbit.vue";
 
 const transfers = useTransfersStore();
+const connection = useConnectionStore();
 const { server, retry } = useTransferActions();
 
 const summary = computed(() => {
@@ -70,7 +76,10 @@ function detail(item: Transfer): string {
   const total = item.total === null ? null : formatBytes(item.total, true);
   switch (item.status) {
     case "queued":
-      return "—";
+      if (!item.held) return "—";
+      return connection.lost
+        ? "File suspendue pendant la coupure"
+        : "Retenu par la coupure · Reprendre la file pour lancer";
     case "active": {
       const parts = [
         total === null
@@ -97,10 +106,16 @@ function detail(item: Transfer): string {
       return item.transferred > 0
         ? `Arrêté à ${formatBytes(item.transferred)}`
         : "Arrêté avant le début";
-    case "error":
-      return total === null
-        ? "LOS"
-        : `LOS à ${formatBytes(item.transferred)} sur ${total}`;
+    case "error": {
+      const at =
+        total === null
+          ? "LOS"
+          : `LOS à ${formatBytes(item.transferred)} sur ${total}`;
+      if (!cutByLoss(item)) return at;
+      return connection.lost
+        ? `${at} · relance au rétablissement`
+        : `${at} · Réessayer repart du début`;
+    }
   }
 }
 
@@ -120,10 +135,22 @@ async function cancel(item: Transfer) {
 </script>
 
 <template>
-  <section class="transfers" aria-labelledby="transfers-title">
+  <section
+    class="transfers"
+    :class="{ lost: connection.lost }"
+    aria-labelledby="transfers-title"
+  >
     <header class="banner">
       <h2 id="transfers-title" class="caps kicker">Transferts · Orbites</h2>
       <span class="aside">{{ summary }}</span>
+      <AppButton
+        v-if="transfers.held"
+        size="compact"
+        :disabled="connection.lost"
+        @click="transfers.resumeQueue()"
+      >
+        Reprendre la file
+      </AppButton>
     </header>
     <ul class="list">
       <li
@@ -149,7 +176,7 @@ async function cancel(item: Transfer) {
           </span>
           <span class="detail" :title="detail(item)">{{ detail(item) }}</span>
           <span
-            v-if="item.status === 'error' && item.error"
+            v-if="item.status === 'error' && item.error && !cutByLoss(item)"
             class="message"
             :title="errorMessage(item.error)"
             >{{ errorMessage(item.error) }}</span
@@ -179,6 +206,10 @@ async function cancel(item: Transfer) {
             </AppButton>
             <AppButton
               v-else-if="item.status === 'error' || item.status === 'cancelled'"
+              :variant="
+                cutByLoss(item) && !connection.lost ? 'primary' : 'secondary'
+              "
+              :disabled="connection.lost"
               @click="retry(item)"
             >
               Réessayer
@@ -200,6 +231,10 @@ async function cancel(item: Transfer) {
   flex-shrink: 0;
   background: var(--color-surface);
   border: var(--border-width) solid var(--color-border);
+}
+
+.transfers.lost {
+  border-color: var(--color-danger);
 }
 
 .banner {

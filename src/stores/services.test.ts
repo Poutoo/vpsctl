@@ -7,8 +7,8 @@ import type { Container } from "../bindings/Container";
 import type { RunState } from "../bindings/RunState";
 import type { Service } from "../bindings/Service";
 import { useNotify } from "../composables/useNotify";
-import { lastToast } from "../testUtils";
-import { useConnectionStore } from "./connection";
+import * as connectionApi from "../api/connection";
+import { lastToast, linked, lossEvent } from "../testUtils";
 import { serviceTarget, targetKey, useServicesStore } from "./services";
 
 vi.mock("../api/docker");
@@ -166,20 +166,84 @@ describe("action puis vérification", () => {
 });
 
 describe("liaison", () => {
-  it("abandonne les listes et les vérifications à une nouvelle liaison", async () => {
-    const connection = useConnectionStore();
+  it("vide les listes et les vérifications à la fin de la session", async () => {
+    const connection = linked();
+    vi.mocked(connectionApi.disconnect).mockResolvedValue();
     const services = useServicesStore();
     await services.refresh();
     const done = services.perform(bot, "start");
     await flushPromises();
 
-    connection.info = { profileId: "p", connectedAt: 2, latencyMs: null };
-    await flushPromises();
+    await connection.disconnect();
     expect(services.services.items).toHaveLength(0);
     expect(services.pending).toEqual({});
 
     await vi.advanceTimersByTimeAsync(2_500);
     await done;
     expect(useNotify().items).toHaveLength(0);
+  });
+
+  it("annule la vérification à 2,5 s sans la présenter comme un échec", async () => {
+    const connection = linked();
+    const services = useServicesStore();
+    await services.refresh();
+    const done = services.perform(bot, "start");
+    await flushPromises();
+
+    connection.linkLost(lossEvent());
+    expect(services.pending).toEqual({});
+    await vi.advanceTimersByTimeAsync(2_500);
+    await done;
+    expect(useNotify().items).toHaveLength(0);
+    expect(systemd.listServices).toHaveBeenCalledOnce();
+  });
+
+  it("n'affiche pas d'échec quand l'action est coupée par la perte", async () => {
+    linked();
+    vi.mocked(systemd.serviceAction).mockRejectedValueOnce({
+      kind: "LinkLost",
+    });
+    const services = useServicesStore();
+    await services.refresh();
+    await services.perform(bot, "start");
+    expect(services.pending).toEqual({});
+    expect(useNotify().items).toHaveLength(0);
+  });
+
+  it("fige la dernière lecture réussie et n'interroge plus le serveur", async () => {
+    const connection = linked();
+    const services = useServicesStore();
+    await services.refresh();
+    const loadedAt = services.services.loadedAt;
+    vi.mocked(systemd.listServices).mockRejectedValueOnce({
+      kind: "Network",
+      message: "le serveur n'a pas répondu en 10 s",
+    });
+    await services.refresh();
+    expect(services.services.error).not.toBeNull();
+
+    connection.linkLost(lossEvent());
+    expect(services.services.error).toBeNull();
+    expect(services.services.items).toHaveLength(1);
+    expect(services.frozenAt).toBe(loadedAt);
+
+    await services.refresh();
+    expect(systemd.listServices).toHaveBeenCalledTimes(2);
+  });
+
+  it("relit les listes au rétablissement", async () => {
+    const connection = linked();
+    vi.mocked(connectionApi.connect).mockResolvedValue({
+      profileId: "p1",
+      connectedAt: 5,
+      latencyMs: null,
+    });
+    const services = useServicesStore();
+    await services.refresh();
+    connection.linkLost(lossEvent());
+    await connection.reacquire();
+    await flushPromises();
+    expect(systemd.listServices).toHaveBeenCalledTimes(2);
+    expect(services.frozenAt).toBeNull();
   });
 });

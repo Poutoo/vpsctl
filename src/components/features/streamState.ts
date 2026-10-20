@@ -39,5 +39,13 @@ export function streamState(stream: TelemetryStream): StreamState {
       return { shape: "circle", tone: "muted", label: "interrompu" };
     case "error":
       return { shape: "triangle", tone: "danger", label: "flux interrompu" };
+    case "lost":
+      return script
+        ? {
+            shape: "triangle",
+            tone: "danger",
+            label: "liaison perdue · issue inconnue",
+          }
+        : { shape: "triangle", tone: "danger", label: "interrompu · LOS" };
   }
 }

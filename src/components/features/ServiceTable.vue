@@ -3,6 +3,7 @@
 import { computed } from "vue";
 import type { RunState } from "../../bindings/RunState";
 import type { Service } from "../../bindings/Service";
+import { useConnectionStore } from "../../stores/connection";
 import {
   serviceTarget,
   targetKey,
@@ -29,6 +30,7 @@ const emit = defineEmits<{
 }>();
 
 const store = useServicesStore();
+const connection = useConnectionStore();
 
 /** Démarrer, arrêter, redémarrer : icône et libellé. */
 const RUN_ACTIONS = [
@@ -53,7 +55,11 @@ function view(service: Service) {
     arrival: store.arrivals[key] ?? null,
     controllable: service.controllable && !service.masked,
     reason: (operation: ServiceOperation) =>
-      pending ? "action en cours" : reasons[operation],
+      connection.lost
+        ? "liaison perdue"
+        : pending
+          ? "action en cours"
+          : reasons[operation],
     busySince: (operation: ServiceOperation) =>
       pending?.operation === operation ? pending.since : null,
   };
@@ -69,6 +75,7 @@ const rows = computed(() =>
  * ses logs.
  */
 function logsUnavailable(service: Service): string | null {
+  if (connection.lost) return "liaison perdue";
   return !service.controllable && !service.masked
     ? "nom hors du format accepté"
     : null;

@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import { guardWindowClose } from "./api/window";
 import AppNav from "./components/layout/AppNav.vue";
 import BackgroundLayer from "./components/layout/BackgroundLayer.vue";
+import LinkBanner from "./components/layout/LinkBanner.vue";
 import StatusBar from "./components/layout/StatusBar.vue";
 import TitleBar from "./components/layout/TitleBar.vue";
 import ConfirmDialog from "./components/ui/ConfirmDialog.vue";
@@ -36,11 +37,12 @@ onBeforeUnmount(() => {
   stopGuard?.();
 });
 
-// Liaison perdue ou fermée : retour à l'écran de connexion.
+// Session terminée (déconnexion, abandon du LOS) : retour à l'écran de
+// connexion. Un LOS garde l'écran affiché.
 watch(
-  () => connection.isConnected,
-  (connected) => {
-    if (!connected && route.meta.requiresConnection) {
+  () => connection.hasSession,
+  (session) => {
+    if (!session && route.meta.requiresConnection) {
       void router.push({ name: "connect" });
     }
   },
@@ -53,10 +55,13 @@ watch(
     <div class="shell">
       <TitleBar />
       <div class="workspace">
-        <AppNav v-if="connection.isConnected" />
-        <main class="main" :class="{ bleed: route.meta.fullBleed }">
-          <RouterView />
-        </main>
+        <AppNav v-if="connection.hasSession" />
+        <div class="column">
+          <LinkBanner v-if="connection.hasSession" />
+          <main class="main" :class="{ bleed: route.meta.fullBleed }">
+            <RouterView />
+          </main>
+        </div>
       </div>
       <StatusBar />
     </div>
@@ -85,9 +90,17 @@ watch(
   min-height: 0;
 }
 
+/* Le bandeau de liaison reste au-dessus du contenu, hors défilement. */
+.column {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .main {
   flex: 1;
-  min-width: 0;
+  min-height: 0;
   overflow: auto;
   padding: var(--sp-6);
 }

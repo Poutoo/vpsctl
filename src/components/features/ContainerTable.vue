@@ -3,6 +3,7 @@
 import { computed } from "vue";
 import type { Container } from "../../bindings/Container";
 import type { RunState } from "../../bindings/RunState";
+import { useConnectionStore } from "../../stores/connection";
 import {
   containerTarget,
   targetKey,
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 }>();
 
 const store = useServicesStore();
+const connection = useConnectionStore();
 
 /** Lignes vides tracées pendant le premier chargement. */
 const PLACEHOLDER_ROWS = 3;
@@ -52,7 +54,11 @@ function view(container: Container) {
     pending,
     arrival: store.arrivals[key] ?? null,
     reason: (operation: Operation) =>
-      pending ? "action en cours" : reasons[operation],
+      connection.lost
+        ? "liaison perdue"
+        : pending
+          ? "action en cours"
+          : reasons[operation],
     busySince: (operation: Operation) =>
       pending?.operation === operation ? pending.since : null,
   };
@@ -137,6 +143,7 @@ function exitDetail(container: Container): string | null {
             <IconButton
               icon="logs"
               :label="`Télémétrie de ${container.name}`"
+              :unavailable="connection.lost ? 'liaison perdue' : null"
               @click="emit('logs', container)"
             />
             <span class="separator" aria-hidden="true" />

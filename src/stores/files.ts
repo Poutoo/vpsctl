@@ -1,4 +1,4 @@
-import { computed, ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import type { RouteLocationRaw } from "vue-router";
 import * as api from "../api/files";
@@ -39,6 +39,11 @@ export const useFilesStore = defineStore("files", () => {
   /** Chemin de l'entrée sélectionnée. */
   const selected = ref<string | null>(null);
   const busy = ref<Record<string, BusyRow>>({});
+  /** Fin de la dernière lecture réussie du dossier affiché (horodatage en ms). */
+  const loadedAt = ref<number | null>(null);
+  /** Dernière lecture réussie, montrée figée pendant un LOS. */
+  let lastGood: { path: string; entries: FileEntry[]; at: number } | null =
+    null;
 
   const sorted = computed(() => sortEntries(entries.value, sort.value));
   const loading = computed(() => loadingSince.value !== null);
@@ -75,6 +80,7 @@ export const useFilesStore = defineStore("files", () => {
    * défaut, la sélection est gardée si l'entrée existe encore).
    */
   async function open(target: string, select?: string | null) {
+    if (connection.lost) return;
     const current = ++request;
     if (target !== path.value) again = false;
     if (select !== undefined) selected.value = select;
@@ -86,11 +92,14 @@ export const useFilesStore = defineStore("files", () => {
       const list = await api.listDir(target);
       if (current !== request) return;
       entries.value = list;
+      loadedAt.value = Date.now();
+      lastGood = { path: target, entries: list, at: loadedAt.value };
       if (!list.some((entry) => entry.path === selected.value)) {
         selected.value = null;
       }
     } catch (raw) {
       if (current !== request) return;
+      if ((raw as AppError).kind === "LinkLost") return;
       error.value = raw as AppError;
       entries.value = [];
       selected.value = null;
@@ -145,6 +154,8 @@ export const useFilesStore = defineStore("files", () => {
   function reset() {
     request++;
     again = false;
+    lastGood = null;
+    loadedAt.value = null;
     home.value = null;
     path.value = null;
     loadedPath.value = null;
@@ -155,11 +166,30 @@ export const useFilesStore = defineStore("files", () => {
     busy.value = {};
   }
 
-  // Nouvelle liaison (ou déconnexion) : le serveur a pu changer.
-  watch(
-    () => connection.info?.connectedAt ?? null,
-    () => reset(),
-  );
+  /**
+   * LOS : les lectures en cours sont abandonnées ; le dossier affiché garde
+   * sa dernière lecture réussie, figée.
+   */
+  function freeze() {
+    request++;
+    again = false;
+    loadingSince.value = null;
+    busy.value = {};
+    if (lastGood && lastGood.path === path.value) {
+      entries.value = lastGood.entries;
+      loadedPath.value = lastGood.path;
+      loadedAt.value = lastGood.at;
+      error.value = null;
+    }
+  }
+
+  /** Heure des données figées pendant un LOS. */
+  const frozenAt = computed(() => (connection.lost ? loadedAt.value : null));
+
+  connection.on("lost", freeze);
+  connection.on("restored", () => void refresh());
+  // Fin de session : le serveur suivant a pu changer.
+  connection.on("ended", reset);
 
   return {
     home,
@@ -174,6 +204,7 @@ export const useFilesStore = defineStore("files", () => {
     sort,
     selected,
     busy,
+    frozenAt,
     entryRoute,
     ensureHome,
     open,

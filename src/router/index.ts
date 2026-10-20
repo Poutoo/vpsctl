@@ -66,10 +66,11 @@ export const router = createRouter({
 });
 
 // La garde s'appuie sur l'état réel de la liaison, lu auprès du backend.
+// Pendant un LOS, la session reste ouverte : les écrans restent accessibles.
 router.beforeEach(async (to) => {
   const connection = useConnectionStore();
   await connection.initialize();
-  if (to.meta.requiresConnection && !connection.isConnected) {
+  if (to.meta.requiresConnection && !connection.hasSession) {
     return { name: "connect" };
   }
 });

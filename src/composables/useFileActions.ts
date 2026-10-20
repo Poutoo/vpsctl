@@ -119,6 +119,8 @@ export function useFileActions() {
     "Le dossier personnel et les dossiers qui le contiennent ne peuvent pas être";
 
   function fail(title: string, detail: string, raw: unknown) {
+    // Perte de liaison : le LOS la signale, ce n'est pas l'échec de l'action.
+    if (toAppError(raw).kind === "LinkLost") return;
     notify({
       tone: "error",
       title,
