@@ -50,6 +50,9 @@ jobs:
       - name: Prettier
         run: npx prettier --check .
 
+      - name: Tests frontend
+        run: npm test
+
       # tauri::generate_context!() exige que dist/ existe pour compiler.
       - name: Build du frontend
         run: npx vite build

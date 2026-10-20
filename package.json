@@ -11,6 +11,8 @@
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "format": "prettier --write . && cargo fmt --manifest-path src-tauri/Cargo.toml",
     "format:check": "prettier --check . && cargo fmt --manifest-path src-tauri/Cargo.toml --check",
     "bindings": "cargo test --manifest-path src-tauri/Cargo.toml export_bindings",
@@ -31,11 +33,14 @@
     "@vitejs/plugin-vue": "6.0.9",
     "@vue/eslint-config-prettier": "10.2.0",
     "@vue/eslint-config-typescript": "14.9.0",
+    "@vue/test-utils": "2.5.1",
     "eslint": "10.11.0",
     "eslint-plugin-vue": "10.11.1",
+    "happy-dom": "20.14.5",
     "prettier": "3.9.9",
     "typescript": "6.0.3",
     "vite": "8.3.1",
+    "vitest": "4.1.11",
     "vue-tsc": "3.3.11"
   }
 }

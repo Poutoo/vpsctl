@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 // @ts-expect-error type error without @types/node package
@@ -28,5 +29,12 @@ export default defineConfig(() => ({
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
+  },
+
+  test: {
+    environment: "happy-dom",
+    include: ["src/**/*.test.ts"],
+    clearMocks: true,
+    restoreMocks: true,
   },
 }));
