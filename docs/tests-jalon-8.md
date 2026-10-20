@@ -111,7 +111,7 @@ Coupure au pare-feu sauf mention contraire.
 
 ### Script
 
-- [ ] Lancer « compteur », couper vers la ligne 30 : onglet « INTERROMPU », en-tête « Liaison perdue · issue inconnue », séparateur « LOS · Liaison perdue · issue inconnue · hh:mm:ss » puis le message « Le script a été interrompu sur le serveur, probablement en cours d'exécution. Vérifiez l'état du serveur avant de le relancer. » « Relancer » désactivé ; l'écran Scripts a ses boutons « Exécuter » désactivés.
+- [ ] Lancer « compteur », couper vers la ligne 30 : pastille « ISSUE INCONNUE » dans l'onglet, en-tête « Liaison perdue · issue inconnue », séparateur « LOS · Liaison perdue · issue inconnue · hh:mm:ss » puis le message « Le script a été interrompu sur le serveur, probablement en cours d'exécution. Vérifiez l'état du serveur avant de le relancer. » « Relancer » désactivé ; l'écran Scripts a ses boutons « Exécuter » désactivés.
 - [ ] Sur le VPS, noter si `compteur` tourne encore (`pgrep -af seq`) : il n'est arrêté que lorsque sshd constate la coupure (sans `ClientAliveInterval`, cela peut prendre longtemps). Relevé : ____.
 - [ ] Changer d'écran pendant le LOS puis revenir : l'onglet est toujours là, rien n'a été relancé.
 

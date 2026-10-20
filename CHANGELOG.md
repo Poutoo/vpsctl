@@ -23,6 +23,7 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 
 ### Corrigé
 
+- Télémétrie : l'onglet d'un script coupé par une perte de liaison indique « Issue inconnue » au lieu d'« Interrompu ».
 - Transferts : après une erreur réseau, la file est suspendue (« Reprendre la file ») au lieu de lancer les transferts suivants, qui échouaient l'un après l'autre ; un transfert coupé par une perte de liaison avant d'avoir commencé revient en attente.
 - Transferts : un envoi retenu par une perte de liaison ne remplace plus un fichier existant sans redemander la confirmation à la reprise de la file.
 - Réglages : le texte des boutons du formulaire de profil avait la mauvaise couleur ; « Enregistrer » était invisible (ambre sur ambre).

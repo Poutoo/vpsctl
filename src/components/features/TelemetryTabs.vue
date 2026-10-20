@@ -37,7 +37,7 @@ const emit = defineEmits<{ close: [tab: TelemetryTab] }>();
         />
         <span class="name" :title="streamName(tab)">{{ streamName(tab) }}</span>
         <span v-if="tab.session.status === 'lost'" class="caps badge">
-          Interrompu
+          {{ tab.kind === "script" ? "Issue inconnue" : "Interrompu" }}
         </span>
         <span class="visually-hidden">, {{ streamState(tab).label }}</span>
       </RouterLink>
