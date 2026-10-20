@@ -9,8 +9,9 @@ use crate::state::AppState;
 
 #[tauri::command]
 pub async fn docker_list(state: State<'_, AppState>) -> Result<ContainerList, AppError> {
-    let connection = state.connection().await?;
-    docker::list(&connection).await
+    state
+        .remote(|connection| async move { docker::list(&connection).await })
+        .await
 }
 
 #[tauri::command]
@@ -19,12 +20,14 @@ pub async fn docker_action(
     id: String,
     action: Action,
 ) -> Result<(), AppError> {
-    let connection = state.connection().await?;
-    docker::action(&connection, &id, action).await
+    state
+        .remote(|connection| async move { docker::action(&connection, &id, action).await })
+        .await
 }
 
 #[tauri::command]
 pub async fn docker_remove(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
-    let connection = state.connection().await?;
-    docker::remove(&connection, &id).await
+    state
+        .remote(|connection| async move { docker::remove(&connection, &id).await })
+        .await
 }

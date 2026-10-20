@@ -11,8 +11,9 @@ use crate::systemd::{self, Service};
 
 #[tauri::command]
 pub async fn services_list(state: State<'_, AppState>) -> Result<Vec<Service>, AppError> {
-    let connection = state.connection().await?;
-    systemd::list(&connection).await
+    state
+        .remote(|connection| async move { systemd::list(&connection).await })
+        .await
 }
 
 #[tauri::command]
@@ -21,8 +22,9 @@ pub async fn service_action(
     unit: String,
     action: Action,
 ) -> Result<(), AppError> {
-    let connection = state.connection().await?;
-    systemd::action(&connection, &unit, action).await
+    state
+        .remote(|connection| async move { systemd::action(&connection, &unit, action).await })
+        .await
 }
 
 /// Texte du fichier d'unité, pour l'aperçu du formulaire (sans connexion).
@@ -36,8 +38,12 @@ pub async fn service_create(
     state: State<'_, AppState>,
     def: ServiceDef,
 ) -> Result<Service, AppError> {
-    let host = SshHost::new(state.connection().await?);
-    manage::create(&host, &def).await
+    state
+        .remote(|connection| async move {
+            let host = SshHost::new(connection);
+            manage::create(&host, &def).await
+        })
+        .await
 }
 
 #[tauri::command]
@@ -45,19 +51,28 @@ pub async fn service_delete_info(
     state: State<'_, AppState>,
     unit: String,
 ) -> Result<ServiceDeleteInfo, AppError> {
-    let host = SshHost::new(state.connection().await?);
-    manage::delete_info(&host, &unit).await
+    state
+        .remote(|connection| async move {
+            let host = SshHost::new(connection);
+            manage::delete_info(&host, &unit).await
+        })
+        .await
 }
 
 #[tauri::command]
 pub async fn service_delete(state: State<'_, AppState>, unit: String) -> Result<(), AppError> {
-    let host = SshHost::new(state.connection().await?);
-    manage::delete(&host, &unit).await
+    state
+        .remote(|connection| async move {
+            let host = SshHost::new(connection);
+            manage::delete(&host, &unit).await
+        })
+        .await
 }
 
 /// Lingering du compte ; `None` si son état n'a pas pu être lu.
 #[tauri::command]
 pub async fn user_linger(state: State<'_, AppState>) -> Result<Option<bool>, AppError> {
-    let connection = state.connection().await?;
-    Ok(manage::linger(&connection).await)
+    state
+        .remote(|connection| async move { Ok(manage::linger(&connection).await) })
+        .await
 }

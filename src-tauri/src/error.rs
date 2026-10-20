@@ -14,6 +14,12 @@ pub enum AppError {
     #[error("aucune connexion SSH active")]
     NotConnected,
 
+    /// L'opération a échoué parce que la liaison est perdue. L'événement
+    /// `link-lost` en donne la cause ; l'interface ne signale pas cet échec
+    /// comme celui de l'opération.
+    #[error("liaison perdue")]
+    LinkLost,
+
     #[error("clé hôte inconnue : {fingerprint}")]
     UnknownHostKey { fingerprint: String },
 

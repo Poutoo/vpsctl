@@ -35,6 +35,7 @@ fn params(expected_fingerprint: Option<String>) -> ConnectParams {
         passphrase: std::env::var("VPSCTL_TEST_PASSPHRASE")
             .ok()
             .map(Zeroizing::new),
+        timing: ssh::link::LinkTiming::default(),
     }
 }
 

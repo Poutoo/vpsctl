@@ -13,6 +13,7 @@ Statut : validé.
 ```ts
 type AppError =
   | { kind: "NotConnected" }
+  | { kind: "LinkLost" }                   // échec dû à la perte de la liaison (voir « Perte de la liaison »)
   | { kind: "UnknownHostKey"; fingerprint: string }
   | { kind: "HostKeyMismatch"; expected: string; received: string }
   | { kind: "PassphraseRequired" }
@@ -84,6 +85,48 @@ interface ConnectionInfo {
 }
 ```
 
+`connection_status` renvoie `null` dès que la liaison est fermée ou perdue.
+
+### Perte de la liaison
+
+Le backend détecte la perte et émet **un seul** événement Tauri `link-lost` par liaison perdue. Une déconnexion volontaire (`disconnect`, nouvelle `connect`, fermeture de l'application) n'en émet jamais.
+
+```ts
+// Événement "link-lost"
+interface LinkLost {
+  profileId: string
+  cause: LossCause
+  detail: string | null           // message du serveur (déconnexion) ou du système
+  lastReceivedAt: number | null   // dernière réception de données du serveur (ms epoch) : « dernier échange »
+  detectedAt: number
+}
+
+type LossCause =
+  | "closed"    // fermée par le serveur : message de déconnexion SSH ou fin du flux TCP
+  | "reset"     // connexion réinitialisée (RST) ou interrompue par le système
+  | "timeout"   // le serveur ne répond plus : keepalive sans réponse, ou écriture bloquée
+  | "network"   // réseau ou hôte injoignable
+  | "unknown"
+```
+
+Détection (russh 0.63, `ssh/link.rs`) :
+
+| Réglage | Valeur | Effet |
+|---|---|---|
+| `keepalive_interval` | 5 s | keepalive envoyé après 5 s sans rien recevoir du serveur |
+| `keepalive_max` | 3 | perte constatée `(3 + 1) × 5 s` = 20 s après la dernière réception, soit 15 à 20 s après une coupure silencieuse ; une coupure de quelques secondes est absorbée |
+| `inactivity_timeout` | 60 s | filet pour une écriture bloquée (envoi en cours sur une liaison coupée) : pendant une écriture, russh ne fait pas tourner le keepalive |
+
+- Fermeture par le serveur (FIN, RST, message de déconnexion) : détection immédiate.
+- Liaison au repos : chaque réponse à un keepalive réarme aussi `inactivity_timeout`, qui ne se déclenche donc pas (vérifié dans `client/mod.rs` : le minuteur d'inactivité n'est réarmé qu'après un tour de boucle sans envoi de keepalive, c'est-à-dire à la réception de la réponse).
+
+Après l'événement :
+
+- `connection()` renvoie `LinkLost` jusqu'à la prochaine `connect` ou `disconnect` ; `connection_status` renvoie `null`.
+- Toute commande qui échoue à cause de la perte renvoie `LinkLost`, quelle que soit l'erreur sous-jacente. L'interface ne la présente pas comme l'échec de l'opération.
+- Les flux et les transferts coupés n'émettent aucun événement de fin (`error`, `cancelled`) : `link-lost` en tient lieu. Les registres de flux et de transferts sont vidés.
+- Aucune reconnexion automatique. `connect` crée une nouvelle liaison, avec sa propre session SFTP.
+
 ## Fichiers
 
 ```ts
@@ -128,7 +171,7 @@ Toutes les opérations passent par la session SFTP partagée : aucune commande s
   - Espace libre du VPS (`statvfs@openssh.com`, si le serveur le propose) inférieur à la taille du fichier : `InsufficientSpace` avant de commencer.
 - **Téléchargement** : même principe côté local, temporaire `.<nom>.atlas-<8 hex>.part` dans le dossier choisi, synchronisé sur disque puis renommé (un fichier existant est remplacé : la confirmation est celle de la fenêtre d'enregistrement du système). Un lien vers un fichier est suivi.
 - **Annulation** (`transfer_cancel`) : la copie s'arrête entre deux blocs, le fichier ouvert est fermé (la session SFTP, partagée, reste ouverte), le temporaire est supprimé, puis l'événement `cancelled` est émis. La commande rend la main une fois ce nettoyage terminé, au plus tard après 5 s. Un identifiant inconnu (transfert terminé) est ignoré. La validation finale (renommages) n'est pas interruptible.
-- **Erreur** pendant la copie : le temporaire est supprimé et le fichier existant reste intact, puis l'événement `error` est émis. Si la liaison est perdue, le temporaire distant ne peut pas être supprimé : il reste sur le VPS, signalé dans la liste comme résidu de transfert (voir `FileEntry.residue`).
+- **Erreur** pendant la copie : le temporaire est supprimé et le fichier existant reste intact, puis l'événement `error` est émis. Si la liaison est perdue, aucun événement n'est émis (`link-lost` en tient lieu) et le temporaire distant ne peut pas être supprimé : il reste sur le VPS, signalé dans la liste comme résidu de transfert (voir `FileEntry.residue`).
 - Les transferts en cours sont annulés à la déconnexion, au rechargement de l'interface et à la fermeture de l'application.
 - La file d'attente est gérée par l'interface (un seul transfert actif à la fois) ; les chemins locaux sont choisis côté Vue avec `tauri-plugin-dialog`.
 
@@ -254,7 +297,7 @@ logs_stop(streamId: string): void
   - systemd : `journalctl --user --unit='<unit>' -f -n <N> -o json --output-fields=MESSAGE,PRIORITY --all --quiet --no-pager`
 
   Chacune est enveloppée dans un script de surveillance qui la termine quand le canal se ferme (voir « Arrêt des flux » dans `docs/03-architecture.md`).
-- Événements : des lots de lignes (`lines`), puis au plus un événement final. `ended` n'est émis que si la commande se termine d'elle-même (conteneur arrêté, par exemple), `error` si la liaison est perdue. Après `logs_stop`, aucun événement n'est garanti : l'interface sait qu'elle a demandé l'arrêt.
+- Événements : des lots de lignes (`lines`), puis au plus un événement final. `ended` n'est émis que si la commande se termine d'elle-même (conteneur arrêté, par exemple), `error` si le flux s'interrompt pour une autre raison. Liaison perdue : aucun événement final, `link-lost` en tient lieu. Après `logs_stop`, aucun événement n'est garanti : l'interface sait qu'elle a demandé l'arrêt.
 - Regroupement : un lot part toutes les 50 ms, ou dès 500 lignes. Au-delà de 5 000 lignes par seconde, les lignes en excès sont écartées et comptées dans `dropped` du lot suivant.
 - Toutes les lignes sont des `LogLine` : les lignes trop longues sont tronquées à 16 Kio, l'UTF-8 invalide est remplacé, et les séquences d'échappement ANSI (couleurs, styles, déplacements du curseur, titres, liens) sont retirées du texte, y compris une séquence incomplète en fin de ligne. Valable pour les logs Docker, le journal et la sortie des scripts.
 

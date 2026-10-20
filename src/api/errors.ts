@@ -21,6 +21,8 @@ export function errorMessage(error: AppError): string {
   switch (error.kind) {
     case "NotConnected":
       return "Aucune liaison active avec le serveur.";
+    case "LinkLost":
+      return "Liaison perdue avec le serveur.";
     case "UnknownHostKey":
       return "Clé du serveur inconnue : comparez son empreinte avant de l'accepter.";
     case "HostKeyMismatch":

@@ -4,14 +4,20 @@
 //! transferts de fichiers, chacun identifié par un id pour pouvoir être
 //! arrêté proprement.
 //!
+//! Perte de la liaison : une tâche surveille chaque liaison établie. À la
+//! perte, elle passe l'état à `Lost`, appelle une seule fois `on_link_lost`,
+//! puis vide les registres de flux et de transferts. Une déconnexion
+//! volontaire arrête cette surveillance avant de fermer quoi que ce soit.
+//!
 //! Ce module ne dépend pas de Tauri : la couche `commands` ne fait que
 //! transmettre les appels.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use serde::Serialize;
 use tokio::sync::oneshot;
@@ -24,9 +30,10 @@ use crate::error::AppError;
 use crate::scripts::{self, LastRunRecorder, Script, ScriptParser, ScriptStore};
 use crate::secrets;
 use crate::sftp::fs::SftpFs;
-use crate::sftp::transfer::{self, CancelSignal, ProgressSink};
+use crate::sftp::transfer::{self, CancelSignal, Progress, ProgressSink};
+use crate::ssh::link::{now_millis, LinkTiming, LossCause, LossSignal};
 use crate::ssh::{self, host_key, ConnectParams, Connection, Deadline, ServerInfo, StepSink};
-use crate::stream::{self, EventSink, LineParser, LogSource};
+use crate::stream::{self, EventSink, LineParser, LogEvent, LogSource};
 use crate::{docker, systemd};
 
 /// Intervalle de mesure de la latence.
@@ -58,12 +65,38 @@ pub struct ConnectionInfo {
     pub latency_ms: Option<u32>,
 }
 
+/// Événement `link-lost` : émis une seule fois par liaison perdue, jamais
+/// pour une déconnexion volontaire.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LinkLost {
+    pub profile_id: String,
+    pub cause: LossCause,
+    /// Message du serveur ou du système, s'il y en a un.
+    pub detail: Option<String>,
+    /// Dernière réception de données du serveur (millisecondes depuis l'epoch).
+    #[ts(type = "number | null")]
+    pub last_received_at: Option<u64>,
+    #[ts(type = "number")]
+    pub detected_at: u64,
+}
+
+/// Destinataire de l'événement `link-lost` (l'émission Tauri, côté `lib.rs`).
+pub type LinkLostSink = Arc<dyn Fn(LinkLost) + Send + Sync>;
+
+/// Nom de l'événement émis vers l'interface.
+pub const LINK_LOST_EVENT: &str = "link-lost";
+
 struct Active {
     connection: Arc<Connection>,
     profile_id: String,
     connected_at: u64,
     latency: Arc<Mutex<Option<u32>>>,
     latency_task: JoinHandle<()>,
+    /// Numéro de la tentative qui a établi la liaison.
+    generation: u64,
+    watcher: JoinHandle<()>,
 }
 
 impl Active {
@@ -84,6 +117,8 @@ enum Link {
         abort: AbortHandle,
     },
     Connected(Active),
+    /// Liaison perdue, jusqu'à la prochaine connexion ou déconnexion.
+    Lost,
 }
 
 /// Flux ou transfert en cours : son signal d'arrêt et sa tâche.
@@ -103,8 +138,10 @@ pub struct AppState {
     profiles_lock: Mutex<()>,
     /// Partagé avec les tâches d'exécution, qui enregistrent `lastRun`.
     scripts: Arc<ScriptStore>,
-    link: tokio::sync::Mutex<Link>,
+    link: Arc<tokio::sync::Mutex<Link>>,
     attempts: AtomicU64,
+    on_link_lost: LinkLostSink,
+    timing: LinkTiming,
     /// Dernière empreinte présentée par le serveur de chaque profil, lors
     /// d'une connexion refusée. `trust_host_key` n'accepte que celle-ci.
     presented: Mutex<HashMap<String, String>>,
@@ -117,18 +154,26 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(config_dir: &Path) -> Self {
+    pub fn new(config_dir: &Path, on_link_lost: LinkLostSink) -> Self {
         Self {
             profiles: ProfileStore::new(config_dir),
             profiles_lock: Mutex::new(()),
             scripts: Arc::new(ScriptStore::new(config_dir)),
-            link: tokio::sync::Mutex::new(Link::Idle),
+            link: Arc::new(tokio::sync::Mutex::new(Link::Idle)),
             attempts: AtomicU64::new(0),
+            on_link_lost,
+            timing: LinkTiming::default(),
             presented: Mutex::new(HashMap::new()),
             streams: Arc::new(Mutex::new(HashMap::new())),
             stream_start: tokio::sync::Mutex::new(()),
             transfers: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Réglages de détection de la perte, pour les tests (délais courts).
+    pub fn with_link_timing(mut self, timing: LinkTiming) -> Self {
+        self.timing = timing;
+        self
     }
 
     fn with_profiles<T>(
@@ -221,7 +266,7 @@ impl AppState {
 
     async fn linked_profile(&self) -> Option<String> {
         match &*self.link.lock().await {
-            Link::Idle => None,
+            Link::Idle | Link::Lost => None,
             Link::Connecting { profile_id, .. } => Some(profile_id.clone()),
             Link::Connected(active) => Some(active.profile_id.clone()),
         }
@@ -254,6 +299,7 @@ impl AppState {
             key_path: key_path(&profile),
             expected_fingerprint: profile.host_key_fingerprint.clone(),
             passphrase,
+            timing: self.timing,
         };
 
         let attempt = self.attempts.fetch_add(1, Ordering::SeqCst) + 1;
@@ -284,7 +330,7 @@ impl AppState {
 
         match result {
             Ok(connection) => {
-                let active = start_active(profile.id.clone(), connection);
+                let active = self.start_active(profile.id.clone(), connection, attempt);
                 let info = active.info();
                 *link = Link::Connected(active);
                 Ok(info)
@@ -304,36 +350,29 @@ impl AppState {
         }
     }
 
-    /// Ferme la liaison, ou interrompt une connexion en cours. Les flux et
-    /// les transferts en cours sont d'abord arrêtés (les temporaires des
-    /// transferts sont supprimés tant que la liaison est ouverte).
+    /// Ferme la liaison, ou interrompt une connexion en cours. La
+    /// surveillance de la perte est arrêtée en premier : une déconnexion
+    /// volontaire n'émet jamais `link-lost`. Les flux et les transferts en
+    /// cours sont ensuite arrêtés (les temporaires des transferts sont
+    /// supprimés tant que la liaison est ouverte).
     pub async fn disconnect(&self) {
+        if let Link::Connected(active) = &*self.link.lock().await {
+            active.watcher.abort();
+        }
         tokio::join!(self.stop_all_streams(), self.cancel_all_transfers());
         let previous = std::mem::replace(&mut *self.link.lock().await, Link::Idle);
         match previous {
-            Link::Idle => {}
+            Link::Idle | Link::Lost => {}
             Link::Connecting { abort, .. } => abort.abort(),
             Link::Connected(active) => close_active(active).await,
         }
     }
 
-    /// Liaison active, ou `None`. Une liaison tombée est oubliée.
+    /// Liaison active, ou `None`. Une liaison fermée dont la perte n'est pas
+    /// encore traitée par sa surveillance est déjà absente.
     pub async fn connection_status(&self) -> Option<ConnectionInfo> {
-        let mut link = self.link.lock().await;
-        let closed = match &*link {
-            Link::Connected(active) => active.connection.is_closed(),
-            _ => return None,
-        };
-        if closed {
-            if let Link::Connected(active) = std::mem::replace(&mut *link, Link::Idle) {
-                close_active(active).await;
-            }
-            drop(link);
-            tokio::join!(self.stop_all_streams(), self.cancel_all_transfers());
-            return None;
-        }
-        match &*link {
-            Link::Connected(active) => Some(active.info()),
+        match &*self.link.lock().await {
+            Link::Connected(active) if !active.connection.is_closed() => Some(active.info()),
             _ => None,
         }
     }
@@ -343,13 +382,69 @@ impl AppState {
     pub async fn connection(&self) -> Result<Arc<Connection>, AppError> {
         match &*self.link.lock().await {
             Link::Connected(active) => Ok(active.connection.clone()),
+            Link::Lost => Err(AppError::LinkLost),
             _ => Err(AppError::NotConnected),
         }
     }
 
-    pub async fn server_info(&self) -> Result<ServerInfo, AppError> {
+    /// Exécute une opération distante sur la liaison active. Si elle échoue
+    /// parce que la liaison est perdue, l'erreur devient `LinkLost`.
+    pub async fn remote<T, Fut>(
+        &self,
+        operation: impl FnOnce(Arc<Connection>) -> Fut,
+    ) -> Result<T, AppError>
+    where
+        Fut: Future<Output = Result<T, AppError>>,
+    {
         let connection = self.connection().await?;
-        Ok(ssh::server_info(&connection).await)
+        let probe = LinkProbe::new(&connection);
+        operation(connection)
+            .await
+            .map_err(|error| probe.map(error))
+    }
+
+    pub async fn server_info(&self) -> Result<ServerInfo, AppError> {
+        self.remote(|connection| async move { Ok(ssh::server_info(&connection).await) })
+            .await
+    }
+
+    /// Établie : surveillance de la perte et mesure périodique de la
+    /// latence (une mesure immédiate).
+    fn start_active(&self, profile_id: String, connection: Connection, generation: u64) -> Active {
+        let watcher = tokio::spawn(watch_link(
+            LinkWatch {
+                link: self.link.clone(),
+                streams: self.streams.clone(),
+                transfers: self.transfers.clone(),
+                on_link_lost: self.on_link_lost.clone(),
+            },
+            connection.loss_signal(),
+            generation,
+        ));
+        let connection = Arc::new(connection);
+        let latency = Arc::new(Mutex::new(None));
+        let latency_task = {
+            let connection = connection.clone();
+            let latency = latency.clone();
+            tokio::spawn(async move {
+                loop {
+                    let measured = connection.measure_latency().await.ok();
+                    if let Ok(mut slot) = latency.lock() {
+                        *slot = measured;
+                    }
+                    tokio::time::sleep(LATENCY_INTERVAL).await;
+                }
+            })
+        };
+        Active {
+            connection,
+            profile_id,
+            connected_at: now_millis(),
+            latency,
+            latency_task,
+            generation,
+            watcher,
+        }
     }
 
     /// Sortie de l'application : flux arrêtés et liaison fermée, en temps
@@ -435,12 +530,15 @@ impl AppState {
             }));
         }
         let connection = self.connection().await?;
+        let probe = LinkProbe::new(&connection);
         let channel = connection
             .open_stream(
                 &stream::guarded_command(command),
                 Deadline::after(STREAM_OPEN_TIMEOUT),
             )
-            .await?;
+            .await
+            .map_err(|error| probe.map(error))?;
+        let sink = without_loss_error(sink, connection.loss_signal());
 
         let id = uuid::Uuid::new_v4().to_string();
         let (stop, stopped) = oneshot::channel();
@@ -487,8 +585,13 @@ impl AppState {
         overwrite: bool,
         sink: ProgressSink,
     ) -> Result<String, AppError> {
-        let fs = SftpFs::shared(self.connection().await?);
-        let upload = transfer::prepare_upload(&*fs, local, remote, overwrite).await?;
+        let connection = self.connection().await?;
+        let probe = LinkProbe::new(&connection);
+        let sink = without_loss_ending(sink, connection.loss_signal());
+        let fs = SftpFs::shared(connection);
+        let upload = transfer::prepare_upload(&*fs, local, remote, overwrite)
+            .await
+            .map_err(|error| probe.map(error))?;
         Ok(self.spawn_transfer(move |cancel| transfer::run_upload(fs, upload, cancel, sink)))
     }
 
@@ -499,8 +602,13 @@ impl AppState {
         local: &str,
         sink: ProgressSink,
     ) -> Result<String, AppError> {
-        let fs = SftpFs::shared(self.connection().await?);
-        let download = transfer::prepare_download(&*fs, remote, local).await?;
+        let connection = self.connection().await?;
+        let probe = LinkProbe::new(&connection);
+        let sink = without_loss_ending(sink, connection.loss_signal());
+        let fs = SftpFs::shared(connection);
+        let download = transfer::prepare_download(&*fs, remote, local)
+            .await
+            .map_err(|error| probe.map(error))?;
         Ok(self.spawn_transfer(move |cancel| transfer::run_download(fs, download, cancel, sink)))
     }
 
@@ -584,40 +692,94 @@ fn key_path(profile: &Profile) -> std::path::PathBuf {
     ssh::resolve_key_path(&profile.key_path, std::env::home_dir().as_deref())
 }
 
-fn now_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-        .unwrap_or(0)
+/// Constate après coup qu'une opération a échoué à cause de la perte de la
+/// liaison. La liaison fermée (`is_closed`) couvre le court instant où russh
+/// a fermé la session sans avoir encore publié la perte.
+struct LinkProbe {
+    signal: LossSignal,
+    connection: std::sync::Weak<Connection>,
 }
 
-/// Démarre la mesure périodique de la latence (une mesure immédiate).
-fn start_active(profile_id: String, connection: Connection) -> Active {
-    let connection = Arc::new(connection);
-    let latency = Arc::new(Mutex::new(None));
-    let latency_task = {
-        let connection = connection.clone();
-        let latency = latency.clone();
-        tokio::spawn(async move {
-            loop {
-                let measured = connection.measure_latency().await.ok();
-                if let Ok(mut slot) = latency.lock() {
-                    *slot = measured;
-                }
-                tokio::time::sleep(LATENCY_INTERVAL).await;
-            }
-        })
-    };
-    Active {
-        connection,
-        profile_id,
-        connected_at: now_millis(),
-        latency,
-        latency_task,
+impl LinkProbe {
+    fn new(connection: &Arc<Connection>) -> Self {
+        Self {
+            signal: connection.loss_signal(),
+            connection: Arc::downgrade(connection),
+        }
+    }
+
+    fn map(&self, error: AppError) -> AppError {
+        let closed = self
+            .connection
+            .upgrade()
+            .is_none_or(|connection| connection.is_closed());
+        if self.signal.is_lost() || closed {
+            AppError::LinkLost
+        } else {
+            error
+        }
     }
 }
 
+/// Un flux coupé par la perte de la liaison ne signale pas sa fin :
+/// `link-lost` en tient lieu.
+fn without_loss_error(sink: EventSink, signal: LossSignal) -> EventSink {
+    Arc::new(move |event| match event {
+        LogEvent::Error { .. } if signal.is_lost() => true,
+        event => sink(event),
+    })
+}
+
+/// Idem pour un transfert : ni erreur ni annulation après la perte.
+fn without_loss_ending(sink: ProgressSink, signal: LossSignal) -> ProgressSink {
+    Arc::new(move |event| match event {
+        Progress::Error { .. } | Progress::Cancelled if signal.is_lost() => true,
+        event => sink(event),
+    })
+}
+
+/// Ce dont la surveillance d'une liaison a besoin dans l'état partagé.
+struct LinkWatch {
+    link: Arc<tokio::sync::Mutex<Link>>,
+    streams: StreamRegistry,
+    transfers: StreamRegistry,
+    on_link_lost: LinkLostSink,
+}
+
+/// Attend la perte de la liaison `generation`. Si elle est toujours la
+/// liaison active, la passe à `Lost`, émet l'événement (une fois : le signal
+/// n'est publié qu'une fois et l'état ne quitte `Connected` qu'une fois), puis
+/// vide les registres. Une déconnexion volontaire interrompt cette tâche.
+async fn watch_link(watch: LinkWatch, signal: LossSignal, generation: u64) {
+    let loss = signal.lost().await;
+    let active = {
+        let mut link = watch.link.lock().await;
+        let current = matches!(&*link, Link::Connected(active) if active.generation == generation);
+        if !current {
+            return;
+        }
+        let Link::Connected(active) = std::mem::replace(&mut *link, Link::Lost) else {
+            return;
+        };
+        active
+    };
+    active.latency_task.abort();
+    (watch.on_link_lost)(LinkLost {
+        profile_id: active.profile_id.clone(),
+        cause: loss.cause,
+        detail: loss.detail,
+        last_received_at: loss.last_received_at,
+        detected_at: now_millis(),
+    });
+    drop(active);
+    tokio::join!(
+        stop_all(&watch.streams, STREAM_STOP_TIMEOUT),
+        stop_all(&watch.transfers, TRANSFER_CANCEL_TIMEOUT)
+    );
+}
+
 async fn close_active(active: Active) {
+    active.watcher.abort();
     active.latency_task.abort();
     let _ = active.latency_task.await;
     if let Ok(connection) = Arc::try_unwrap(active.connection) {
@@ -654,9 +816,27 @@ mod tests {
         );
     }
 
+    #[test]
+    fn link_lost_serializes_in_camel_case() {
+        let event = LinkLost {
+            profile_id: "p1".into(),
+            cause: LossCause::Reset,
+            detail: None,
+            last_received_at: Some(1_000),
+            detected_at: 2_000,
+        };
+        assert_eq!(
+            serde_json::to_value(event).unwrap(),
+            json!({
+                "profileId": "p1", "cause": "reset", "detail": null,
+                "lastReceivedAt": 1_000, "detectedAt": 2_000,
+            })
+        );
+    }
+
     fn state() -> (AppState, PathBuf) {
         let dir = std::env::temp_dir().join(format!("vpsctl-state-{}", uuid::Uuid::new_v4()));
-        (AppState::new(&dir), dir)
+        (AppState::new(&dir, Arc::new(|_| {})), dir)
     }
 
     use std::path::PathBuf;

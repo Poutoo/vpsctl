@@ -27,7 +27,8 @@ src-tauri/src/
 ├── run_state.rs      RunState : état affiché d'un conteneur ou d'un service
 ├── ssh/
 │   ├── mod.rs        connect, exec, open_stream
-│   └── host_key.rs   vérification de l'empreinte de la clé hôte
+│   ├── host_key.rs   vérification de l'empreinte de la clé hôte
+│   └── link.rs       perte de la liaison : réglages du keepalive, cause, signal unique
 ├── sftp/
 │   ├── mod.rs        session partagée, reprise après erreur de transport, classement des erreurs
 │   ├── path.rs       fonctions pures : chemins, noms, droits, temporaires, résidus, accès SSH
@@ -54,6 +55,8 @@ src-tauri/src/
 ```
 
 ## Responsabilités
+
+**Perte de la liaison** : `ssh/link.rs` règle le keepalive de russh et publie la cause de la perte une seule fois par liaison ; `state.rs` la surveille, passe à l'état « perdu » et émet `link-lost` (voir `docs/04-contrat-commandes.md`, « Perte de la liaison »). Testé contre un serveur russh local derrière un relais TCP qu'on coupe (`tests/link_loss.rs`).
 
 **ssh** : ouvre et maintient une seule connexion SSH. Les autres modules ouvrent des canaux dessus. Expose deux primitives : exécuter une commande et récupérer sa sortie, ouvrir un canal en streaming. Implémente la vérification de la clé hôte. Une commande a une échéance : au-delà, elle est interrompue (SIGTERM si le serveur accepte les signaux) et son canal est fermé, pour qu'aucun canal abandonné ne s'accumule.
 
@@ -315,7 +318,7 @@ src/
 | Permission | Usage |
 |---|---|
 | `core:app:allow-version` | version dans la barre d'état (`getVersion`) |
-| `core:event:allow-listen`, `core:event:allow-unlisten` | `onResized`, `onFocusChanged`, `onCloseRequested` |
+| `core:event:allow-listen`, `core:event:allow-unlisten` | `onResized`, `onFocusChanged`, `onCloseRequested`, événement `link-lost` |
 | `core:path:allow-resolve-directory`, `core:path:allow-join` | dossier Téléchargements proposé à l'enregistrement (`downloadDir`, `join`) |
 | `core:window:allow-is-minimized`, `core:window:allow-is-maximized` | visibilité réelle de la fenêtre, état agrandi |
 | `core:window:allow-start-dragging`, `core:window:allow-internal-toggle-maximize` | `data-tauri-drag-region` : déplacement et double-clic |

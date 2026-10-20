@@ -15,8 +15,10 @@ pub mod state;
 pub mod stream;
 pub mod systemd;
 
+use std::sync::Arc;
+
 use tauri::webview::PageLoadEvent;
-use tauri::{Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -27,7 +29,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
-            app.manage(state::AppState::new(&config_dir));
+            let handle = app.handle().clone();
+            let on_link_lost: state::LinkLostSink = Arc::new(move |event| {
+                let _ = handle.emit(state::LINK_LOST_EVENT, event);
+            });
+            app.manage(state::AppState::new(&config_dir, on_link_lost));
             Ok(())
         })
         // Page (re)chargée : les canaux de l'ancienne page sont morts, mais

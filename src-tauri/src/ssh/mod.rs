@@ -11,6 +11,7 @@
 //! authentification et `connect` échoue (`UnknownHostKey` / `HostKeyMismatch`).
 
 pub mod host_key;
+pub mod link;
 pub mod shell;
 
 use std::future::Future;
@@ -30,6 +31,7 @@ use zeroize::Zeroizing;
 
 use crate::error::{AppError, NetworkFailure};
 use host_key::HostKeyCheck;
+use link::{Ending, LinkTiming, LossReporter, LossSignal, TrackedStream};
 
 /// Délai maximal pour résoudre le nom et établir la liaison TCP.
 pub const TCP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -118,6 +120,7 @@ pub struct ConnectParams {
     pub key_path: PathBuf,
     pub expected_fingerprint: Option<String>,
     pub passphrase: Option<Zeroizing<String>>,
+    pub timing: LinkTiming,
 }
 
 /// Développe `~` en dossier personnel (`~`, `~/…`, `~\…`).
@@ -200,6 +203,7 @@ struct Handler {
     on_step: StepSink,
     progress: Arc<Mutex<Progress>>,
     cancelled: Arc<AtomicBool>,
+    loss: LossReporter,
 }
 
 impl Handler {
@@ -284,6 +288,26 @@ impl client::Handler for Handler {
         });
         Ok(accept)
     }
+
+    async fn disconnected(
+        &mut self,
+        reason: client::DisconnectReason<Self::Error>,
+    ) -> Result<(), Self::Error> {
+        match reason {
+            client::DisconnectReason::ReceivedDisconnect(info) => {
+                let (cause, detail) = link::classify(Ending::Disconnected {
+                    message: &info.message,
+                });
+                self.loss.report(cause, detail);
+                Ok(())
+            }
+            client::DisconnectReason::Error(error) => {
+                let (cause, detail) = link::classify(Ending::Failed(&error));
+                self.loss.report(cause, detail);
+                Err(error)
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -330,9 +354,16 @@ pub struct Connection {
     /// Session SFTP partagée, ouverte à la première utilisation et recréée
     /// seulement après sa fermeture.
     sftp: tokio::sync::Mutex<Option<Arc<SftpSession>>>,
+    loss: LossSignal,
 }
 
 impl Connection {
+    /// Perte de cette liaison, publiée une seule fois. Une fermeture
+    /// volontaire en publie une aussi : l'appelant cesse d'observer avant.
+    pub fn loss_signal(&self) -> LossSignal {
+        self.loss.clone()
+    }
+
     fn handle(&self) -> Result<&client::Handle<Handler>, AppError> {
         self.handle.as_ref().ok_or(AppError::NotConnected)
     }
@@ -707,6 +738,8 @@ pub async fn connect(params: ConnectParams, on_step: StepSink) -> Result<Connect
         }
     };
     let _ = stream.set_nodelay(true);
+    let (loss, loss_signal, last_received) = LossReporter::new();
+    let stream = TrackedStream::new(stream, last_received);
     emit(ConnectStep::Tcp {
         status: StepStatus::Ok,
         duration_ms: Some(millis(started.elapsed())),
@@ -720,10 +753,12 @@ pub async fn connect(params: ConnectParams, on_step: StepSink) -> Result<Connect
         on_step: on_step.clone(),
         progress: progress.clone(),
         cancelled: cancelled.clone(),
+        loss,
     };
     let config = Arc::new(client::Config {
-        keepalive_interval: Some(Duration::from_secs(30)),
-        keepalive_max: 3,
+        keepalive_interval: Some(params.timing.keepalive_interval),
+        keepalive_max: params.timing.keepalive_max,
+        inactivity_timeout: Some(params.timing.inactivity_timeout),
         ..Default::default()
     });
     let handshake = tokio::time::timeout(
@@ -784,6 +819,7 @@ pub async fn connect(params: ConnectParams, on_step: StepSink) -> Result<Connect
     let mut connection = Connection {
         handle: Some(handle),
         sftp: tokio::sync::Mutex::new(None),
+        loss: loss_signal,
     };
 
     // 4. Authentification par clé
