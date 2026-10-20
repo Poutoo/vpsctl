@@ -32,17 +32,20 @@ Chaque jalon doit produire quelque chose d'utilisable.
 
 ## v2
 
-- Gestion `docker compose` (up/down sur un dossier de projet)
-- Activer / désactiver un service au démarrage
-- Filtre de recherche dans les listes
-- Détection des conteneurs tués par manque de mémoire (`OOMKilled`)
-- Édition de fichiers texte
+- [ ] Gestion `docker compose` (up/down sur un dossier de projet)
+- [ ] Activer / désactiver un service au démarrage
+- [ ] Filtre de recherche dans les listes
+- [ ] Détection des conteneurs tués par manque de mémoire (`OOMKilled`)
+- [ ] Édition de fichiers texte
+- [ ] Monitoring
+- [ ] Détection immédiate d'une perte de liaison (événement émis par le backend au lieu du polling de 30 s)
+- [ ] Glisser/Déposer de dossiers entier dans le gestionnaire
+- [ ] Gestion des droits pour MCP Claude (écriture, périmètre d'accès...)
+- [ ] Tests frontend (outil de test pour les fonctions pures) et jeux de cas partagés entre Rust et TypeScript pour les règles de validation dupliquées (`serviceRules.ts`)
+
+# Ecarté de la v2
+
 - Terminal intégré
-- Monitoring
-- Détection immédiate d'une perte de liaison (événement émis par le backend au lieu du polling de 30 s)
-- Glisser/Déposer de dossiers entier dans le gestionnaire
-- Gestion des droits pour MCP Claude (écriture, périmètre d'accès...)
-- Tests frontend (outil de test pour les fonctions pures) et jeux de cas partagés entre Rust et TypeScript pour les règles de validation dupliquées (`serviceRules.ts`)
 - Automatique MAJ app
 
 ### Accès pour Claude (serveur MCP local)
