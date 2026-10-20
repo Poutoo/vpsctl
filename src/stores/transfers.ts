@@ -37,9 +37,14 @@ export interface Transfer {
   transferId: string | null;
   /** Annulation demandée avant que l'identifiant soit connu. */
   cancelRequested: boolean;
-  /** En attente au moment d'un LOS : ne repart que par « Reprendre la file ». */
-  held: boolean;
+  /**
+   * Retenu en attente : par un LOS, ou par l'erreur de transport du
+   * transfert précédent. Ne repart que par « Reprendre la file ».
+   */
+  held: HoldReason | null;
 }
+
+export type HoldReason = "loss" | "network";
 
 export type TransferSpec = Pick<
   Transfer,
@@ -52,6 +57,14 @@ const RATE_WINDOW_MS = 3_000;
 /** Échec dû à la perte de liaison : signalé par le LOS, pas par une notification. */
 export function cutByLoss(item: Transfer): boolean {
   return item.status === "error" && item.error?.kind === "LinkLost";
+}
+
+/**
+ * Erreur de transport : la liaison ne répond plus, ou plus correctement.
+ * Lancer le transfert suivant le ferait échouer de la même façon.
+ */
+function isTransportError(error: AppError | null): boolean {
+  return error?.kind === "Network" || error?.kind === "LinkLost";
 }
 
 /**
@@ -94,21 +107,27 @@ export const useTransfersStore = defineStore("transfers", () => {
       finishedAt: null,
       transferId: null,
       cancelRequested: false,
-      held: false,
+      held: null,
     });
     pump();
   }
 
   const held = computed(() =>
-    items.value.some((item) => item.status === "queued" && item.held),
+    items.value.some((item) => item.status === "queued" && item.held !== null),
   );
+
+  function holdQueue(reason: HoldReason) {
+    for (const item of items.value) {
+      if (item.status === "queued") item.held = reason;
+    }
+  }
 
   /** Démarre le premier transfert en attente si aucun n'est actif. */
   function pump() {
     if (connection.lost) return;
     if (items.value.some((item) => item.status === "active")) return;
     const next = items.value.find(
-      (item) => item.status === "queued" && !item.held,
+      (item) => item.status === "queued" && item.held === null,
     );
     if (next) void start(next.key);
   }
@@ -193,7 +212,10 @@ export const useTransfersStore = defineStore("transfers", () => {
       transferId: null,
     });
     // Coupé par un LOS : le bandeau le signale, la file attend.
-    if (error?.kind === "LinkLost") return;
+    if (error?.kind === "LinkLost") {
+      holdQueue("loss");
+      return;
+    }
     if (item.direction === "upload" && status !== "cancelled") {
       // Envoi terminé, ou temporaire éventuel à faire apparaître.
       files.refreshIfShowing(parentPath(item.remotePath) ?? "/");
@@ -219,7 +241,11 @@ export const useTransfersStore = defineStore("transfers", () => {
         message: errorMessage(error),
       });
     }
-    pump();
+    // Pas d'enchaînement en cascade sur une liaison qui ne répond plus ; une
+    // erreur propre au fichier (cible existante, accès refusé…) laisse la
+    // file continuer.
+    if (isTransportError(error)) holdQueue("network");
+    else pump();
   }
 
   /** Annule le transfert actif ; rend la main une fois le nettoyage fait. */
@@ -253,7 +279,7 @@ export const useTransfersStore = defineStore("transfers", () => {
       error: null,
       finishedAt: null,
       overwrite: overwrite ?? item.overwrite,
-      held: false,
+      held: null,
     });
     pump();
   }
@@ -266,8 +292,8 @@ export const useTransfersStore = defineStore("transfers", () => {
   function resumeQueue() {
     if (connection.lost) return;
     for (const item of items.value) {
-      if (!item.held) continue;
-      item.held = false;
+      if (item.held === null) continue;
+      item.held = null;
       if (item.direction === "upload") item.overwrite = false;
     }
     pump();
@@ -291,22 +317,43 @@ export const useTransfersStore = defineStore("transfers", () => {
 
   /**
    * LOS : le transfert actif échoue (le backend l'a arrêté, son temporaire
-   * distant reste en résidu), ceux en attente sont retenus.
+   * distant reste en résidu) ; un échec réseau survenu après le dernier
+   * échange avec le serveur est rattaché à la perte. Un transfert qui n'avait
+   * encore rien transféré n'a pas échoué : il est remis en attente, comme
+   * ceux qui y étaient déjà, tous retenus.
    */
   function freeze() {
+    const lastReceivedAt = connection.loss?.lastReceivedAt ?? null;
+    const cutAfterLastExchange = (item: Transfer) =>
+      item.status === "error" &&
+      item.error?.kind === "Network" &&
+      lastReceivedAt !== null &&
+      item.finishedAt !== null &&
+      item.finishedAt >= lastReceivedAt;
+
     for (const item of items.value) {
-      if (item.status === "active") {
+      const cut = item.status === "active" || cutAfterLastExchange(item);
+      if (cut && item.transferred === 0) {
+        Object.assign(item, {
+          status: "queued",
+          total: null,
+          rate: null,
+          error: null,
+          startedAt: null,
+          finishedAt: null,
+          transferId: null,
+        });
+      } else if (cut) {
         Object.assign(item, {
           status: "error",
           error: { kind: "LinkLost" },
           rate: null,
-          finishedAt: Date.now(),
+          finishedAt: item.finishedAt ?? Date.now(),
           transferId: null,
         });
-      } else if (item.status === "queued") {
-        item.held = true;
       }
     }
+    holdQueue("loss");
   }
 
   connection.on("lost", freeze);

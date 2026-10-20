@@ -57,14 +57,14 @@ describe("file d'attente des transferts", () => {
     });
   });
 
-  it("passe en erreur, le signale et lance le suivant", async () => {
+  it("continue la file après une erreur propre au fichier", async () => {
     const transfers = useTransfersStore();
     transfers.enqueue(upload("a.tar"));
     transfers.enqueue(upload("b.tar"));
     await flushPromises();
     started[0].onProgress({
       type: "error",
-      error: { kind: "Network", message: "coupé" },
+      error: { kind: "PermissionDenied", path: "/srv/a.tar", side: "remote" },
     });
     await flushPromises();
 
@@ -73,8 +73,35 @@ describe("file d'attente des transferts", () => {
     expect(lastToast()).toMatchObject({
       tone: "error",
       title: "Envoi interrompu",
-      message: "coupé",
     });
+  });
+
+  it("suspend la file après une erreur de transport, sans cascade", async () => {
+    const transfers = useTransfersStore();
+    transfers.enqueue(upload("a.tar"));
+    transfers.enqueue(upload("b.tar"));
+    transfers.enqueue(upload("c.tar"));
+    await flushPromises();
+    started[0].onProgress({ type: "progress", transferred: 10, total: 100 });
+    started[0].onProgress({
+      type: "error",
+      error: { kind: "Network", message: "session SFTP interrompue" },
+    });
+    await flushPromises();
+
+    expect(started).toHaveLength(1);
+    expect(transfers.items.map((i) => [i.status, i.held])).toEqual([
+      ["error", null],
+      ["queued", "network"],
+      ["queued", "network"],
+    ]);
+    expect(transfers.held).toBe(true);
+    expect(lastToast()).toMatchObject({ title: "Envoi interrompu" });
+
+    transfers.resumeQueue();
+    await flushPromises();
+    expect(started).toHaveLength(2);
+    expect(transfers.items[1].status).toBe("active");
   });
 
   it("refuse au lancement : erreur sans identifiant", async () => {
@@ -170,13 +197,63 @@ describe("perte de liaison", () => {
       error: { kind: "LinkLost" },
     });
     expect(cutByLoss(transfers.items[0])).toBe(true);
-    expect(transfers.items[1]).toMatchObject({ status: "queued", held: true });
+    expect(transfers.items[1]).toMatchObject({
+      status: "queued",
+      held: "loss",
+    });
     expect(transfers.held).toBe(true);
     expect(started).toHaveLength(1);
     expect(useNotify().items).toHaveLength(0);
 
     started[0].onProgress({ type: "cancelled" });
     expect(transfers.items[0].status).toBe("error");
+  });
+
+  it("rattache à la perte un échec réseau survenu après le dernier échange", async () => {
+    const connection = linked();
+    const transfers = await twoQueued();
+    started[0].onProgress({
+      type: "error",
+      error: { kind: "Network", message: "délai dépassé" },
+    });
+    await flushPromises();
+    expect(transfers.items[1].held).toBe("network");
+
+    connection.linkLost(lossEvent({ lastReceivedAt: Date.now() - 5_000 }));
+    expect(transfers.items[0]).toMatchObject({
+      status: "error",
+      transferred: 41,
+      error: { kind: "LinkLost" },
+    });
+    expect(transfers.items[1].held).toBe("loss");
+  });
+
+  it("garde l'erreur réseau survenue avant le dernier échange", async () => {
+    const connection = linked();
+    const transfers = await twoQueued();
+    started[0].onProgress({
+      type: "error",
+      error: { kind: "Network", message: "délai dépassé" },
+    });
+    await flushPromises();
+
+    connection.linkLost(lossEvent({ lastReceivedAt: Date.now() + 60_000 }));
+    expect(transfers.items[0].error).toMatchObject({ kind: "Network" });
+  });
+
+  it("remet en attente un transfert coupé avant d'avoir rien transféré", async () => {
+    const connection = linked();
+    const transfers = useTransfersStore();
+    transfers.enqueue(upload("a.tar"));
+    transfers.enqueue(upload("b.tar"));
+    await flushPromises();
+
+    connection.linkLost(lossEvent());
+    expect(transfers.items.map((i) => [i.status, i.held])).toEqual([
+      ["queued", "loss"],
+      ["queued", "loss"],
+    ]);
+    expect(transfers.items[0].error).toBeNull();
   });
 
   it("ne relance rien pendant le LOS ni au rétablissement", async () => {
@@ -195,7 +272,10 @@ describe("perte de liaison", () => {
     await connection.reacquire();
     await flushPromises();
     expect(started).toHaveLength(1);
-    expect(transfers.items[1].status).toBe("queued");
+    expect(transfers.items[1]).toMatchObject({
+      status: "queued",
+      held: "loss",
+    });
   });
 
   it("reprend la file sur demande, et « Réessayer » repart de zéro", async () => {

@@ -23,6 +23,7 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 
 ### Corrigé
 
+- Transferts : après une erreur réseau, la file est suspendue (« Reprendre la file ») au lieu de lancer les transferts suivants, qui échouaient l'un après l'autre ; un transfert coupé par une perte de liaison avant d'avoir commencé revient en attente.
 - Transferts : un envoi retenu par une perte de liaison ne remplace plus un fichier existant sans redemander la confirmation à la reprise de la file.
 - Réglages : le texte des boutons du formulaire de profil avait la mauvaise couleur ; « Enregistrer » était invisible (ambre sur ambre).
 - Scripts : un nom contenant des émojis était refusé par le formulaire avant 64 caractères, alors que l'application l'acceptait.

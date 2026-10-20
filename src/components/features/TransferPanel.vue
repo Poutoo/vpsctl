@@ -76,10 +76,15 @@ function detail(item: Transfer): string {
   const total = item.total === null ? null : formatBytes(item.total, true);
   switch (item.status) {
     case "queued":
-      if (!item.held) return "—";
-      return connection.lost
-        ? "File suspendue pendant la coupure"
-        : "Retenu par la coupure · Reprendre la file pour lancer";
+      if (item.held === "network") {
+        return "File suspendue après une erreur réseau · Reprendre la file";
+      }
+      if (item.held === "loss") {
+        return connection.lost
+          ? "File suspendue pendant la coupure"
+          : "Retenu par la coupure · Reprendre la file pour lancer";
+      }
+      return "—";
     case "active": {
       const parts = [
         total === null

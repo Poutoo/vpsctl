@@ -41,6 +41,11 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 const AUTH_TIMEOUT: Duration = Duration::from_secs(30);
 /// Délai maximal d'une commande courte ou d'une mesure de latence.
 const EXEC_TIMEOUT: Duration = Duration::from_secs(15);
+/// Délai d'une requête SFTP. Plus long que la détection d'une perte
+/// silencieuse (20 s au plus, voir `link::LinkTiming`) : sur une liaison
+/// coupée, la perte est constatée avant que les requêtes n'expirent, et
+/// leur échec est rattaché à la perte plutôt que signalé comme une erreur.
+const SFTP_REQUEST_TIMEOUT_SECS: u64 = 30;
 /// Taille maximale conservée pour la sortie d'une commande courte.
 const EXEC_OUTPUT_LIMIT: usize = 1024 * 1024;
 
@@ -476,6 +481,7 @@ impl Connection {
                     AppError::network("la session SFTP n'a pas pu être ouverte à temps")
                 })??,
         );
+        session.set_timeout(SFTP_REQUEST_TIMEOUT_SECS);
         *slot = Some(session.clone());
         Ok(session)
     }
