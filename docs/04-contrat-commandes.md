@@ -118,6 +118,7 @@ Détection (russh 0.63, `ssh/link.rs`) :
 | `inactivity_timeout` | 60 s | filet pour une écriture bloquée (envoi en cours sur une liaison coupée) : pendant une écriture, russh ne fait pas tourner le keepalive |
 
 - Fermeture par le serveur (FIN, RST, message de déconnexion) : détection immédiate.
+- Un serveur qui ferme la connexion alors que des données du client ne sont pas encore lues provoque un RST, qui peut faire perdre le message de déconnexion : la cause affichée est alors `reset` au lieu de `closed` (redémarrage du VPS, par exemple).
 - Requêtes SFTP : délai de 30 s (10 s par défaut dans russh-sftp), plus long que la détection d'une perte silencieuse. Sur une liaison coupée, la perte est constatée avant que les requêtes n'expirent : leur échec devient `LinkLost`. Exception : une écriture bloquée (jusqu'à 60 s) peut encore expirer avant la détection ; l'interface suspend alors la file (voir `docs/03-architecture.md`).
 - Liaison au repos : chaque réponse à un keepalive réarme aussi `inactivity_timeout`, qui ne se déclenche donc pas (vérifié dans `client/mod.rs` : le minuteur d'inactivité n'est réarmé qu'après un tour de boucle sans envoi de keepalive, c'est-à-dire à la réception de la réponse).
 
