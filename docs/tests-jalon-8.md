@@ -105,6 +105,9 @@ Coupure au pare-feu sauf mention contraire.
 - [ ] Envoi du fichier de 500 Mo, couper à mi-parcours : même affichage. **Délai mesuré : ____ s** (jusqu'à 60 s si l'écriture était bloquée).
 - [ ] Un second transfert mis en file avant la coupure : « En attente · File suspendue pendant la coupure », « Retirer » disponible.
 - [ ] Le panneau des transferts a un contour rouge pendant le LOS.
+- [ ] Trois transferts en file (envoi du fichier de 500 Mo, puis deux téléchargements). Couper au pare-feu pendant le premier. Attendu : le premier passe en erreur (« LOS à X Mo… »), sans notification ; les deux autres restent « En attente · File suspendue pendant la coupure » ; **aucun** ne démarre, même pendant les 20 s qui précèdent le bandeau. Délai mesuré : ____ s.
+- [ ] Même scénario en coupant pendant que l'envoi écrit (débit maximal) : si une erreur réseau arrive avant le bandeau, la file se suspend aussitôt (« File suspendue après une erreur réseau »), aucun deuxième transfert n'échoue.
+- [ ] Après « Rétablir la liaison » : rien ne repart ; « Reprendre la file » lance le deuxième transfert, puis le troisième. Un envoi qui devait écraser un fichier redemande le GO / NO GO.
 
 ### Script
 
