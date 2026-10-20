@@ -32,7 +32,8 @@ export type AppIconName =
   | "more"
   | "download"
   | "upload"
-  | "search";
+  | "search"
+  | "lock";
 
 defineProps<{
   name: AppIconName;
@@ -177,6 +178,10 @@ defineProps<{
     <g v-else-if="name === 'search'">
       <circle cx="7" cy="7" r="4" />
       <path d="M10 10l3.5 3.5" />
+    </g>
+    <g v-else-if="name === 'lock'">
+      <rect x="4" y="7.5" width="8" height="6" rx="1" />
+      <path d="M6 7.5V5.5a2 2 0 0 1 4 0v2" />
     </g>
     <!-- Signal perdu : antenne barrée. -->
     <g v-else>

@@ -28,6 +28,8 @@ function service(unit: string, state: RunState): Service {
     masked: false,
     controllable: true,
     deleteBlock: null,
+    startup: "disabled",
+    startupBlock: null,
   };
 }
 
@@ -289,5 +291,102 @@ describe("filtre du tableau de bord", () => {
     services.filter = "bot";
     await connection.disconnect();
     expect(services.filter).toBe("");
+  });
+});
+
+describe("activation au démarrage", () => {
+  beforeEach(() => {
+    vi.mocked(systemd.setServiceStartup).mockImplementation(
+      async (unit, enabled) => {
+        units = units.map((s) =>
+          s.unit === unit
+            ? { ...s, startup: enabled ? "enabled" : "disabled" }
+            : s,
+        );
+        return units.find((s) => s.unit === unit)!;
+      },
+    );
+  });
+
+  it("montre l'état relu, sans notification de succès", async () => {
+    const services = useServicesStore();
+    await services.refresh();
+    const done = services.setStartup("bot.service", true);
+    expect(services.startupPending["bot.service"]).toMatchObject({
+      enabled: true,
+    });
+    await done;
+    expect(systemd.setServiceStartup).toHaveBeenCalledWith("bot.service", true);
+    expect(services.services.items[0].startup).toBe("enabled");
+    expect(services.startupPending).toEqual({});
+    expect(useNotify().items).toHaveLength(0);
+  });
+
+  it("garde l'interrupteur en cours jusqu'à une relecture partie après la commande", async () => {
+    const services = useServicesStore();
+    await services.refresh();
+    const before = vi.mocked(systemd.listServices).mock.calls.length;
+    await services.setStartup("bot.service", true);
+    expect(vi.mocked(systemd.listServices).mock.calls.length).toBe(before + 1);
+  });
+
+  it("ignore un second clic pendant le changement", async () => {
+    const services = useServicesStore();
+    await services.refresh();
+    void services.setStartup("bot.service", true);
+    void services.setStartup("bot.service", false);
+    await flushPromises();
+    expect(systemd.setServiceStartup).toHaveBeenCalledOnce();
+  });
+
+  it("notifie un échec et relit la liste", async () => {
+    vi.mocked(systemd.setServiceStartup).mockRejectedValueOnce({
+      kind: "Remote",
+      exitCode: 1,
+      stderr: "Failed to enable unit",
+    });
+    const services = useServicesStore();
+    await services.refresh();
+    await services.setStartup("bot.service", true);
+    expect(lastToast().title).toBe("Échec de l'activation au démarrage");
+    expect(lastToast().tone).toBe("error");
+    expect(services.startupPending).toEqual({});
+  });
+
+  it("signale un état relu différent de celui demandé", async () => {
+    vi.mocked(systemd.setServiceStartup).mockResolvedValueOnce({
+      ...service("bot.service", "stopped"),
+      startup: "static",
+    });
+    const services = useServicesStore();
+    await services.refresh();
+    await services.setStartup("bot.service", true);
+    expect(lastToast().message).toContain("static");
+  });
+
+  it("ne présente pas une perte de liaison comme un échec", async () => {
+    const connection = linked();
+    let fail: (error: unknown) => void = () => {};
+    vi.mocked(systemd.setServiceStartup).mockImplementationOnce(
+      () => new Promise((_, reject) => (fail = reject)),
+    );
+    const services = useServicesStore();
+    await services.refresh();
+    const done = services.setStartup("bot.service", true);
+    connection.linkLost(lossEvent());
+    expect(services.startupPending).toEqual({});
+    fail({ kind: "LinkLost" });
+    await done;
+    expect(useNotify().items).toHaveLength(0);
+    expect(services.services.items[0].startup).toBe("disabled");
+  });
+
+  it("ne lance rien pendant un LOS", async () => {
+    const connection = linked();
+    const services = useServicesStore();
+    await services.refresh();
+    connection.linkLost(lossEvent());
+    await services.setStartup("bot.service", true);
+    expect(systemd.setServiceStartup).not.toHaveBeenCalled();
   });
 });

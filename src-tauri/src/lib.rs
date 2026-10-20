@@ -69,6 +69,7 @@ pub fn run() {
             commands::systemd::service_create,
             commands::systemd::service_delete_info,
             commands::systemd::service_delete,
+            commands::systemd::service_set_startup,
             commands::systemd::user_linger,
             commands::logs::logs_start,
             commands::logs::logs_stop,

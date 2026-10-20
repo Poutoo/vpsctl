@@ -208,6 +208,7 @@ service_unit_preview(def: ServiceDef): string   // texte du fichier d'unité, sa
 service_create(def: ServiceDef): Service
 service_delete_info(unit: string): ServiceDeleteInfo
 service_delete(unit: string): void
+service_set_startup(unit: string, enabled: boolean): Service   // délai maximal 30 s
 user_linger(): boolean | null   // null : état inconnu
 ```
 
@@ -218,6 +219,17 @@ Les deux listes sont des commandes indépendantes : l'interface les appelle sép
 1. `unit` doit respecter `^[a-zA-Z0-9@._-]+\.service$`, sinon `InvalidInput`.
 2. La liste des services est relue (mêmes commandes que `services_list`) : l'unité doit y figurer et être pilotable (`controllable`, donc non masquée), sinon `InvalidInput`.
 3. `systemctl --user --no-block <start|stop|restart> -- '<unit>'` : la commande rend la main dès que la tâche est mise en file. Le résultat réel est vérifié ensuite par l'interface (voir « Vérification après une action » dans `docs/03-architecture.md`).
+
+### Activation au démarrage
+
+`services_list` renseigne `startup` (état de `systemctl --user list-unit-files --type=service --output=json --no-pager`) et `startupBlock` (voir `docs/03-architecture.md`).
+
+`service_set_startup(unit, enabled)` (délai maximal 30 s pour l'ensemble) :
+
+1. `unit` doit respecter `^[a-zA-Z0-9@._-]+\.service$`, sinon `InvalidInput`.
+2. La liste des services est relue : l'unité doit y figurer avec `startupBlock` à `null` (état `enabled` ou `disabled`, fichier ordinaire du dossier), sinon `InvalidInput`.
+3. `systemctl --user enable -- '<unit>'` ou `systemctl --user disable -- '<unit>'`, sans `--now` : rien n'est démarré ni arrêté ; `systemctl` recharge lui-même systemd. Échec : `Remote`.
+4. La liste est relue et le `Service` relu est renvoyé.
 
 ### Fichier d'unité
 
@@ -430,10 +442,15 @@ interface Service {
   masked: boolean
   controllable: boolean     // false si masquée, ou si le nom ne respecte pas ^[a-zA-Z0-9@._-]+\.service$
   deleteBlock: DeleteBlock | null   // raison pour laquelle le service ne peut pas être supprimé ; null : suppression possible
+  startup: string | null    // état de list-unit-files : enabled, disabled, static, masked… ; null : inconnu (instance, lecture impossible)
+  startupBlock: StartupBlock | null // raison pour laquelle l'activation au démarrage ne peut pas être changée ; null : interrupteur actif
 }
 
 // Par ordre de priorité (voir docs/03-architecture.md).
 type DeleteBlock = "invalidName" | "masked" | "templateInstance" | "linked"
+
+// Par ordre de priorité (voir docs/03-architecture.md).
+type StartupBlock = "invalidName" | "masked" | "templateInstance" | "linked" | "unknown" | "otherState"
 
 interface ServiceDef {
   name: string                  // sans le suffixe .service : ^[a-z0-9][a-z0-9-]*$

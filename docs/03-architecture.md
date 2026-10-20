@@ -128,6 +128,26 @@ Suppression possible (`Service.deleteBlock`, fonction pure) : uniquement pour un
 
 L'état d'exécution n'entre pas en compte : un service « en transition » (qui redémarre en boucle, par exemple) peut être supprimé.
 
+Activation au démarrage (`Service.startup`, `Service.startupBlock`, fonctions pures `parse_unit_file_states`, `apply_startup`, `startup_block`) : lue en parallèle de la liste par `systemctl --user list-unit-files --type=service --output=json --no-pager`.
+
+- La page de manuel de systemd 259 ne documente `--output=` que pour `status`, mais le code de `systemctl` (v259, `systemctl-util.c`, `output_table`) imprime en JSON tous ses tableaux, dont celui de `list-unit-files` : `[{"unit_file": …, "state": …, "preset": …}]` (`preset` à `null` pour les états qui n'en ont pas). À vérifier sur le VPS (`docs/tests-jalon-9.md`).
+- Lu sur le disque, sans argument ni unité chargée en mémoire (`systemctl show` chargerait les unités absentes de la mémoire, ce qui changerait la sortie de `list-units` d'un rafraîchissement à l'autre ; `is-enabled u1 u2…` s'arrête à la première unité en erreur).
+- Le code de retour n'est pas consulté : aucun fichier donne `[]` et un code non nul (`-ENOENT`) ; un vrai échec n'écrit rien de valide. Sortie illisible : état inconnu pour tous les services (lecture seule), la liste reste affichée. Une erreur de transport fait échouer la liste comme les deux autres lectures.
+- Instances de gabarit : `list-unit-files` ne liste que des fichiers, elles n'y figurent pas.
+
+L'interrupteur n'est actif (`startupBlock` à `null`) que si l'état est `enabled` ou `disabled` et que le service peut être supprimé (`deleteBlock` à `null`). Sinon, par ordre de priorité :
+
+| Cas | `startupBlock` |
+|---|---|
+| Nom hors de `^[a-zA-Z0-9@._-]+\.service$` | `invalidName` |
+| Unité masquée | `masked` |
+| Instance d'un gabarit | `templateInstance` |
+| Lien (`systemctl link`) : `disable` supprimerait aussi le lien et le service disparaîtrait de la liste | `linked` |
+| État illisible | `unknown` |
+| Tout autre état (`static`, `indirect`, `generated`, `transient`, `alias`, `enabled-runtime`, `bad`…) | `otherState` |
+
+Les services créés par l'application ont une section `[Install]` (`WantedBy=default.target`) : ils sont `enabled` ou `disabled`. Un fichier écrit à la main sans cette section est `static`.
+
 Création et suppression (`manage.rs`) : séquences décrites dans `docs/04-contrat-commandes.md`. Elles sont génériques sur un petit trait qui fournit l'exécution d'une commande et un `RemoteFs`, pour tester l'ordre des étapes et l'arrêt au premier échec sans réseau (`MemFs` et une exécution simulée qui enregistre les commandes).
 
 **scripts** : type `Script`, validation et règles d'enregistrement (fonctions pures), fichier `scripts.json` (écriture atomique fournie par `config`), construction de la commande d'exécution et enregistrement de `lastRun`. L'exécution passe par le registre des flux de `state.rs`, comme les logs.
@@ -308,6 +328,7 @@ src/
 - **Transferts** : file d'attente gérée dans le store `transfers`, un seul transfert actif à la fois. Après une erreur de transport (`Network`, `LinkLost`), la file est suspendue (« Reprendre la file ») au lieu d'enchaîner : sur une liaison qui ne répond plus, chaque transfert échouerait à son tour. Une erreur propre au fichier (cible existante, accès refusé, chemin invalide) laisse la file continuer. Chaque transfert a un identifiant et peut être annulé. « Afficher » ouvre le dossier local du fichier téléchargé via le plugin officiel opener de Tauri (`revealItemInDir`). Le store vit au-delà de l'écran Fichiers : un transfert continue pendant la navigation vers une autre section.
 - **Explorateur** : la liste est virtualisée (`@tanstack/vue-virtual`), triée côté Vue, dossiers (et liens vers un dossier) en premier. Les fenêtres de sélection de fichiers viennent du plugin officiel dialog (`open`, `save`). Avant une action qui peut couper l'accès SSH (`FileEntry.sshAccess`), le GO / NO GO affiche un avertissement et exige une case à cocher. Les résidus de transfert (`FileEntry.residue`) sont signalés dans la liste.
 - **Création d'un service** (écran ouvert depuis le tableau de bord) : validation instantanée de chaque champ avec les mêmes règles que le backend (`src/serviceRules.ts`, voir « Fichiers d'unité systemd ») ; aperçu du fichier obtenu du backend (`service_unit_preview`), 300 ms après la dernière saisie ; avertissement si le lingering n'est pas actif (`user_linger`). Après la création, retour au tableau de bord : la ligne est « en transition » puis vérifiée à 2,5 s, comme après un démarrage.
+- **Activation au démarrage** : colonne « Au démarrage » (planche III, cadre II) entre État et Description, interrupteur de la planche II sans GO / NO GO (`enable` et `disable` sont réversibles et n'arrêtent rien). En cours : curseur à mi-course, ACTIVATION ou DÉSACTIVATION, jusqu'à une relecture de la liste partie après la commande (un rafraîchissement lancé avant ne ramène pas l'ancien état). Pas de notification de succès ; un échec, ou un état relu différent de celui demandé, donne une notification d'erreur. Non modifiable (`startupBlock`) : cadenas, cause et explication en infobulle (`components/features/startup.ts`). LOS : interrupteur indisponible (« liaison perdue ») ; une demande coupée n'est pas notifiée, l'interrupteur revient à la valeur figée et l'état réel s'affiche après le rétablissement.
 - **Suppression d'un service** : action isolée par un séparateur, désactivée avec sa raison (`deleteBlock`) en infobulle. Le GO / NO GO liste les conséquences d'après `service_delete_info`. La liste est relue dès la fin de la séquence.
 - **Filtre des listes** (planche III, cadre IV) : purement côté interface, sur le tableau de bord (un seul champ pour Docker et systemd : nom et image, unité et description) et dans l'explorateur (noms du dossier courant). `src/listFilter.ts` (fonctions pures) cherche une sous-chaîne sans casse ni accents (décomposition NFD, marques retirées) et ramène les correspondances sur le texte d'origine pour le surlignage. Le filtre est appliqué avant la virtualisation : l'explorateur reçoit la liste triée puis filtrée, et le clavier ne parcourt que les lignes affichées ; le contrôle d'un nom déjà pris porte sur tout le dossier.
   - Le compteur passe à « 2 sur 4 ». Liste vide : état vide habituel ; filtre sans résultat : une seule ligne sous les en-têtes, avec « Effacer le filtre ».

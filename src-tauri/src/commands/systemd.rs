@@ -69,6 +69,20 @@ pub async fn service_delete(state: State<'_, AppState>, unit: String) -> Result<
         .await
 }
 
+#[tauri::command]
+pub async fn service_set_startup(
+    state: State<'_, AppState>,
+    unit: String,
+    enabled: bool,
+) -> Result<Service, AppError> {
+    state
+        .remote(|connection| async move {
+            let host = SshHost::new(connection);
+            manage::set_startup(&host, &unit, enabled).await
+        })
+        .await
+}
+
 /// Lingering du compte ; `None` si son état n'a pas pu être lu.
 #[tauri::command]
 pub async fn user_linger(state: State<'_, AppState>) -> Result<Option<bool>, AppError> {

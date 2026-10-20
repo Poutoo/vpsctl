@@ -18,7 +18,9 @@ use tokio::io::AsyncWriteExt;
 use ts_rs::TS;
 
 use super::unit::{self, ServiceDef};
-use super::{checked_unit, list_until, unloaded_service, Service, UnitFile, LIST_TIMEOUT};
+use super::{
+    checked_unit, list_until, unloaded_service, Service, StartupBlock, UnitFile, LIST_TIMEOUT,
+};
 use crate::error::{AppError, ServiceStep};
 use crate::run_state::RunState;
 use crate::sftp::fs::{RemoteFs, SftpFs};
@@ -143,6 +145,16 @@ pub fn stop_command(unit: &str) -> Result<String, AppError> {
 
 pub fn disable_command(unit: &str) -> Result<String, AppError> {
     unit_command("systemctl --user disable -- {unit}", unit)
+}
+
+/// Activation ou désactivation au démarrage seule : sans `--now`, rien n'est
+/// démarré ni arrêté. `systemctl` recharge lui-même systemd.
+pub fn startup_command(unit: &str, enabled: bool) -> Result<String, AppError> {
+    if enabled {
+        unit_command("systemctl --user enable -- {unit}", unit)
+    } else {
+        disable_command(unit)
+    }
 }
 
 /// `reset-failed` seulement si l'unité est restée en échec en mémoire : il
@@ -550,6 +562,52 @@ pub async fn delete(host: &impl UnitHost, unit: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+fn startup_reason(block: StartupBlock) -> &'static str {
+    match block {
+        StartupBlock::InvalidName => "nom hors du format accepté",
+        StartupBlock::Masked => "unité masquée",
+        StartupBlock::TemplateInstance => "instance d'un gabarit",
+        StartupBlock::Linked => "lien vers un fichier situé ailleurs",
+        StartupBlock::Unknown => "état d'activation illisible",
+        StartupBlock::OtherState => "état d'activation non modifiable",
+    }
+}
+
+/// Active ou désactive un service au démarrage (`enable` / `disable`, sans
+/// démarrer ni arrêter), puis renvoie le service relu. Refusé si
+/// l'interrupteur est en lecture seule (`startup_block`).
+pub async fn set_startup(
+    host: &impl UnitHost,
+    unit: &str,
+    enabled: bool,
+) -> Result<Service, AppError> {
+    let unit = checked_unit(unit)?;
+    let command = startup_command(unit, enabled)?;
+    let deadline = Deadline::after(STEP_TIMEOUT);
+    let missing = || {
+        AppError::invalid_input(format!(
+            "{unit} n'est pas un service de ~/.config/systemd/user/"
+        ))
+    };
+    let services = host.services(deadline).await?;
+    let service = services
+        .iter()
+        .find(|s| s.unit == unit)
+        .ok_or_else(missing)?;
+    if let Some(block) = service.startup_block {
+        return Err(AppError::invalid_input(format!(
+            "l'activation au démarrage de {unit} ne peut pas être changée ({})",
+            startup_reason(block)
+        )));
+    }
+    run_ok(host, &command, deadline).await?;
+    host.services(deadline)
+        .await?
+        .into_iter()
+        .find(|s| s.unit == unit)
+        .ok_or_else(missing)
+}
+
 /// Lingering du compte : `None` si l'état n'a pas pu être lu.
 pub async fn linger(connection: &Connection) -> Option<bool> {
     let output = connection
@@ -659,6 +717,8 @@ mod tests {
             masked: delete_block == Some(DeleteBlock::Masked),
             controllable: true,
             delete_block,
+            startup: Some("enabled".into()),
+            startup_block: crate::systemd::startup_block(delete_block, Some("enabled")),
         }
     }
 
@@ -1165,6 +1225,76 @@ mod tests {
         let info = delete_info(&host, "bot.service").await.unwrap();
         assert_eq!(info.drop_in, None);
         assert!(!info.active);
+    }
+
+    // --- Activation au démarrage -------------------------------------------
+
+    #[test]
+    fn startup_commands_neither_start_nor_stop() {
+        assert_eq!(
+            startup_command("bot.service", true).unwrap(),
+            "systemctl --user enable -- 'bot.service'"
+        );
+        assert_eq!(
+            startup_command("bot.service", false).unwrap(),
+            "systemctl --user disable -- 'bot.service'"
+        );
+        assert!(startup_command("x; rm -rf ~.service", true).is_err());
+    }
+
+    fn startup_host(startup: &str, block: Option<StartupBlock>) -> FakeHost {
+        FakeHost {
+            services: vec![Service {
+                startup: Some(startup.into()),
+                startup_block: block,
+                ..service("bot.service", RunState::Nominal, None)
+            }],
+            ..FakeHost::new(MemFs::new(HOME))
+        }
+    }
+
+    #[tokio::test]
+    async fn set_startup_runs_the_command_and_rereads_the_service() {
+        let host = startup_host("disabled", None);
+        let service = set_startup(&host, "bot.service", true).await.unwrap();
+        assert_eq!(service.unit, "bot.service");
+        assert_eq!(
+            host.commands(),
+            ["systemctl --user enable -- 'bot.service'"]
+        );
+
+        let host = startup_host("enabled", None);
+        set_startup(&host, "bot.service", false).await.unwrap();
+        assert_eq!(
+            host.commands(),
+            ["systemctl --user disable -- 'bot.service'"]
+        );
+    }
+
+    #[tokio::test]
+    async fn set_startup_refuses_read_only_unknown_and_invalid_services() {
+        let host = startup_host("static", Some(StartupBlock::OtherState));
+        let error = set_startup(&host, "bot.service", true).await.unwrap_err();
+        assert!(matches!(error, AppError::InvalidInput { .. }));
+
+        let error = set_startup(&host, "other.service", true).await.unwrap_err();
+        assert!(matches!(error, AppError::InvalidInput { .. }));
+
+        let error = set_startup(&host, "bot; id.service", true)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::InvalidInput { .. }));
+        assert!(host.commands().is_empty());
+    }
+
+    #[tokio::test]
+    async fn set_startup_reports_a_failed_command() {
+        let host = FakeHost {
+            fail: Some("systemctl --user enable"),
+            ..startup_host("disabled", None)
+        };
+        let error = set_startup(&host, "bot.service", true).await.unwrap_err();
+        assert!(matches!(error, AppError::Remote { .. }));
     }
 
     #[test]

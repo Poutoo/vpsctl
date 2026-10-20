@@ -178,6 +178,7 @@ const refreshedLabel = computed(() => {
             :query="store.filter"
             :loading="loading"
             @clear-filter="store.filter = ''"
+            @startup="(s, enabled) => store.setStartup(s.unit, enabled)"
             @logs="(s) => telemetry.showLogs(serviceLogTarget(s.unit))"
             @operate="onService"
           />

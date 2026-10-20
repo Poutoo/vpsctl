@@ -9,6 +9,7 @@ import {
   targetKey,
   useServicesStore,
 } from "../../stores/services";
+import AppSwitch from "../ui/AppSwitch.vue";
 import DataTable from "../ui/DataTable.vue";
 import FilterNoMatch from "../ui/FilterNoMatch.vue";
 import HighlightText from "../ui/HighlightText.vue";
@@ -19,6 +20,7 @@ import {
   serviceAvailability,
   type ServiceOperation,
 } from "./availability";
+import { startupView } from "./startup";
 
 const props = withDefaults(
   defineProps<{
@@ -37,6 +39,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   logs: [service: Service];
   operate: [service: Service, operation: ServiceOperation];
+  startup: [service: Service, enabled: boolean];
   clearFilter: [];
 }>();
 
@@ -73,7 +76,16 @@ function view(service: Service) {
           : reasons[operation],
     busySince: (operation: ServiceOperation) =>
       pending?.operation === operation ? pending.since : null,
+    startup: startupView(service),
+    startupBusy: startupBusyLabel(service),
   };
+}
+
+/** Changement d'activation en cours : étiquette au participe. */
+function startupBusyLabel(service: Service): string | null {
+  const change = store.startupPending[service.unit];
+  if (!change) return null;
+  return change.enabled ? "Activation" : "Désactivation";
 }
 
 const rows = computed(() =>
@@ -105,6 +117,7 @@ function rawState(service: Service): string {
     <colgroup>
       <col class="unit" />
       <col class="state" />
+      <col class="startup" />
       <col class="description" />
       <col class="actions" />
     </colgroup>
@@ -112,6 +125,7 @@ function rawState(service: Service): string {
       <tr>
         <th scope="col">Unité</th>
         <th scope="col">État</th>
+        <th scope="col">Au démarrage</th>
         <th scope="col">Description</th>
         <th scope="col" class="actions-head">Actions</th>
       </tr>
@@ -122,11 +136,12 @@ function rawState(service: Service): string {
         <td />
         <td />
         <td />
+        <td />
       </tr>
     </tbody>
     <tbody v-else-if="services.length === 0 && total > 0">
       <tr class="no-match-row">
-        <td colspan="4">
+        <td colspan="5">
           <FilterNoMatch
             :total="total"
             :query="query"
@@ -169,6 +184,23 @@ function rawState(service: Service): string {
             "
             :since="row.pending?.since ?? null"
             :arrival="row.arrival"
+          />
+        </td>
+        <td>
+          <AppSwitch
+            :model-value="
+              row.startupBusy !== null
+                ? store.startupPending[service.unit].enabled
+                : row.startup.checked
+            "
+            :label="`Démarrage automatique de ${service.unit}`"
+            hide-label
+            show-state
+            :busy-label="row.startupBusy"
+            :locked="row.startup.locked"
+            :help="row.startup.help"
+            :unavailable="connection.lost ? 'liaison perdue' : null"
+            @update:model-value="(enabled) => emit('startup', service, enabled)"
           />
         </td>
         <td
@@ -221,6 +253,10 @@ function rawState(service: Service): string {
 
 .state {
   width: 20%;
+}
+
+.startup {
+  width: var(--startup-column-width);
 }
 
 /* La description prend la largeur restante. */

@@ -5,7 +5,9 @@
 //! Noms de services validés par `^[a-zA-Z0-9@._-]+\.service$`.
 //!
 //! Liste : unités en mémoire (`list-units` en JSON) et fichiers d'unité du
-//! dossier utilisateur (lus par SFTP), croisés par `select_user_services`.
+//! dossier utilisateur (lus par SFTP), croisés par `select_user_services`,
+//! plus l'état d'activation au démarrage de chaque fichier (`list-unit-files`
+//! en JSON, `apply_startup`).
 //! Règle de filtrage et correspondance des états : `docs/03-architecture.md`.
 //!
 //! - `unit` : validation d'un service à créer et texte de son fichier d'unité ;
@@ -28,6 +30,10 @@ use crate::stream::{self, LineParser, LogLine, Origin, Raw};
 
 const LIST_COMMAND: &str =
     "systemctl --user list-units --type=service --all --output=json --no-pager";
+/// État d'activation de tous les fichiers d'unité, sans argument : lu sur le
+/// disque, sans charger d'unité en mémoire (contrairement à `systemctl show`).
+const UNIT_FILES_COMMAND: &str =
+    "systemctl --user list-unit-files --type=service --output=json --no-pager";
 /// Dossier des fichiers d'unité de l'utilisateur, relatif au dossier personnel
 /// (point de départ des chemins SFTP).
 pub const UNIT_DIR: &str = ".config/systemd/user";
@@ -58,6 +64,41 @@ pub struct Service {
     /// Raison pour laquelle le service ne peut pas être supprimé ; `None` :
     /// suppression possible (voir `delete_block`).
     pub delete_block: Option<DeleteBlock>,
+    /// État d'activation au démarrage, tel que `list-unit-files` le donne :
+    /// enabled, disabled, static, masked, linked, indirect… `None` : inconnu
+    /// (instance de gabarit, lecture impossible).
+    pub startup: Option<String>,
+    /// Raison pour laquelle l'activation au démarrage ne peut pas être
+    /// changée ; `None` : interrupteur actif (voir `startup_block`).
+    pub startup_block: Option<StartupBlock>,
+}
+
+/// Raison pour laquelle l'activation au démarrage est en lecture seule, par
+/// ordre de priorité.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum StartupBlock {
+    /// Nom hors de `^[a-zA-Z0-9@._-]+\.service$` : aucune commande possible.
+    InvalidName,
+    Masked,
+    /// Instance d'un gabarit : pas de fichier propre.
+    TemplateInstance,
+    /// Lien (`systemctl link`) : `disable` supprimerait aussi le lien, et le
+    /// service disparaîtrait de la liste.
+    Linked,
+    /// État illisible.
+    Unknown,
+    /// État autre que `enabled` ou `disabled` (static, indirect, generated,
+    /// enabled-runtime…) : affiché tel quel.
+    OtherState,
+}
+
+/// Une ligne de `systemctl --user list-unit-files --output=json`.
+#[derive(Debug, Deserialize)]
+struct UnitFileRow {
+    unit_file: String,
+    state: String,
 }
 
 /// Raison pour laquelle un service ne peut pas être supprimé depuis
@@ -137,11 +178,17 @@ pub fn ensure_controllable(services: &[Service], unit: &str) -> Result<(), AppEr
 }
 
 async fn list_until(connection: &Connection, deadline: Deadline) -> Result<Vec<Service>, AppError> {
-    let (units, files) = tokio::join!(
+    let (units, files, startup) = tokio::join!(
         list_units(connection, deadline),
         ssh::within(deadline, unit_files(connection)),
+        connection.exec_until(UNIT_FILES_COMMAND, deadline),
     );
-    Ok(select_user_services(units?, &files?))
+    let mut services = select_user_services(units?, &files?);
+    apply_startup(
+        &mut services,
+        parse_unit_file_states(&startup?.stdout_text()).as_ref(),
+    );
+    Ok(services)
 }
 
 async fn list_units(connection: &Connection, deadline: Deadline) -> Result<Vec<UnitRow>, AppError> {
@@ -201,6 +248,50 @@ pub fn parse_list_units(output: &str) -> Result<Vec<UnitRow>, AppError> {
         .map_err(|e| AppError::io(format!("réponse inattendue de systemctl : {e}")))
 }
 
+/// États d'activation de `list-unit-files`, par nom de fichier d'unité.
+/// `None` si la sortie n'est pas un tableau JSON valide. Le code de retour
+/// n'est pas consulté : `list-unit-files` échoue (`-ENOENT`) quand aucun
+/// fichier ne correspond, après avoir écrit `[]`, et un vrai échec n'écrit
+/// rien de valide sur la sortie standard.
+pub fn parse_unit_file_states(output: &str) -> Option<HashMap<String, String>> {
+    let rows: Vec<UnitFileRow> = serde_json::from_str(output.trim()).ok()?;
+    Some(
+        rows.into_iter()
+            .map(|row| (row.unit_file, row.state))
+            .collect(),
+    )
+}
+
+/// Renseigne l'état d'activation de chaque service et ce qu'il permet.
+/// `states` à `None` (lecture impossible) : état inconnu pour tous.
+pub fn apply_startup(services: &mut [Service], states: Option<&HashMap<String, String>>) {
+    for service in services {
+        service.startup = states.and_then(|states| states.get(&service.unit).cloned());
+        service.startup_block = startup_block(service.delete_block, service.startup.as_deref());
+    }
+}
+
+/// L'interrupteur n'est actif que pour un fichier ordinaire du dossier
+/// utilisateur, au nom valide, dont l'état est `enabled` ou `disabled`. Les
+/// cas exclus de la suppression (`delete_block`) le sont aussi, dans le même
+/// ordre de priorité.
+pub fn startup_block(
+    delete_block: Option<DeleteBlock>,
+    startup: Option<&str>,
+) -> Option<StartupBlock> {
+    match delete_block {
+        Some(DeleteBlock::InvalidName) => Some(StartupBlock::InvalidName),
+        Some(DeleteBlock::Masked) => Some(StartupBlock::Masked),
+        Some(DeleteBlock::TemplateInstance) => Some(StartupBlock::TemplateInstance),
+        Some(DeleteBlock::Linked) => Some(StartupBlock::Linked),
+        None => match startup {
+            None => Some(StartupBlock::Unknown),
+            Some("enabled" | "disabled") => None,
+            Some(_) => Some(StartupBlock::OtherState),
+        },
+    }
+}
+
 /// Gabarit d'une instance : `bot@1.service` → `bot@.service`. `None` pour
 /// une unité qui n'est pas une instance (dont le gabarit lui-même).
 pub fn template_of(unit: &str) -> Option<String> {
@@ -253,9 +344,12 @@ pub fn select_user_services(units: Vec<UnitRow>, files: &[UnitFile]) -> Vec<Serv
 
 fn loaded_service(row: UnitRow, masked: bool, file: Option<&UnitFile>) -> Service {
     let state = run_state(&row.load, &row.active);
+    let delete_block = delete_block(&row.unit, masked, file);
     Service {
         controllable: !masked && is_valid_unit_name(&row.unit),
-        delete_block: delete_block(&row.unit, masked, file),
+        delete_block,
+        startup: None,
+        startup_block: startup_block(delete_block, None),
         description: Some(row.description).filter(|d| !d.is_empty()),
         unit: row.unit,
         load: Some(row.load),
@@ -267,6 +361,7 @@ fn loaded_service(row: UnitRow, masked: bool, file: Option<&UnitFile>) -> Servic
 }
 
 fn unloaded_service(file: &UnitFile) -> Service {
+    let delete_block = delete_block(&file.name, file.masked, Some(file));
     Service {
         unit: file.name.clone(),
         load: None,
@@ -276,7 +371,9 @@ fn unloaded_service(file: &UnitFile) -> Service {
         state: RunState::Stopped,
         masked: file.masked,
         controllable: !file.masked && is_valid_unit_name(&file.name),
-        delete_block: delete_block(&file.name, file.masked, Some(file)),
+        delete_block,
+        startup: None,
+        startup_block: startup_block(delete_block, None),
     }
 }
 
@@ -639,6 +736,8 @@ mod tests {
                 masked: false,
                 controllable: true,
                 delete_block: None,
+                startup: None,
+                startup_block: Some(StartupBlock::Unknown),
             }
         );
     }
@@ -729,6 +828,143 @@ mod tests {
         assert!(is_template("bot@.service"));
         assert!(!is_template("bot@1.service"));
         assert!(!is_template("@.service"));
+    }
+
+    // --- Activation au démarrage ----------------------------------------
+
+    /// Sortie de `systemctl --user list-unit-files --type=service
+    /// --output=json` (systemd 259) : `preset` vaut `null` pour les états
+    /// qui n'en ont pas.
+    const LIST_UNIT_FILES: &str = r#"[
+{"unit_file":"api.service","state":"enabled","preset":"enabled"},
+{"unit_file":"bot@.service","state":"indirect","preset":"enabled"},
+{"unit_file":"broken.service","state":"bad","preset":null},
+{"unit_file":"cron-like.service","state":"static","preset":null},
+{"unit_file":"dbus.service","state":"static","preset":null},
+{"unit_file":"hidden.service","state":"masked","preset":null},
+{"unit_file":"never-started.service","state":"disabled","preset":"enabled"}
+]"#;
+
+    fn with_startup() -> Vec<Service> {
+        let mut services =
+            select_user_services(parse_list_units(LIST_UNITS).unwrap(), &user_files());
+        apply_startup(
+            &mut services,
+            parse_unit_file_states(LIST_UNIT_FILES).as_ref(),
+        );
+        services
+    }
+
+    fn startup_of(unit: &str) -> (Option<String>, Option<StartupBlock>) {
+        let service = with_startup().into_iter().find(|s| s.unit == unit).unwrap();
+        (service.startup, service.startup_block)
+    }
+
+    #[test]
+    fn list_unit_files_json_is_parsed() {
+        let states = parse_unit_file_states(LIST_UNIT_FILES).unwrap();
+        assert_eq!(states.len(), 7);
+        assert_eq!(states["api.service"], "enabled");
+        assert_eq!(states["never-started.service"], "disabled");
+    }
+
+    #[test]
+    fn empty_or_invalid_list_unit_files_output() {
+        // Aucun fichier : `[]` (avec un code de retour non nul).
+        assert_eq!(parse_unit_file_states("[]\n"), Some(HashMap::new()));
+        // Échec réel : rien de valide sur la sortie standard.
+        assert_eq!(parse_unit_file_states(""), None);
+        assert_eq!(parse_unit_file_states("UNIT FILE STATE PRESET"), None);
+    }
+
+    #[test]
+    fn only_enabled_and_disabled_files_can_be_toggled() {
+        assert_eq!(startup_of("api.service"), (Some("enabled".into()), None));
+        assert_eq!(
+            startup_of("never-started.service"),
+            (Some("disabled".into()), None)
+        );
+        assert_eq!(
+            startup_of("cron-like.service"),
+            (Some("static".into()), Some(StartupBlock::OtherState))
+        );
+        assert_eq!(
+            startup_of("broken.service"),
+            (Some("bad".into()), Some(StartupBlock::OtherState))
+        );
+    }
+
+    #[test]
+    fn masked_instances_and_links_are_read_only() {
+        assert_eq!(
+            startup_of("hidden.service"),
+            (Some("masked".into()), Some(StartupBlock::Masked))
+        );
+        // Instance : absente de list-unit-files, qui ne liste que les fichiers.
+        assert_eq!(
+            startup_of("bot@1.service"),
+            (None, Some(StartupBlock::TemplateInstance))
+        );
+        // Lien activé : `disable` supprimerait aussi le lien.
+        assert_eq!(
+            startup_block(Some(DeleteBlock::Linked), Some("enabled")),
+            Some(StartupBlock::Linked)
+        );
+        assert_eq!(
+            startup_block(Some(DeleteBlock::InvalidName), Some("enabled")),
+            Some(StartupBlock::InvalidName)
+        );
+    }
+
+    #[test]
+    fn unreadable_states_are_unknown_for_every_service() {
+        let mut services =
+            select_user_services(parse_list_units(LIST_UNITS).unwrap(), &user_files());
+        apply_startup(&mut services, None);
+        let api = services.iter().find(|s| s.unit == "api.service").unwrap();
+        assert_eq!(api.startup, None);
+        assert_eq!(api.startup_block, Some(StartupBlock::Unknown));
+    }
+
+    #[test]
+    fn other_states_are_read_only() {
+        for state in [
+            "static",
+            "indirect",
+            "generated",
+            "transient",
+            "alias",
+            "enabled-runtime",
+            "linked",
+            "linked-runtime",
+            "masked-runtime",
+            "bad",
+        ] {
+            assert_eq!(
+                startup_block(None, Some(state)),
+                Some(StartupBlock::OtherState),
+                "{state}"
+            );
+        }
+    }
+
+    #[test]
+    fn startup_serializes_in_camel_case() {
+        let api = with_startup()
+            .into_iter()
+            .find(|s| s.unit == "api.service")
+            .unwrap();
+        let value = serde_json::to_value(api).unwrap();
+        assert_eq!(value["startup"], json!("enabled"));
+        assert_eq!(value["startupBlock"], json!(null));
+        assert_eq!(
+            serde_json::to_value(StartupBlock::TemplateInstance).unwrap(),
+            json!("templateInstance")
+        );
+        assert_eq!(
+            serde_json::to_value(StartupBlock::OtherState).unwrap(),
+            json!("otherState")
+        );
     }
 
     // --- Correspondance des états ---------------------------------------
@@ -1156,6 +1392,8 @@ mod tests {
                 "masked": false,
                 "controllable": true,
                 "deleteBlock": null,
+                "startup": null,
+                "startupBlock": "unknown",
             })
         );
     }

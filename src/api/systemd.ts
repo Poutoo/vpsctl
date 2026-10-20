@@ -49,6 +49,17 @@ export function createService(def: ServiceDef): Promise<Service> {
   return call("service_create", { def });
 }
 
+/**
+ * Active ou désactive un service au démarrage (`enable` / `disable`, sans le
+ * démarrer ni l'arrêter), puis renvoie le service relu.
+ */
+export function setServiceStartup(
+  unit: string,
+  enabled: boolean,
+): Promise<Service> {
+  return call("service_set_startup", { unit, enabled });
+}
+
 /** Lingering du compte ; `null` si son état n'a pas pu être lu. */
 export function userLinger(): Promise<boolean | null> {
   return call("user_linger");

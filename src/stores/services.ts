@@ -45,6 +45,12 @@ export interface Pending {
   since: number;
 }
 
+/** Changement d'activation au démarrage en cours sur un service. */
+export interface StartupPending {
+  enabled: boolean;
+  since: number;
+}
+
 /** Changement d'état à animer une fois, après une action. */
 export interface Arrival {
   direction: "on" | "off";
@@ -140,6 +146,8 @@ export const useServicesStore = defineStore("services", () => {
   const pending = ref<Record<string, Pending>>({});
   /** Animations de changement d'état à jouer, par ligne. */
   const arrivals = ref<Record<string, Arrival>>({});
+  /** Changements d'activation au démarrage en cours, par unité. */
+  const startupPending = ref<Record<string, StartupPending>>({});
   /**
    * Filtre du tableau de bord, commun aux deux listes. Gardé en changeant
    * d'écran et pendant un LOS ; vidé à la fin de la session.
@@ -239,6 +247,7 @@ export const useServicesStore = defineStore("services", () => {
     refreshedAt.value = null;
     pending.value = {};
     arrivals.value = {};
+    startupPending.value = {};
     filter.value = "";
   }
 
@@ -369,6 +378,58 @@ export const useServicesStore = defineStore("services", () => {
     return created;
   }
 
+  /**
+   * Active ou désactive un service au démarrage, sans GO / NO GO (action
+   * réversible qui ne démarre ni n'arrête rien). Pendant le changement,
+   * l'interrupteur est « en cours » ; il le reste jusqu'à une relecture de la
+   * liste partie après la commande, pour qu'un rafraîchissement lancé avant
+   * ne le ramène pas à l'ancien état. Pas de notification de succès :
+   * l'interrupteur montre l'état relu. Une perte de liaison n'est pas un
+   * échec : l'interrupteur revient à la valeur figée.
+   */
+  async function setStartup(unit: string, enabled: boolean) {
+    if (connection.lost || startupPending.value[unit]) return;
+    const current = generation;
+    startupPending.value[unit] = { enabled, since: performance.now() };
+    const title = enabled
+      ? "Échec de l'activation au démarrage"
+      : "Échec de la désactivation au démarrage";
+    try {
+      const updated = await systemd.setServiceStartup(unit, enabled);
+      if (current !== generation) return;
+      replaceService(updated);
+      const expected = enabled ? "enabled" : "disabled";
+      if (updated.startup !== expected) {
+        notify({
+          tone: "error",
+          title,
+          detail: unit,
+          message: `État relu : « ${updated.startup ?? "inconnu"} ».`,
+        });
+      }
+      await refreshFresh();
+    } catch (raw) {
+      if (current !== generation) return;
+      if ((raw as AppError).kind === "LinkLost") return;
+      notify({
+        tone: "error",
+        title,
+        detail: unit,
+        message: errorMessage(raw as AppError),
+      });
+      void refresh();
+    } finally {
+      if (current === generation) delete startupPending.value[unit];
+    }
+  }
+
+  function replaceService(updated: Service) {
+    const items = services.value.items.map((s) =>
+      s.unit === updated.unit ? updated : s,
+    );
+    services.value = { ...services.value, items };
+  }
+
   function conclude(
     target: Target,
     operation: Operation,
@@ -443,6 +504,7 @@ export const useServicesStore = defineStore("services", () => {
     generation++;
     pending.value = {};
     arrivals.value = {};
+    startupPending.value = {};
     if (containers.value.error && lastGood.containers) {
       containers.value = lastGood.containers;
     }
@@ -472,11 +534,13 @@ export const useServicesStore = defineStore("services", () => {
     frozenAt,
     pending,
     arrivals,
+    startupPending,
     filter,
     shownContainers,
     shownServices,
     refresh,
     perform,
     create,
+    setStartup,
   };
 });
