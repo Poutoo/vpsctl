@@ -258,10 +258,18 @@ export const useTransfersStore = defineStore("transfers", () => {
     pump();
   }
 
-  /** « Reprendre la file » : les transferts retenus par un LOS repartent. */
+  /**
+   * « Reprendre la file » : les transferts retenus repartent. Un écrasement
+   * confirmé avant la coupure ne vaut plus : la cible a pu changer, une cible
+   * existante est refusée et « Réessayer » redemande le GO / NO GO.
+   */
   function resumeQueue() {
     if (connection.lost) return;
-    for (const item of items.value) item.held = false;
+    for (const item of items.value) {
+      if (!item.held) continue;
+      item.held = false;
+      if (item.direction === "upload") item.overwrite = false;
+    }
     pump();
   }
 

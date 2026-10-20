@@ -221,6 +221,26 @@ describe("perte de liaison", () => {
     });
   });
 
+  it("redemande l'écrasement d'un envoi retenu à la reprise", async () => {
+    const connection = linked();
+    vi.mocked(connectionApi.connect).mockResolvedValue({
+      profileId: "p1",
+      connectedAt: 5,
+      latencyMs: null,
+    });
+    const transfers = useTransfersStore();
+    transfers.enqueue(upload("a.tar"));
+    transfers.enqueue({ ...upload("b.tar"), overwrite: true });
+    await flushPromises();
+    connection.linkLost(lossEvent());
+    await connection.reacquire();
+
+    transfers.resumeQueue();
+    await flushPromises();
+    expect(transfers.items[1].overwrite).toBe(false);
+    expect(vi.mocked(api.upload).mock.calls[1][2]).toBe(false);
+  });
+
   it("démarre un nouvel envoi après le rétablissement sans libérer la file retenue", async () => {
     const connection = linked();
     vi.mocked(connectionApi.connect).mockResolvedValue({
