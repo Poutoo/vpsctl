@@ -56,5 +56,5 @@ Il s'agit de services utilisateur (`systemctl --user`), pas de services système
 - Oublier l'empreinte ou la passphrase depuis les réglages (le remplacement d'empreinte passe par l'alerte de sécurité ; une passphrase erronée est simplement redemandée puis remplacée dans le trousseau)
 - Modification des droits des fichiers
 - Services lancés autrement que par Docker ou systemd (screen, tmux, pm2)
-- Activer ou désactiver un service au démarrage (`systemctl --user enable/disable`) : v2
-- Filtre de recherche dans les listes : v2
+- Activer ou désactiver un service au démarrage (`systemctl --user enable/disable`) : v1.1 (jalon 9)
+- Filtre de recherche dans les listes : v1.1 (jalon 9)

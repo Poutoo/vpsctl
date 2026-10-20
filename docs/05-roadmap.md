@@ -30,18 +30,27 @@ Chaque jalon doit produire quelque chose d'utilisable.
 - [x] Jalon 6 : créer et supprimer des services systemd
 - [x] Jalon 7 : packaging et utilisation quotidienne sur les deux machines
 
+## v1.1
+
+Maquettes : `docs/design/planche III/`.
+
+- [ ] Jalon 8 : fondations
+  - [ ] Tests frontend (Vitest) : stores, validations, formatage, transitions d'état ; exécutés par la CI
+  - [ ] Cas partagés entre Rust et TypeScript pour les règles présentes des deux côtés (`tests/shared/`)
+  - [ ] Détection immédiate d'une perte de liaison : keepalive SSH, événement unique émis par le backend, état LOS dans toute l'appli, reconnexion manuelle
+- [ ] Jalon 9 : confort
+  - [ ] Filtre de recherche dans les listes
+  - [ ] Activer / désactiver un service au démarrage
+  - [ ] Détection des conteneurs tués par manque de mémoire (`OOMKilled`)
+  - [ ] Papillon dans la barre de titre
+
 ## v2
 
 - [ ] Gestion `docker compose` (up/down sur un dossier de projet)
-- [ ] Activer / désactiver un service au démarrage
-- [ ] Filtre de recherche dans les listes
-- [ ] Détection des conteneurs tués par manque de mémoire (`OOMKilled`)
 - [ ] Édition de fichiers texte
 - [ ] Monitoring
-- [ ] Détection immédiate d'une perte de liaison (événement émis par le backend au lieu du polling de 30 s)
 - [ ] Glisser/Déposer de dossiers entier dans le gestionnaire
 - [ ] Gestion des droits pour MCP Claude (écriture, périmètre d'accès...)
-- [ ] Tests frontend (outil de test pour les fonctions pures) et jeux de cas partagés entre Rust et TypeScript pour les règles de validation dupliquées (`serviceRules.ts`)
 
 # Ecarté de la v2
 
