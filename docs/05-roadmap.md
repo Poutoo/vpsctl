@@ -27,8 +27,8 @@ Chaque jalon doit produire quelque chose d'utilisable.
 - [x] Jalon 3 : piloter les services (start/stop/restart avec confirmation) et logs en direct
 - [x] Jalon 4 : explorateur SFTP
 - [x] Jalon 5 : scripts personnalisés
-- [ ] Jalon 6 : créer et supprimer des services systemd
-- [ ] Jalon 7 : packaging et utilisation quotidienne sur les deux machines
+- [x] Jalon 6 : créer et supprimer des services systemd
+- [x] Jalon 7 : packaging et utilisation quotidienne sur les deux machines
 
 ## v2
 
