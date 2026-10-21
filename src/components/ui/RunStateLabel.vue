@@ -19,6 +19,8 @@ const props = withDefaults(
     state: RunState;
     /** Complément affiché après le libellé, ex. « code 137 ». */
     detail?: string | null;
+    /** Mention encadrée après le libellé, ex. « Mémoire ». */
+    tag?: string | null;
     /** État brut, en infobulle. */
     raw: string;
     /** Libellé à la place de celui de l'état, ex. « Démarrage ». */
@@ -28,7 +30,7 @@ const props = withDefaults(
     /** Animation de changement d'état à jouer une fois. */
     arrival?: { direction: "on" | "off"; token: number } | null;
   }>(),
-  { detail: null, label: null, since: null, arrival: null },
+  { detail: null, tag: null, label: null, since: null, arrival: null },
 );
 
 const elapsed = useElapsed(toRef(props, "since"));
@@ -49,6 +51,7 @@ const chrono = computed(() =>
     <span class="caps label">{{ label ?? RUN_STATE_LABEL[state] }}</span>
     <span v-if="chrono" class="chrono">· {{ chrono }}</span>
     <span v-else-if="detail" class="detail">· {{ detail }}</span>
+    <span v-if="tag && !chrono" class="caps tag">{{ tag }}</span>
   </span>
 </template>
 
@@ -73,6 +76,13 @@ const chrono = computed(() =>
   overflow: hidden;
   color: var(--color-text-muted);
   text-overflow: ellipsis;
+}
+
+/* Mention encadrée : contour (forme) rouge, texte lisible. */
+.tag {
+  padding: 0 var(--sp-1);
+  border: var(--border-width) solid var(--color-danger);
+  border-radius: var(--r-1);
 }
 
 .chrono {

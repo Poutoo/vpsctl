@@ -29,4 +29,14 @@ status: string,
 /**
  * « depuis 3 heures », « il y a 4 jours ».
  */
-duration: string | null, };
+duration: string | null, 
+/**
+ * Sorti avec le code 137 parce que le noyau l'a tué par manque de
+ * mémoire (`State.OOMKilled` de `docker inspect`) : affiché en échec.
+ */
+oomKilled: boolean, 
+/**
+ * Limite mémoire du conteneur en octets (`HostConfig.Memory`), lue avec
+ * `OOMKilled` ; `None` : sans limite ou non lue.
+ */
+memoryLimit: number | null, };

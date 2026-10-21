@@ -16,6 +16,7 @@ import HighlightText from "../ui/HighlightText.vue";
 import IconButton from "../ui/IconButton.vue";
 import RunStateLabel from "../ui/RunStateLabel.vue";
 import { containerAvailability, OPERATION_PROGRESS } from "./availability";
+import { containerStateDetail, containerStateHelp } from "./containerState";
 
 const props = withDefaults(
   defineProps<{
@@ -78,14 +79,6 @@ function view(container: Container) {
 const rows = computed(() =>
   props.containers.map((container) => ({ container, row: view(container) })),
 );
-
-/** Code de sortie, affiché quand le conteneur est arrêté ou en échec. */
-function exitDetail(container: Container): string | null {
-  const shown = container.state === "stopped" || container.state === "failed";
-  return shown && container.exitCode !== null
-    ? `code ${container.exitCode}`
-    : null;
-}
 </script>
 
 <template>
@@ -141,8 +134,9 @@ function exitDetail(container: Container): string | null {
         <td>
           <RunStateLabel
             :state="row.state"
-            :detail="exitDetail(container)"
-            :raw="`${container.dockerState} · ${container.status}`"
+            :detail="containerStateDetail(container)"
+            :tag="container.oomKilled && !row.pending ? 'Mémoire' : null"
+            :raw="containerStateHelp(container)"
             :label="
               row.pending ? OPERATION_PROGRESS[row.pending.operation] : null
             "
@@ -192,8 +186,9 @@ function exitDetail(container: Container): string | null {
   width: 24%;
 }
 
+/* Place pour « En échec » et la mention « Mémoire ». */
 .state {
-  width: 20%;
+  width: var(--docker-state-column-width);
 }
 
 .duration {

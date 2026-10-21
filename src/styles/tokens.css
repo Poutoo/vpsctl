@@ -140,6 +140,8 @@
   /* champ de filtre des listes ; compact en fenêtre étroite */
   --underline-offset: 2px;
   /* soulignement d'une correspondance du filtre */
+  --docker-state-column-width: 188px;
+  /* colonne État des conteneurs : « En échec » et la mention « Mémoire » */
   --startup-column-width: 150px;
   /* colonne « Au démarrage » des services systemd */
   --switch-width: 32px;

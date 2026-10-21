@@ -181,7 +181,7 @@ Toutes les opérations passent par la session SFTP partagée : aucune commande s
 ## Docker
 
 ```ts
-docker_list(): ContainerList    // délai maximal 30 s
+docker_list(): ContainerList    // délai maximal 30 s, docker inspect des conteneurs sortis en 137 compris
 docker_action(id: string, action: "start" | "stop" | "restart"): void
 docker_remove(id: string): void
 ```
@@ -430,6 +430,8 @@ interface Container {
   exitCode: number | null   // conteneur exited ou restarting, sinon null
   status: string            // texte brut de Docker, ex. "Exited (137) 4 days ago"
   duration: string | null   // "depuis 3 heures", "il y a 4 jours" ; null si non applicable
+  oomKilled: boolean        // sorti en 137, tué par manque de mémoire (docker inspect) : state = "failed"
+  memoryLimit: number | null  // limite mémoire en octets (HostConfig.Memory), lue avec oomKilled ; null : sans limite ou non lue
 }
 
 interface Service {

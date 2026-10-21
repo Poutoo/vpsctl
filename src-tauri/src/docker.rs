@@ -1,7 +1,11 @@
 //! Conteneurs Docker : liste (`docker ps -a --format '{{json .}}'`, parsing
 //! dans des fonctions pures), start, stop, restart, rm et flux `docker logs -f`.
+//! Les conteneurs sortis avec le code 137 sont inspectés (`docker inspect`, un
+//! seul appel pour tous) pour distinguer un manque de mémoire (`OOMKilled`)
+//! d'un simple SIGKILL.
 //! Les conteneurs sont manipulés par ID (hexadécimal validé), jamais par nom.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -44,6 +48,13 @@ pub struct Container {
     pub status: String,
     /// « depuis 3 heures », « il y a 4 jours ».
     pub duration: Option<String>,
+    /// Sorti avec le code 137 parce que le noyau l'a tué par manque de
+    /// mémoire (`State.OOMKilled` de `docker inspect`) : affiché en échec.
+    pub oom_killed: bool,
+    /// Limite mémoire du conteneur en octets (`HostConfig.Memory`), lue avec
+    /// `OOMKilled` ; `None` : sans limite ou non lue.
+    #[ts(type = "number | null")]
+    pub memory_limit: Option<u64>,
 }
 
 /// Résultat de `docker_list`.
@@ -70,12 +81,101 @@ struct PsLine {
     status: String,
 }
 
-/// Liste tous les conteneurs, y compris arrêtés, triés par nom.
+/// Liste tous les conteneurs, y compris arrêtés, triés par nom. Les
+/// conteneurs sortis avec le code 137 sont inspectés en un seul appel, dans
+/// le même délai ; aucun appel s'il n'y en a pas. Pas de cache : chaque
+/// rafraîchissement relit leur état.
 pub async fn list(connection: &Connection) -> Result<ContainerList, AppError> {
-    let output = connection
-        .exec_until(LIST_COMMAND, Deadline::after(LIST_TIMEOUT))
-        .await?;
-    interpret_list(&output)
+    let deadline = Deadline::after(LIST_TIMEOUT);
+    let output = connection.exec_until(LIST_COMMAND, deadline).await?;
+    let mut list = interpret_list(&output)?;
+    if let Some(command) = inspect_command(&killed_ids(&list.containers)) {
+        let inspected = connection.exec_until(&command, deadline).await?;
+        apply_oom(
+            &mut list.containers,
+            &parse_inspect_output(&inspected.stdout_text()),
+        );
+    }
+    Ok(list)
+}
+
+/// Résultat de `docker inspect` pour un conteneur sorti avec le code 137.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OomInfo {
+    pub oom_killed: bool,
+    /// `HostConfig.Memory` : 0 sans limite.
+    pub memory: u64,
+}
+
+/// Une ligne par conteneur : ID complet, `OOMKilled`, limite mémoire.
+const INSPECT_FORMAT: &str = "{{.Id}} {{.State.OOMKilled}} {{.HostConfig.Memory}}";
+
+/// Conteneurs sortis avec le code 137 (SIGKILL : arrêt forcé ou manque de
+/// mémoire), seuls à inspecter.
+pub fn killed_ids(containers: &[Container]) -> Vec<&str> {
+    containers
+        .iter()
+        .filter(|c| c.docker_state == "exited" && c.exit_code == Some(137))
+        .map(|c| c.id.as_str())
+        .filter(|id| is_full_container_id(id))
+        .collect()
+}
+
+/// `docker inspect --type container --format '…' -- '<id>'…` ; `None` sans
+/// conteneur à inspecter. Seuls des ID complets validés y entrent, échappés.
+pub fn inspect_command(ids: &[&str]) -> Option<String> {
+    let quoted: Vec<String> = ids
+        .iter()
+        .filter(|id| is_full_container_id(id))
+        .map(|id| shell::quote(id))
+        .collect();
+    if quoted.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "docker inspect --type container --format {} -- {}",
+        shell::quote(INSPECT_FORMAT),
+        quoted.join(" ")
+    ))
+}
+
+/// Lignes de `docker inspect`, par ID. Le code de retour n'est pas consulté :
+/// un conteneur supprimé entre `docker ps` et `docker inspect` fait échouer
+/// la commande, qui répond quand même pour les autres. Une ligne illisible
+/// est ignorée : son conteneur garde l'état déduit du code de sortie.
+pub fn parse_inspect_output(output: &str) -> HashMap<String, OomInfo> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let id = fields.next()?;
+            let oom_killed = match fields.next()? {
+                "true" => true,
+                "false" => false,
+                _ => return None,
+            };
+            let memory = fields.next()?.parse().ok()?;
+            if fields.next().is_some() || !is_full_container_id(id) {
+                return None;
+            }
+            Some((id.to_owned(), OomInfo { oom_killed, memory }))
+        })
+        .collect()
+}
+
+/// Reporte le résultat de `docker inspect` : un conteneur tué par manque de
+/// mémoire passe en échec ; un 137 sans `OOMKilled` reste arrêté.
+pub fn apply_oom(containers: &mut [Container], inspected: &HashMap<String, OomInfo>) {
+    for container in containers {
+        let Some(info) = inspected.get(&container.id) else {
+            continue;
+        };
+        container.oom_killed = info.oom_killed;
+        container.memory_limit = (info.memory > 0).then_some(info.memory);
+        if info.oom_killed {
+            container.state = RunState::Failed;
+        }
+    }
 }
 
 /// Résultat de `docker ps` : conteneurs, ou erreur compréhensible.
@@ -183,6 +283,8 @@ fn parse_ps_line(line: &str) -> Option<Container> {
         id: raw.id,
         docker_state: raw.state,
         status: raw.status,
+        oom_killed: false,
+        memory_limit: None,
     })
 }
 
@@ -302,7 +404,8 @@ pub fn parse_exit_code(status: &str) -> Option<i32> {
 }
 
 /// Correspondance des états Docker vers l'interface
-/// (tableau de `docs/03-architecture.md`).
+/// (tableau de `docs/03-architecture.md`). Un 137 tué par manque de mémoire
+/// passe ensuite en échec (`apply_oom`).
 pub fn run_state(docker_state: &str, exit_code: Option<i32>) -> RunState {
     match docker_state {
         "running" => RunState::Nominal,
@@ -445,6 +548,8 @@ mod tests {
                     exit_code: Some(137),
                     status: "Exited (137) 4 days ago".into(),
                     duration: Some("il y a 4 jours".into()),
+                    oom_killed: false,
+                    memory_limit: None,
                 },
                 Container {
                     id: ID_WEB.into(),
@@ -455,6 +560,8 @@ mod tests {
                     exit_code: None,
                     status: "Up 3 hours (healthy)".into(),
                     duration: Some("depuis 3 heures".into()),
+                    oom_killed: false,
+                    memory_limit: None,
                 },
             ]
         );
@@ -507,8 +614,112 @@ mod tests {
                 "exitCode": 137,
                 "status": "Exited (137) 4 days ago",
                 "duration": "il y a 4 jours",
+                "oomKilled": false,
+                "memoryLimit": null,
             })
         );
+    }
+
+    // --- Manque de mémoire (OOMKilled) -----------------------------------
+
+    const ID_KILLED: &str = "b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9a0b";
+
+    const ID_PLAIN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    fn exited(id: &str, code: Option<i32>) -> Container {
+        Container {
+            id: id.into(),
+            name: id[..4].into(),
+            image: "img".into(),
+            state: run_state("exited", code),
+            docker_state: "exited".into(),
+            exit_code: code,
+            status: String::new(),
+            duration: None,
+            oom_killed: false,
+            memory_limit: None,
+        }
+    }
+
+    #[test]
+    fn only_containers_exited_with_137_are_inspected() {
+        let mut restarting = exited(ID_WEB, Some(137));
+        restarting.docker_state = "restarting".into();
+        let sigterm = "c".repeat(64);
+        let clean = "d".repeat(64);
+        let containers = vec![
+            exited(ID_PLAIN, Some(137)),
+            exited(ID_KILLED, Some(137)),
+            exited(&sigterm, Some(143)),
+            exited(&clean, Some(0)),
+            restarting,
+        ];
+        assert_eq!(killed_ids(&containers), [ID_PLAIN, ID_KILLED]);
+    }
+
+    #[test]
+    fn no_inspect_without_killed_container() {
+        assert_eq!(inspect_command(&[]), None);
+        assert_eq!(inspect_command(&["web; rm -rf ~"]), None);
+    }
+
+    #[test]
+    fn one_inspect_for_all_killed_containers() {
+        assert_eq!(
+            inspect_command(&[ID_PLAIN, ID_KILLED]).unwrap(),
+            format!(
+                "docker inspect --type container --format \
+                 '{{{{.Id}}}} {{{{.State.OOMKilled}}}} {{{{.HostConfig.Memory}}}}' \
+                 -- '{ID_PLAIN}' '{ID_KILLED}'"
+            )
+        );
+    }
+
+    #[test]
+    fn inspect_output_is_parsed() {
+        let output = format!(
+            "{ID_PLAIN} false 0\n{ID_KILLED} true 536870912\n\
+             illisible\n{ID_WEB} peut-être 0\n{ID_WEB} true 12 en trop\n"
+        );
+        let parsed = parse_inspect_output(&output);
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(
+            parsed[ID_PLAIN],
+            OomInfo {
+                oom_killed: false,
+                memory: 0
+            }
+        );
+        assert_eq!(
+            parsed[ID_KILLED],
+            OomInfo {
+                oom_killed: true,
+                memory: 536_870_912
+            }
+        );
+    }
+
+    #[test]
+    fn oom_killed_is_a_failure_and_a_plain_kill_stays_stopped() {
+        let mut containers = vec![
+            exited(ID_PLAIN, Some(137)),
+            exited(ID_KILLED, Some(137)),
+            exited(ID_WEB, Some(137)),
+        ];
+        let output = format!("{ID_PLAIN} false 0\n{ID_KILLED} true 536870912\n");
+        apply_oom(&mut containers, &parse_inspect_output(&output));
+
+        assert_eq!(containers[0].state, RunState::Stopped);
+        assert!(!containers[0].oom_killed);
+        assert_eq!(containers[0].memory_limit, None);
+
+        assert_eq!(containers[1].state, RunState::Failed);
+        assert!(containers[1].oom_killed);
+        assert_eq!(containers[1].memory_limit, Some(536_870_912));
+
+        // Absent de la réponse (supprimé entre-temps) : état du code de sortie.
+        assert_eq!(containers[2].state, RunState::Stopped);
+        assert!(!containers[2].oom_killed);
     }
 
     #[test]

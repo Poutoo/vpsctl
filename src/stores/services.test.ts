@@ -43,6 +43,8 @@ function container(state: RunState): Container {
     exitCode: state === "nominal" ? null : 1,
     status: "",
     duration: null,
+    oomKilled: false,
+    memoryLimit: null,
   };
 }
 
@@ -388,5 +390,33 @@ describe("activation au démarrage", () => {
     connection.linkLost(lossEvent());
     await services.setStartup("bot.service", true);
     expect(systemd.setServiceStartup).not.toHaveBeenCalled();
+  });
+});
+
+describe("conteneur tué par manque de mémoire", () => {
+  it("le signale dans l'échec d'un démarrage", async () => {
+    vi.mocked(docker.dockerAction).mockResolvedValue();
+    const services = useServicesStore();
+    await services.refresh();
+    vi.mocked(docker.listContainers).mockResolvedValue({
+      containers: [
+        {
+          ...container("failed"),
+          exitCode: 137,
+          oomKilled: true,
+          memoryLimit: 536_870_912,
+        },
+      ],
+      skipped: 0,
+    });
+    const target = {
+      kind: "docker" as const,
+      id: "a".repeat(64),
+      name: "caddy",
+    };
+    const done = services.perform(target, "start");
+    await vi.advanceTimersByTimeAsync(2_500);
+    await done;
+    expect(lastToast().detail).toBe("caddy · code 137 · manque de mémoire");
   });
 });

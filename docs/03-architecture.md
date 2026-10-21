@@ -82,14 +82,24 @@ Correspondance des états Docker vers les états de l'interface (calculée dans 
 | État Docker | État affiché |
 |---|---|
 | `running` | Nominal |
-| `exited` avec code 0, 137 ou 143 | Arrêté (code affiché) |
+| `exited` avec code 137 et `OOMKilled` | En échec, mention MÉMOIRE (cause et limite en infobulle) |
+| `exited` avec code 0, 137 (sans `OOMKilled`) ou 143 | Arrêté (code affiché) |
 | `exited` avec tout autre code, ou code illisible | En échec (code affiché) |
 | `created`, `paused` | Arrêté |
 | `restarting`, `removing` | En transition |
 | `dead` | En échec |
 | tout autre état | En échec (état brut en infobulle) |
 
-Limite connue : un conteneur tué par manque de mémoire sort aussi avec le code 137 et apparaîtra « Arrêté ». Le détecter demanderait `docker inspect` (champ `OOMKilled`) : envisageable en v2.
+Manque de mémoire : le code 137 seul signifie SIGKILL (`docker stop` qui dépasse son délai, `kill -9`, ou le noyau à court de mémoire). Après `docker ps`, les conteneurs `exited` avec le code 137 sont inspectés en **un seul appel**, dans le délai de `docker_list` ; aucun appel s'il n'y en a pas, et pas de cache : chaque rafraîchissement relit leur état (fonctions pures `killed_ids`, `inspect_command`, `parse_inspect_output`, `apply_oom`).
+
+```sh
+docker inspect --type container --format '{{.Id}} {{.State.OOMKilled}} {{.HostConfig.Memory}}' -- '<id>' '<id>'…
+```
+
+- Le code de retour n'est pas consulté : un conteneur supprimé entre `docker ps` et `docker inspect` fait échouer la commande, qui répond quand même pour les autres. Une ligne absente ou illisible laisse le conteneur dans l'état déduit de son code (« Arrêté »).
+- `OOMKilled` vrai : « En échec » avec la mention MÉMOIRE, la limite (`HostConfig.Memory`, 0 sans limite) dans l'infobulle. Faux : « Arrêté · code 137 », l'infobulle dit qu'il s'agit d'un SIGKILL sans manque de mémoire.
+- Limite : un conteneur en `restarting` (redémarré par sa politique après un manque de mémoire) n'est pas inspecté.
+- Pendant un LOS, les données figées gardent le dernier verdict affiché ; la liste suivante, après le rétablissement, relit l'état.
 
 **systemd** : `systemctl --user` en sortie JSON, actions sur les services, flux `journalctl --user -f`. Génère et supprime les fichiers d'unité dans `~/.config/systemd/user/`, suivis de `systemctl --user daemon-reload`.
 

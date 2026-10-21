@@ -475,6 +475,7 @@ export const useServicesStore = defineStore("services", () => {
   /** Complément d'un échec : code de sortie Docker, ou état brut systemd. */
   function stateDetail(found: Container | Service): string {
     if ("dockerState" in found) {
+      if (found.oomKilled) return `code ${found.exitCode} · manque de mémoire`;
       return found.exitCode !== null
         ? `code ${found.exitCode}`
         : found.dockerState;
