@@ -153,6 +153,13 @@ async fn forward(mut client: TcpStream, server: SocketAddr, mut cut: watch::Rece
     let mut from_client = [0u8; 16 * 1024];
     let mut from_server = [0u8; 16 * 1024];
     let mut silent = false;
+    // Demi-fermeture propagée comme sur un vrai réseau : la fin de flux d'un
+    // côté ferme seulement le sens d'écriture vers l'autre, et le relais
+    // continue de lire jusqu'à ce que l'autre ferme à son tour. Fermer les
+    // deux sockets dès la première fin laisserait des octets non lus, donc un
+    // RST, qui peut faire perdre le message de déconnexion du serveur.
+    let mut client_done = false;
+    let mut server_done = false;
     loop {
         tokio::select! {
             changed = cut.changed() => {
@@ -170,16 +177,30 @@ async fn forward(mut client: TcpStream, server: SocketAddr, mut cut: watch::Rece
                     }
                 }
             }
-            read = client.read(&mut from_client), if !silent => match read {
-                Ok(0) | Err(_) => return,
+            read = client.read(&mut from_client), if !silent && !client_done => match read {
+                Ok(0) => {
+                    let _ = server.shutdown().await;
+                    client_done = true;
+                    if server_done {
+                        return;
+                    }
+                }
+                Err(_) => return,
                 Ok(n) => {
                     if server.write_all(&from_client[..n]).await.is_err() {
                         return;
                     }
                 }
             },
-            read = server.read(&mut from_server), if !silent => match read {
-                Ok(0) | Err(_) => return,
+            read = server.read(&mut from_server), if !silent && !server_done => match read {
+                Ok(0) => {
+                    let _ = client.shutdown().await;
+                    server_done = true;
+                    if client_done {
+                        return;
+                    }
+                }
+                Err(_) => return,
                 Ok(n) => {
                     if client.write_all(&from_server[..n]).await.is_err() {
                         return;
@@ -352,8 +373,10 @@ async fn reset_connection_is_reported_as_reset() {
 
 #[tokio::test]
 async fn server_disconnect_carries_its_message() {
-    // Keepalives espacés : un octet du client non lu par le serveur à sa
-    // fermeture provoquerait un RST, qui peut faire perdre le message.
+    // Sans course : après le message, russh ne ferme que son sens d'écriture
+    // et lit jusqu'à la fermeture du client (`server/session.rs`), et le
+    // relais propage cette demi-fermeture ; aucun RST ne peut faire perdre le
+    // message. Keepalives espacés : aucun ne part pendant le test.
     let mut bench = Bench::new(LinkTiming {
         keepalive_interval: Duration::from_secs(30),
         keepalive_max: 3,
