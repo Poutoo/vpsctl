@@ -60,6 +60,10 @@ Lire le document concerné avant de travailler sur une partie :
 - La version est identique dans `package.json`, `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json` (vérifié par `src-tauri/tests/version.rs` et par le workflow de publication).
 - Préparer une version uniquement sur demande explicite : choisir le numéro d'après les entrées de « Non publié », renommer cette section en `## [X.Y.Z] - AAAA-MM-JJ` et rouvrir une section « Non publié » vide, mettre à jour les liens de comparaison en bas du fichier, changer la version dans les trois fichiers (et les fichiers de verrouillage), en un commit. Ne jamais créer de tag ni pousser : la publication (tag `vX.Y.Z`, release en brouillon publiée à la main) reste à l'utilisateur.
 
+### Commits
+
+- Ne jamais commiter avant que tous les critères de fin aient terminé et réussi. Un critère encore en cours compte comme un échec.
+
 ### Autres
 - Le code doit être auto commenté. Limiter le nombre de commentaire
 - Mettre un commentaire sur une longue fonctionnalité ou non explicite par son code
