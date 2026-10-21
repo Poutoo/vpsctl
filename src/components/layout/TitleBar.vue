@@ -4,6 +4,12 @@
  * `decorations: false`). Toute la barre déplace la fenêtre et l'agrandit au
  * double-clic (`data-tauri-drag-region="deep"`), sauf les éléments
  * interactifs, que Tauri exclut d'office, et l'indicateur AOS.
+ *
+ * Marque (planche V) : symbole de 32 px sur toute la hauteur de la barre,
+ * décoratif car le mot « Atlas » le nomme. Il n'est jamais transformé en URI
+ * `data:` (`?no-inline`), que la CSP bloquerait, et ne se glisse pas comme
+ * une image : le glisser déplace la fenêtre. En fenêtre étroite, « Contrôle
+ * VPS » disparaît pour laisser la place à l'indicateur de liaison.
  */
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import {
@@ -12,6 +18,7 @@ import {
   toggleMaximizeWindow,
   watchMaximized,
 } from "../../api/window";
+import symbol from "../../assets/logo/atlas-symbole.svg?no-inline";
 import AppIcon from "../ui/AppIcon.vue";
 import AppTooltip from "../ui/AppTooltip.vue";
 import AosIndicator from "./AosIndicator.vue";
@@ -36,6 +43,7 @@ onBeforeUnmount(() => {
 <template>
   <header class="titlebar" data-tauri-drag-region="deep">
     <p class="brand">
+      <img class="symbol" :src="symbol" alt="" draggable="false" />
       <span class="name">Atlas</span>
       <span class="caps product">Contrôle VPS</span>
     </p>
@@ -92,20 +100,33 @@ onBeforeUnmount(() => {
 
 .brand {
   display: flex;
-  align-items: baseline;
-  gap: var(--sp-3);
-  align-self: center;
-  padding-left: var(--sp-4);
+  align-items: center;
+  padding-left: var(--sp-2);
   white-space: nowrap;
 }
 
+.symbol {
+  flex-shrink: 0;
+  width: var(--titlebar-height);
+  height: var(--titlebar-height);
+}
+
 .name {
+  margin-left: var(--sp-1);
   font-family: var(--font-title);
-  font-size: var(--fs-lg);
+  font-size: var(--fs-brand);
 }
 
 .product {
+  margin-left: var(--sp-3);
   color: var(--color-text-muted);
+}
+
+/* Fenêtre étroite (seuil de NARROW_QUERY) : la place va à l'indicateur. */
+@media (max-width: 1100px) {
+  .product {
+    display: none;
+  }
 }
 
 .signal {

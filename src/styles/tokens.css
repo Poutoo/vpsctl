@@ -90,6 +90,8 @@
   /* données des tableaux et de la console */
   --fs-md: 14px;
   --fs-lg: 16px;
+  --fs-brand: 17px;
+  /* mot « Atlas » de la barre de titre, à côté du symbole (planche V) */
   --fs-xl: 20px;
   /* titres de section et de dialogue */
   --fs-2xl: 28px;

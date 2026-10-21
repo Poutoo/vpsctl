@@ -82,7 +82,7 @@ Défilement automatique désactivable, désactivé automatiquement quand on remo
 
 **Navigation** : la section active a un trait d'action de 2 px, son numéral en ambre et son texte plein. Sur les écrans sans entrée propre (Télémétrie, Création de service), la section d'origine est surlignée. En fenêtre étroite, la navigation se réduit aux numéraux romains, chacun avec une infobulle.
 
-**Barre de titre** : personnalisée. Zone de déplacement sur toute la barre sauf les boutons et l'indicateur AOS. Survol rouge sur le bouton Fermer.
+**Barre de titre** : personnalisée, 32 px de haut. Zone de déplacement sur toute la barre sauf les boutons et l'indicateur AOS. Survol rouge sur le bouton Fermer. Marque (planche V) : symbole `atlas-symbole.svg` en couleur, sans retouche, sur toute la hauteur de la barre (32 × 32, marge 8, écart 4), suivi du mot « Atlas » en Garamond 17 (`--fs-brand`) ; le symbole est décoratif (texte alternatif vide), le mot le nomme. En fenêtre étroite (seuil de la navigation réduite), « CONTRÔLE VPS » disparaît pour laisser la place à l'indicateur LOS, plus long. Le symbole reste dans la barre de titre, pas dans la navigation.
 
 ## Image de fond
 

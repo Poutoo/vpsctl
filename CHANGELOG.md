@@ -22,6 +22,7 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 
 ### Modifié
 
+- Barre de titre : le symbole d'Atlas (papillon) précède son nom ; en fenêtre étroite, « Contrôle VPS » est masqué pour laisser la place à l'indicateur de liaison.
 - Une liaison coupée sans fermeture (réseau perdu, mise en veille) est détectée en 15 à 20 s, au lieu de 2 minutes environ ; une coupure de quelques secondes reste sans effet.
 
 ### Corrigé
