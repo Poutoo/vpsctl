@@ -34,15 +34,15 @@ Chaque jalon doit produire quelque chose d'utilisable.
 
 Maquettes : `docs/design/planche III/`.
 
-- [ ] Jalon 8 : fondations
-  - [ ] Tests frontend (Vitest) : stores, validations, formatage, transitions d'état ; exécutés par la CI
-  - [ ] Cas partagés entre Rust et TypeScript pour les règles présentes des deux côtés (`tests/shared/`)
-  - [ ] Détection immédiate d'une perte de liaison : keepalive SSH, événement unique émis par le backend, état LOS dans toute l'appli, reconnexion manuelle
-- [ ] Jalon 9 : confort
-  - [ ] Filtre de recherche dans les listes
-  - [ ] Activer / désactiver un service au démarrage
-  - [ ] Détection des conteneurs tués par manque de mémoire (`OOMKilled`)
-  - [ ] Papillon dans la barre de titre
+- [x] Jalon 8 : fondations
+  - [x] Tests frontend (Vitest) : stores, validations, formatage, transitions d'état ; exécutés par la CI
+  - [x] Cas partagés entre Rust et TypeScript pour les règles présentes des deux côtés (`tests/shared/`)
+  - [x] Détection immédiate d'une perte de liaison : keepalive SSH, événement unique émis par le backend, état LOS dans toute l'appli, reconnexion manuelle
+- [x] Jalon 9 : confort
+  - [x] Filtre de recherche dans les listes
+  - [x] Activer / désactiver un service au démarrage
+  - [x] Détection des conteneurs tués par manque de mémoire (`OOMKilled`)
+  - [x] Papillon dans la barre de titre
 
 ## v2
 
