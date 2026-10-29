@@ -6,33 +6,34 @@
 
 À faire **avant tout le reste**, en SSH sur le VPS avec le compte de l'application. L'analyse de l'application repose sur ces formats : si une sortie diffère, s'arrêter et le signaler.
 
-- [ ] La page de manuel de `systemctl` (systemd 259) ne documente `--output=` que pour `status` ; c'est le code de `systemctl` qui l'applique aussi aux tableaux. Vérifier :
+- [y] La page de manuel de `systemctl` (systemd 259) ne documente `--output=` que pour `status` ; c'est le code de `systemctl` qui l'applique aussi aux tableaux. Vérifier :
 
   ```sh
   systemctl --version | head -1
-  systemctl --user list-unit-files --type=service --output=json --no-pager | head -c 600; echo; echo "code $?"
+  systemctl --user list-unit-files --type=service --output=json --no-pager > /tmp/atlas-luf.json; echo "code $?"
+  head -c 600 /tmp/atlas-luf.json; echo; grep -c 'unit files listed' /tmp/atlas-luf.json
   ```
 
   Attendu : `systemd 259`, puis un tableau JSON sur une seule ligne, de la forme `[{"unit_file":"api.service","state":"enabled","preset":"enabled"},…]` (`preset` vaut `null` pour les états qui n'en ont pas, par exemple `static`), et `code 0`. Pas de ligne « N unit files listed. ».
-- [ ] Aucun fichier correspondant : `systemctl --user list-unit-files --type=service --output=json --no-pager 'atlas-inexistant*.service'; echo "code $?"` affiche `[]` puis un code **non nul**. L'application accepte ce cas (le code n'est pas consulté).
-- [ ] Les services créés par Atlas apparaissent avec `"state":"enabled"` (ou `disabled` s'ils ont été désactivés), jamais `static` : `grep -L '^\[Install\]' ~/.config/systemd/user/*.service` ne liste aucun service créé par l'application.
-- [ ] Format de `docker inspect` utilisé pour le manque de mémoire (sur n'importe quel conteneur, ID complet) :
+- [y] Aucun fichier correspondant : `systemctl --user list-unit-files --type=service --output=json --no-pager 'atlas-inexistant*.service'; echo "code $?"` affiche `[]` puis un code **non nul**. L'application accepte ce cas (le code n'est pas consulté).
+- [y] Les services créés par Atlas apparaissent avec `"state":"enabled"` (ou `disabled` s'ils ont été désactivés), jamais `static` : `grep -L '^\[Install\]' ~/.config/systemd/user/*.service` ne liste aucun service créé par l'application.
+- [y] Format de `docker inspect` utilisé pour le manque de mémoire (sur n'importe quel conteneur, ID complet) :
 
   ```sh
   docker inspect --type container --format '{{.Id}} {{.State.OOMKilled}} {{.HostConfig.Memory}}' -- "$(docker ps -aq --no-trunc | head -1)"
   ```
 
   Attendu : une ligne `<64 caractères hexadécimaux> false 0` (ou `true`, ou une limite en octets).
-- [ ] Lingering actif (nécessaire au test de redémarrage) : `loginctl show-user "$USER" --property=Linger` donne `Linger=yes`.
+- [y] Lingering actif (nécessaire au test de redémarrage) : `loginctl show-user "$USER" --property=Linger` donne `Linger=yes`.
 
 ## 1. Tests automatisés
 
 ### Windows
 
-- [ ] `npm ci` puis `npm test` : tous les tests passent (dont `listFilter`, `FilterField`, `AppSwitch`, `startup`, `containerState`, `TitleBar`).
-- [ ] `cd src-tauri && cargo test` : tous les tests passent (dont les tests `list-unit-files`, `startup_block`, `set_startup`, `inspect`).
-- [ ] `npm run lint`, `npm run typecheck`, `npx prettier --check .`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` : rien à signaler.
-- [ ] `npm run tauri build` produit `Atlas_1.1.0_x64-setup.exe` ; l'application installée affiche la version 1.1.0 dans la barre d'état.
+- [y] `npm ci` puis `npm test` : tous les tests passent (dont `listFilter`, `FilterField`, `AppSwitch`, `startup`, `containerState`, `TitleBar`).
+- [y] `cd src-tauri && cargo test` : tous les tests passent (dont les tests `list-unit-files`, `startup_block`, `set_startup`, `inspect`).
+- [y] `npm run lint`, `npm run typecheck`, `npx prettier --check .`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` : rien à signaler.
+- [y] `npm run tauri build` produit `Atlas_1.1.0_x64-setup.exe` ; l'application installée affiche la version 1.1.0 dans la barre d'état.
 
 ### Linux
 
@@ -44,42 +45,42 @@ Préparation : au moins 4 conteneurs et 4 services, dont un nom avec majuscules 
 
 ### Barre de recherche du moteur web
 
-- [ ] Sur **chaque écran** (Tableau de bord, Fichiers, Scripts, Télémétrie, Réglages, Création de service), Ctrl+F n'ouvre **jamais** la barre de recherche du moteur web (WebView2 sous Windows, WebKitGTK sous Linux). Sur les écrans sans filtre, rien ne se passe.
-- [ ] Même vérification en `npm run tauri dev`.
+- [y] Sur **chaque écran** (Tableau de bord, Fichiers, Scripts, Télémétrie, Réglages, Création de service), Ctrl+F n'ouvre **jamais** la barre de recherche du moteur web (WebView2 sous Windows, WebKitGTK sous Linux). Sur les écrans sans filtre, rien ne se passe.
+- [y] Même vérification en `npm run tauri dev`.
 
 ### Tableau de bord
 
-- [ ] Au repos, le champ « Filtrer les tableaux » est à gauche d'« Actualiser » et affiche `Ctrl` `F`.
-- [ ] Ctrl+F place le curseur dans le champ, même depuis un tableau, et sélectionne le texte déjà saisi.
-- [ ] `urban` : les deux tableaux sont filtrés en même temps ; la correspondance est surlignée (fond de sélection et soulignement ambre) dans les noms, images, unités et descriptions ; chaque en-tête passe à « 2 sur 4 » (nombres réels).
-- [ ] Majuscules : `URBAN` donne le même résultat que `urban`.
-- [ ] Accents : `reseau` trouve « Sauvegarde réseau », et `réseau` trouve `api-reseau.service`.
-- [ ] `nginx` (aucun conteneur ni service) : dans chaque tableau, une seule ligne sous les en-têtes, « 0 SUR 4 · Aucun résultat pour « nginx ». » et « Effacer le filtre », qui vide le champ. Ce n'est pas l'état vide habituel (« Aucun conteneur » / « Aucun service utilisateur »).
-- [ ] Rempli, le champ propose une croix qui le vide.
-- [ ] Échap dans le champ rempli le vide ; un second Échap rend le focus au tableau (le curseur quitte le champ).
-- [ ] Le filtre suit les rafraîchissements automatiques (un conteneur démarré ailleurs apparaît s'il correspond).
-- [ ] Aller dans Fichiers puis revenir : le texte du filtre est conservé.
-- [ ] Ctrl+F pendant une fenêtre GO / NO GO ouverte : le focus reste dans la fenêtre.
+- [y] Au repos, le champ « Filtrer les tableaux » est à gauche d'« Actualiser » et affiche `Ctrl` `F`.
+- [y] Ctrl+F place le curseur dans le champ, même depuis un tableau, et sélectionne le texte déjà saisi.
+- [y] `urban` : les deux tableaux sont filtrés en même temps ; la correspondance est surlignée (fond de sélection et soulignement ambre) dans les noms, images, unités et descriptions ; chaque en-tête passe à « 2 sur 4 » (nombres réels).
+- [y] Majuscules : `URBAN` donne le même résultat que `urban`.
+- [y] Accents : `reseau` trouve « Sauvegarde réseau », et `réseau` trouve `api-reseau.service`.
+- [y] `nginx` (aucun conteneur ni service) : dans chaque tableau, une seule ligne sous les en-têtes, « 0 SUR 4 · Aucun résultat pour « nginx ». » et « Effacer le filtre », qui vide le champ. Ce n'est pas l'état vide habituel (« Aucun conteneur » / « Aucun service utilisateur »).
+- [y] Rempli, le champ propose une croix qui le vide.
+- [y] Échap dans le champ rempli le vide ; un second Échap rend le focus au tableau (le curseur quitte le champ).
+- [y] Le filtre suit les rafraîchissements automatiques (un conteneur démarré ailleurs apparaît s'il correspond).
+- [y] Aller dans Fichiers puis revenir : le texte du filtre est conservé.
+- [y] Ctrl+F pendant une fenêtre GO / NO GO ouverte : le focus reste dans la fenêtre.
 
 ### Explorateur
 
-- [ ] Le champ « Filtrer le dossier » est à droite de l'itinéraire.
-- [ ] `.sh` : seul `deploy.sh` reste ; pied de liste « 1 sur N entrées ».
-- [ ] `ete` et `ÉTÉ` trouvent `Été.txt`.
-- [ ] `zzz` : une ligne « 0 SUR N · Aucun résultat… » sous les en-têtes, avec « Effacer le filtre ». Un dossier réellement vide affiche toujours « Dossier vide ».
-- [ ] Les flèches, Début, Fin et Entrée ne parcourent que les lignes affichées.
-- [ ] Ouvrir un autre dossier vide le filtre ; aller au Tableau de bord puis revenir sur le même dossier le conserve.
-- [ ] « Nouveau fichier » vide le filtre (l'élément créé reste visible).
-- [ ] Renommer une entrée filtrée sous un nom qui ne correspond plus au filtre : le filtre est vidé, l'entrée reste visible et sélectionnée.
-- [ ] Pendant un renommage, Ctrl+F ne quitte pas la saisie.
-- [ ] Un nom déjà pris par une entrée masquée par le filtre est refusé dès la saisie (« Un élément porte déjà ce nom. »).
-- [ ] Dossier de plusieurs milliers d'entrées (`mkdir -p ~/beaucoup && cd ~/beaucoup && touch f{1..5000}.txt`) : le filtre `f49` reste fluide.
+- [y] Le champ « Filtrer le dossier » est à droite de l'itinéraire.
+- [y] `.sh` : seul `deploy.sh` reste ; pied de liste « 1 sur N entrées ».
+- [y] `ete` et `ÉTÉ` trouvent `Été.txt`.
+- [y] `zzz` : une ligne « 0 SUR N · Aucun résultat… » sous les en-têtes, avec « Effacer le filtre ». Un dossier réellement vide affiche toujours « Dossier vide ».
+- [y] Les flèches, Début, Fin et Entrée ne parcourent que les lignes affichées.
+- [y] Ouvrir un autre dossier vide le filtre ; aller au Tableau de bord puis revenir sur le même dossier le conserve.
+- [y] « Nouveau fichier » vide le filtre (l'élément créé reste visible).
+- [y] Renommer une entrée filtrée sous un nom qui ne correspond plus au filtre : le filtre est vidé, l'entrée reste visible et sélectionnée.
+- [y] Pendant un renommage, Ctrl+F ne quitte pas la saisie.
+- [y] Un nom déjà pris par une entrée masquée par le filtre est refusé dès la saisie (« Un élément porte déjà ce nom. »).
+- [y] Dossier de plusieurs milliers d'entrées (`mkdir -p ~/beaucoup && cd ~/beaucoup && touch f{1..5000}.txt`) : le filtre `f49` reste fluide.
 
 ### Perte de liaison et fin de session
 
-- [ ] Couper la liaison (pare-feu, voir `docs/tests-jalon-8.md`) avec un filtre actif : après le LOS, le filtre reste en place, et on peut le modifier, l'effacer, utiliser Ctrl+F et Échap sur les données figées (tableaux et explorateur).
-- [ ] Au rétablissement, le filtre est conservé et s'applique aux listes relues.
-- [ ] « Couper la liaison » puis se reconnecter : les deux filtres sont vides.
+- [y] Couper la liaison (pare-feu, voir `docs/tests-jalon-8.md`) avec un filtre actif : après le LOS, le filtre reste en place, et on peut le modifier, l'effacer, utiliser Ctrl+F et Échap sur les données figées (tableaux et explorateur).
+- [y] Au rétablissement, le filtre est conservé et s'applique aux listes relues.
+- [y] « Couper la liaison » puis se reconnecter : les deux filtres sont vides.
 
 ## 3. Activation au démarrage
 
@@ -87,20 +88,20 @@ Préparation : créer depuis Atlas un service `atlas-boot` (commande `/bin/sh -c
 
 ### Activer, désactiver
 
-- [ ] La colonne « Au démarrage » est entre État et Description ; `atlas-boot.service` affiche l'interrupteur à droite, « ACTIVÉ ».
-- [ ] Cliquer : pendant le changement, curseur à mi-course, contour pointillé, « ◑ DÉSACTIVATION » ; puis « DÉSACTIVÉ ». Aucune fenêtre GO / NO GO, aucune notification.
-- [ ] Le service **tourne toujours** (état NOMINAL) : la désactivation ne l'arrête pas. Sur le VPS : `systemctl --user is-enabled atlas-boot.service` → `disabled`, `systemctl --user is-active atlas-boot.service` → `active`.
-- [ ] Réactiver : « ACTIVATION » puis « ACTIVÉ » ; `is-enabled` → `enabled`. Un service arrêté et activé n'est pas démarré par l'activation.
-- [ ] Au clavier : Tab jusqu'à l'interrupteur (anneau de focus visible), Espace ou Entrée le bascule.
-- [ ] Deux clics rapides : une seule commande, l'interrupteur reste « en cours » jusqu'au résultat.
-- [ ] Échec : sur le VPS, `chmod a-w ~/.config/systemd/user/default.target.wants` puis désactiver `atlas-boot` : notification d'erreur persistante « Échec de la désactivation au démarrage » avec le message de systemctl ; l'interrupteur revient à « ACTIVÉ ». Rétablir avec `chmod u+w ~/.config/systemd/user/default.target.wants`.
+- [y] La colonne « Au démarrage » est entre État et Description ; `atlas-boot.service` affiche l'interrupteur à droite, « ACTIVÉ ».
+- [y] Cliquer : pendant le changement, curseur à mi-course, contour pointillé, « ◑ DÉSACTIVATION » ; puis « DÉSACTIVÉ ». Aucune fenêtre GO / NO GO, aucune notification.
+- [y] Le service **tourne toujours** (état NOMINAL) : la désactivation ne l'arrête pas. Sur le VPS : `systemctl --user is-enabled atlas-boot.service` → `disabled`, `systemctl --user is-active atlas-boot.service` → `active`.
+- [y] Réactiver : « ACTIVATION » puis « ACTIVÉ » ; `is-enabled` → `enabled`. Un service arrêté et activé n'est pas démarré par l'activation.
+- [y] Au clavier : Tab jusqu'à l'interrupteur (anneau de focus visible), Espace ou Entrée le bascule.
+- [y] Deux clics rapides : une seule commande, l'interrupteur reste « en cours » jusqu'au résultat.
+- [y] Échec : sur le VPS, `chmod a-w ~/.config/systemd/user/default.target.wants` puis désactiver `atlas-boot` : notification d'erreur persistante « Échec de la désactivation au démarrage » avec le message de systemctl ; l'interrupteur revient à « ACTIVÉ ». Rétablir avec `chmod u+w ~/.config/systemd/user/default.target.wants`.
 
 ### Après un redémarrage du VPS (lingering)
 
-- [ ] `atlas-boot` activé, et un second service de test `atlas-boot-off` créé puis **désactivé** depuis Atlas (laissé démarré).
-- [ ] Redémarrer le VPS depuis la console Hetzner (« Redémarrer »), attendre son retour, « Rétablir la liaison ».
-- [ ] `atlas-boot.service` est NOMINAL et « ACTIVÉ » sans avoir été démarré à la main ; `atlas-boot-off.service` est ARRÊTÉ et « DÉSACTIVÉ ».
-- [ ] Sur le VPS, `systemctl --user status atlas-boot.service` montre un démarrage à l'heure du boot.
+- [y] `atlas-boot` activé, et un second service de test `atlas-boot-off` créé puis **désactivé** depuis Atlas (laissé démarré).
+- [y] Redémarrer le VPS depuis la console Hetzner (« Redémarrer »), attendre son retour, « Rétablir la liaison ».
+- [y] `atlas-boot.service` est NOMINAL et « ACTIVÉ » sans avoir été démarré à la main ; `atlas-boot-off.service` est ARRÊTÉ et « DÉSACTIVÉ ».
+- [y] Sur le VPS, `systemctl --user status atlas-boot.service` montre un démarrage à l'heure du boot.
 
 ### États non modifiables
 

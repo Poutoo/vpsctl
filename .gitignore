@@ -25,3 +25,5 @@ dist-ssr
 
 # Image de fond locale pour les essais (chargée en développement uniquement)
 src/local/
+
+motion/
