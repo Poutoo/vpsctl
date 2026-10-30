@@ -1,5 +1,6 @@
 //! Point d'entrée Tauri 2 : enregistrement des commandes et de l'état.
 
+pub mod background;
 pub mod commands;
 pub mod config;
 pub mod docker;
@@ -93,6 +94,13 @@ pub fn run() {
             commands::preferences::preferences_get,
             commands::preferences::preferences_set_dimming,
             commands::preferences::preferences_set_original_colors,
+            commands::preferences::background_choose,
+            commands::preferences::background_pending_image,
+            commands::preferences::background_commit,
+            commands::preferences::background_discard,
+            commands::preferences::background_image,
+            commands::preferences::background_reset,
+            commands::preferences::background_lost_at_startup,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

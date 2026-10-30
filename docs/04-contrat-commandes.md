@@ -371,7 +371,31 @@ preferences_set_original_colors(enabled: boolean): Preferences
 
 - Fichier `preferences.json` du dossier de configuration, séparé des profils, écrit atomiquement (temporaire puis renommage) à chaque modification ; la valeur en mémoire ne change qu'après une écriture réussie (sinon `Io`).
 - Lecture tolérante, une seule fois au démarrage : un fichier absent, illisible ou qui n'est pas un objet JSON donne les valeurs par défaut ; un champ manquant, d'un autre type ou hors limites reprend sa valeur par défaut sans toucher aux autres ; les champs inconnus et `version` sont ignorés. Le premier enregistrement remplace un fichier invalide.
-- Format écrit : `{ "version": 1, "dimming": 85, "originalColors": false }`.
+- Format écrit : `{ "version": 1, "dimming": 85, "originalColors": false, "background": null }` ; `background` reprend `BackgroundInfo` pour une image personnalisée.
+
+### Image de fond
+
+```ts
+background_choose(): BackgroundChoice           // fenêtre de sélection du système, puis contrôles
+background_pending_image(token: string): ArrayBuffer   // octets bruts de l'image en attente
+background_commit(token: string): Preferences   // après décodage réussi par la webview
+background_discard(token: string): void         // décodage refusé : l'image en attente est oubliée
+background_image(): ArrayBuffer                 // octets bruts de la copie enregistrée ; InvalidInput sans image personnalisée
+background_reset(): Preferences                 // fond d'origine, copie supprimée
+background_lost_at_startup(): boolean           // vrai une seule fois si la copie a été écartée au démarrage
+```
+
+- **Choix** : la fenêtre de sélection est ouverte par le backend (plugin dialog, API Rust), avec un filtre « Images PNG, JPEG ou WebP » et un filtre « Tous les fichiers » (un fichier renommé doit pouvoir être choisi pour être refusé). Le chemin ne quitte jamais le backend et n'est pas conservé : seul le nom du fichier l'est (dernier composant, caractères de contrôle retirés, 128 caractères au plus), pour l'affichage.
+- **Contrôles**, dans cet ordre, chacun donnant un refus (`Refusal`) qui laisse le fond actuel en place :
+  1. taille du fichier au plus 10 Mo (10 × 1024 × 1024 octets), vérifiée avant la lecture, puis lecture bornée à cette taille → `tooLarge` ;
+  2. format sur les premiers octets, jamais sur l'extension : PNG (`89 50 4E 47 0D 0A 1A 0A`), JPEG (`FF D8 FF`), WebP (`RIFF` … `WEBP`) → `format` ;
+  3. dimensions lues dans l'en-tête (analyseur maison, `background.rs`) : bloc `IHDR` du PNG ; premier marqueur SOFn du JPEG, octets de bourrage acceptés ; bloc `VP8 ` (code de synchronisation vérifié, bits d'échelle ignorés), `VP8L` (signature `0x2F`) ou `VP8X` du WebP. En-tête incohérent ou dimension nulle → `unreadable` ;
+  4. fin du fichier présente → `unreadable` : bloc `IEND` dans le dernier Kio du PNG ; marqueur `FF D9` après le marqueur SOFn du JPEG (celui d'une vignette EXIF, placée avant, ne compte pas) ; taille annoncée par l'en-tête RIFF du WebP disponible. Le moteur web décode sans erreur une partie d'un fichier tronqué : ce contrôle le rattrape ;
+  5. 8 192 px de côté et 40 mégapixels au plus → `dimensions`. Une image compressée mais énorme saturerait la mémoire une fois décodée (40 Mpx ≈ 160 Mo en RGBA).
+- **Décodage** : le backend ne décode pas l'image. Les contrôles réussis, `background_choose` garde les octets en attente (une seule image à la fois, désignée par `token`) ; l'interface les obtient par `background_pending_image`, les décode avec `img.decode()` puis appelle `background_commit`, ou `background_discard` et affiche le refus `unreadable`. Un `token` inconnu ou remplacé par un choix plus récent → `InvalidInput`.
+- **Copie** : `background_commit` écrit les octets dans `background` (dossier de configuration, sans extension : le format est relu sur le contenu) par un temporaire renommé, puis enregistre `BackgroundInfo` dans les préférences. `background_reset` enregistre `background: null` puis supprime la copie.
+- **Démarrage** : une copie absente, trop lourde, d'un format non reconnu ou dont l'en-tête est illisible est écartée (préférence remise à `null`, copie supprimée) et `background_lost_at_startup` le signale une fois. Format et dimensions sont relus sur la copie. L'interface décode ensuite la copie ; si le moteur web la refuse, elle appelle `background_reset` et affiche le même message.
+- Les octets passent en binaire (`tauri::ipc::Response`), sans JSON. L'interface les affiche par une URL `blob:`, seule source d'image ajoutée à la CSP (voir `docs/03-architecture.md`).
 
 ## Structures
 
@@ -491,7 +515,27 @@ interface ServiceDeleteInfo {
 interface Preferences {
   dimming: number             // assombrissement de l'image de fond, 0 (image nette) à 100 (masquée) ; 85 par défaut
   originalColors: boolean     // image en couleurs, sans la désaturation habituelle ; false par défaut
+  background: BackgroundInfo | null   // null : fond fourni avec l'application
 }
+
+interface BackgroundInfo {
+  fileName: string            // nom seul, jamais le chemin d'origine
+  format: "png" | "jpeg" | "webp"
+  bytes: number
+  width: number
+  height: number
+}
+
+type BackgroundChoice =
+  | { kind: "cancelled" }
+  | { kind: "refused"; fileName: string; refusal: Refusal }
+  | { kind: "pending"; token: string; background: BackgroundInfo }
+
+type Refusal =
+  | { kind: "format" }
+  | { kind: "tooLarge"; bytes: number }
+  | { kind: "dimensions"; width: number; height: number }
+  | { kind: "unreadable" }                  // en-tête incohérent, ou décodage refusé par la webview
 
 interface Script {
   id: string                     // "" à la création : attribué par le backend

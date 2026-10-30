@@ -120,15 +120,26 @@ pub fn read_json<T: DeserializeOwned>(path: &Path, what: &str) -> Result<Option<
 /// Écriture atomique d'un fichier JSON : fichier temporaire puis renommage.
 /// Le dossier est créé au besoin.
 pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T, what: &str) -> Result<(), AppError> {
+    let json = serde_json::to_string_pretty(value)
+        .map_err(|e| AppError::io(format!("sérialisation {what} impossible : {e}")))?;
+    write_atomic(path, json.as_bytes(), what)
+}
+
+/// Écriture atomique : `<nom>.tmp` dans le même dossier, puis renommage.
+/// Le dossier est créé au besoin.
+pub fn write_atomic(path: &Path, data: &[u8], what: &str) -> Result<(), AppError> {
     let to_io = |e: std::io::Error| AppError::io(format!("écriture {what} impossible : {e}"));
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(to_io)?;
     }
-    let json = serde_json::to_string_pretty(value)
-        .map_err(|e| AppError::io(format!("sérialisation {what} impossible : {e}")))?;
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, json).map_err(to_io)?;
-    fs::rename(&tmp, path).map_err(to_io)
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    fs::write(&tmp, data).map_err(to_io)?;
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        to_io(e)
+    })
 }
 
 /// Applique les règles d'enregistrement sur la liste en mémoire.

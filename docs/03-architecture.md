@@ -44,7 +44,8 @@ src-tauri/src/
 │   └── manage.rs     séquences de création et de suppression d'un service
 ├── scripts.rs
 ├── config.rs
-├── preferences.rs  préférences de l'interface (preferences.json), lecture tolérante
+├── preferences.rs  préférences de l'interface (preferences.json), lecture tolérante, copie de l'image de fond
+├── background.rs   fonctions pures : contrôle d'une image (taille, signature, dimensions de l'en-tête)
 ├── secrets.rs
 └── commands/
     ├── connection.rs
@@ -170,7 +171,9 @@ Création et suppression (`manage.rs`) : séquences décrites dans `docs/04-cont
 
 **config** : lit et écrit les profils de connexion en JSON dans le dossier de configuration de l'application, et fournit l'écriture atomique (temporaire puis renommage) utilisée aussi pour les scripts.
 
-**preferences** : préférences de l'interface (assombrissement et couleurs de l'image de fond) dans `preferences.json`, séparé des profils. Lecture tolérante au démarrage, champ par champ (fonction pure `parse`) : un fichier absent ou invalide ne bloque jamais l'application. Chaque modification est écrite atomiquement avant d'être appliquée en mémoire. L'état est géré à part d'`AppState` (`PreferenceStore`), sans lien avec la liaison SSH.
+**preferences** : préférences de l'interface (image de fond, assombrissement et couleurs) dans `preferences.json`, séparé des profils, et copie de l'image personnalisée (`background`). Lecture tolérante au démarrage, champ par champ (fonction pure `parse`) : un fichier absent ou invalide ne bloque jamais l'application. Chaque modification est écrite atomiquement avant d'être appliquée en mémoire. L'état est géré à part d'`AppState` (`PreferenceStore`), sans lien avec la liaison SSH. Import d'une image en deux temps (contrôles et attente, puis enregistrement après décodage par la webview) et vérification de la copie au démarrage : voir `docs/04-contrat-commandes.md`, « Image de fond ».
+
+**background** : fonctions pures de contrôle d'une image choisie : taille, format d'après la signature, dimensions lues dans l'en-tête PNG, JPEG ou WebP et fin de fichier présente, par un analyseur maison (aucune crate de décodage : le décodage réel est fait par la webview), limites, nom affiché. Testées sur des en-têtes construits octet par octet.
 
 **secrets** : surcouche de la crate `keyring` pour la passphrase de la clé SSH (Credential Manager sous Windows, Secret Service sous Linux).
 
@@ -353,7 +356,7 @@ src/
 - **Console** : un seul composant console, utilisé à l'identique dans l'écran Télémétrie (logs et sortie des scripts) et le panneau ancré du tableau de bord (défilement automatique, indicateur de nouvelles lignes, bannière LOS). Le panneau ancré réduit la zone du tableau au-dessus de lui, il ne la recouvre pas.
 - **Barre de titre personnalisée** : la barre native est désactivée (`decorations: false`). La zone de déplacement utilise `data-tauri-drag-region`, les boutons réduire, agrandir et fermer appellent l'API de fenêtre de Tauri, avec les permissions correspondantes dans les capabilities. Le double-clic sur la barre agrandit la fenêtre. Le symbole de la marque est importé avec `?no-inline` : Vite ne le transforme jamais en URI `data:`, que la CSP (`img-src 'self'`) bloquerait ; `draggable="false"` évite qu'un glisser sur lui déplace une image au lieu de la fenêtre. Limite connue : sous Windows, le menu d'ancrage (Snap Layouts) au survol du bouton agrandir n'est pas disponible ; sous Linux, le comportement est à tester selon le gestionnaire de fenêtres.
 - **Build de production** (`productionGuards.ts`) : F5, Ctrl+R et Ctrl+Maj+R sont bloqués (un rechargement interromprait sans confirmation les scripts en cours), ainsi que le menu contextuel du moteur web, sauf dans un champ de saisie (couper, copier, coller). Les menus de l'application ne sont pas touchés. En développement, rien ne change.
-- **Préférences** (planche VI) : store `preferences`, lu une fois au lancement par `App.vue`. `BackgroundLayer` pose `--bg-opacity` (1 − assombrissement) et `--bg-filter` (`--bg-filter-original` pour les couleurs d'origine, sinon la désaturation) sur la racine du document : le fond, la vignette et l'aperçu en direct des Réglages suivent les mêmes variables. Avant la lecture, l'image n'est pas affichée (opacité 0), pour ne pas montrer un fond qui changerait aussitôt. Le curseur applique la valeur tout de suite et l'enregistre 300 ms après le dernier mouvement ; un échec d'enregistrement est notifié, la valeur reste celle choisie pour la session.
+- **Préférences** (planche VI) : store `preferences`, lu une fois au lancement par `App.vue` (écran de connexion compris). `BackgroundLayer` pose `--bg-opacity` (1 − assombrissement) et `--bg-filter` (`--bg-filter-original` pour les couleurs d'origine, sinon la désaturation) sur la racine du document : le fond, la vignette et l'aperçu en direct des Réglages suivent les mêmes variables. Avant la lecture, l'image n'est pas affichée (opacité 0), pour ne pas montrer un fond qui changerait aussitôt. Image personnalisée : octets lus par `background_image`, URL `blob:` (`src/imageUrl.ts`) posée dans `--bg-image`, décodée (`img.decode()`) avant d'être affichée ; refusée au lancement, elle est abandonnée pour le fond d'origine avec un avis persistant. Un import ne remplace l'URL affichée qu'après `background_commit` ; un refus s'affiche dans le panneau jusqu'au choix suivant (`src/backgroundText.ts`). Le curseur applique la valeur tout de suite et l'enregistre 300 ms après le dernier mouvement ; un échec d'enregistrement est notifié, la valeur reste celle choisie pour la session.
 - **Barre d'état** : affiche `server_info` (système, Docker, systemd), récupéré une fois après la connexion.
 - **Erreurs** : chaque `kind` de `AppError` est traduit en message clair. `HostKeyMismatch` redirige vers un écran d'alerte dédié, jamais une simple notification.
 
@@ -384,12 +387,14 @@ Définie dans `tauri.conf.json` (`app.security.csp`) : tout vient de l'applicati
 |---|---|---|
 | `default-src`, `script-src` | `'self'` | modules JS du build, aucun script en ligne |
 | `style-src` | `'self'` | feuilles CSS du build ; pas de `'unsafe-inline'` |
-| `img-src`, `font-src` | `'self'` | image de fond et polices embarquées |
+| `img-src` | `'self' blob:` | image de fond fournie ; image personnalisée affichée par une URL `blob:` créée par l'application |
+| `font-src` | `'self'` | polices embarquées |
 | `connect-src` | `ipc: http://ipc.localhost` | IPC de Tauri (`ipc:` sous Linux, `http://ipc.localhost` sous Windows) |
 | `object-src`, `base-uri`, `form-action`, `frame-src` | `'none'` | inutilisés |
 
 - Les styles calculés (`:style` de Vue : console virtualisée, radar, orbite) passent par l'API de style du DOM, que la CSP ne bloque pas. Un `<style>` ou un attribut `style="…"` inséré dans le HTML serait bloqué : à éviter (Reka UI n'en insère que dans son Splitter, non utilisé).
 - Vite intègre en URI `data:` les fichiers importés de moins de 4 Ko : un tel import serait bloqué par `img-src` ou `font-src`. Aujourd'hui, aucun fichier n'est dans ce cas.
+- `blob:` est la source la plus étroite pour afficher une image locale : seules les URL créées par la page elle-même, dans sa propre origine, sont concernées (et `script-src` n'autorise aucun script en ligne). Écartés : le protocole `asset` de Tauri (fonction `protocol-asset`, portée de fichiers à ouvrir, chemin local visible dans l'URL) et `data:` (toute image en base64 dans le HTML ou le CSS, 13,3 Mo de texte dans une variable CSS pour une image de 10 Mo). Aucune permission ni fonction de Tauri n'est ajoutée : les octets arrivent par une commande.
 - Pas de `frame-ancestors` : ignorée dans une balise meta, forme sous laquelle Tauri injecte la CSP sous Linux.
 - **La CSP n'est pas appliquée en `tauri dev`** sur ordinateur : la webview charge directement le serveur de Vite (le relais de Tauri n'existe que sur mobile). Pour la vérifier avec l'inspecteur : `npm run tauri build -- --debug --no-bundle`, puis lancer `src-tauri/target/debug/atlas-vps` (fichiers embarqués, vraie CSP, inspecteur disponible).
 

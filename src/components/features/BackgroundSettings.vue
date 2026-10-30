@@ -1,10 +1,18 @@
 <script setup lang="ts">
 /**
  * Panneau « Fond d'écran » des préférences (planche VI) : image utilisée,
+ * choix d'une image ou retour au fond fourni, refus éventuel,
  * assombrissement, couleurs d'origine et aperçu de la lisibilité.
  */
 import { computed } from "vue";
+import {
+  backgroundDetail,
+  refusalText,
+  refusalTitle,
+} from "../../backgroundText";
 import { usePreferencesStore } from "../../stores/preferences";
+import AppButton from "../ui/AppButton.vue";
+import NoticeBox from "../ui/NoticeBox.vue";
 import PanelCard from "../ui/PanelCard.vue";
 import RangeSlider from "../ui/RangeSlider.vue";
 import DimmingPreview from "./DimmingPreview.vue";
@@ -16,6 +24,11 @@ const dimming = computed({
   set: (value: number) => preferences.setDimming(value),
 });
 
+const custom = computed(() => preferences.background);
+const busy = computed(
+  () => preferences.choosingSince !== null || preferences.resetting,
+);
+
 const originalColors = computed({
   get: () => preferences.originalColors,
   set: (value: boolean) => void preferences.setOriginalColors(value),
@@ -25,15 +38,53 @@ const originalColors = computed({
 <template>
   <PanelCard>
     <template #kicker>Fond d'écran</template>
-    <template #aside><span class="caps">Fond d'origine</span></template>
+    <template #aside>
+      <span class="caps">{{
+        custom ? "Image personnalisée" : "Fond d'origine"
+      }}</span>
+    </template>
 
     <div class="current">
       <span class="thumbnail" aria-hidden="true" />
       <div class="identity">
-        <p class="name">Fond d'origine</p>
-        <p class="meta mono">Fourni avec Atlas</p>
+        <p class="name" :title="custom?.fileName">
+          {{ custom ? custom.fileName : "Fond d'origine" }}
+        </p>
+        <p class="meta mono">
+          {{ custom ? backgroundDetail(custom) : "Fourni avec Atlas" }}
+        </p>
+        <div class="buttons">
+          <AppButton
+            variant="primary"
+            :disabled="busy"
+            :busy-since="preferences.choosingSince"
+            @click="preferences.chooseBackground()"
+          >
+            Choisir une image
+          </AppButton>
+          <AppButton
+            :disabled="!custom || busy"
+            @click="preferences.resetBackground()"
+          >
+            Rétablir le fond d'origine
+          </AppButton>
+        </div>
       </div>
     </div>
+
+    <p class="formats">
+      PNG, JPEG ou WebP · 10 Mo au maximum · l'image reste sur cet ordinateur.
+    </p>
+
+    <NoticeBox
+      v-if="preferences.refusal"
+      tone="warning"
+      :title="refusalTitle(preferences.refusal.refusal)"
+    >
+      {{
+        refusalText(preferences.refusal.fileName, preferences.refusal.refusal)
+      }}
+    </NoticeBox>
 
     <hr class="separator" />
 
@@ -83,6 +134,20 @@ const originalColors = computed({
   flex-direction: column;
   gap: var(--sp-1);
   min-width: 0;
+}
+
+.buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.formats {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
 }
 
 .name {

@@ -8,8 +8,9 @@
  * Parallaxe : l'image se décale de `--bg-parallax-shift` par section, en
  * `--dur-slow`. Désactivée en mouvement réduit.
  *
- * Préférences : `--bg-opacity` (assombrissement) et `--bg-filter` (couleurs
- * d'origine) sont posés sur la racine du document, pour que les aperçus des
+ * Préférences : `--bg-image` (image personnalisée, URL `blob:`),
+ * `--bg-opacity` (assombrissement) et `--bg-filter` (couleurs d'origine)
+ * sont posés sur la racine du document, pour que les aperçus des
  * Réglages suivent le fond. Rien n'est affiché avant leur lecture, pour ne
  * pas montrer un fond qui changerait aussitôt.
  */
@@ -27,6 +28,11 @@ watchEffect(() => {
     "--bg-opacity",
     String(preferences.ready ? preferences.backgroundOpacity : 0),
   );
+  if (preferences.backgroundUrl) {
+    root.setProperty("--bg-image", `url("${preferences.backgroundUrl}")`);
+  } else {
+    root.removeProperty("--bg-image");
+  }
   if (preferences.originalColors) {
     root.setProperty("--bg-filter", "var(--bg-filter-original)");
   } else {

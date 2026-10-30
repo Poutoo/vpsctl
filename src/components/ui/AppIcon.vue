@@ -33,7 +33,11 @@ export type AppIconName =
   | "download"
   | "upload"
   | "search"
-  | "lock";
+  | "lock"
+  | "info"
+  | "check-circle"
+  | "check"
+  | "never";
 
 defineProps<{
   name: AppIconName;
@@ -182,6 +186,20 @@ defineProps<{
     <g v-else-if="name === 'lock'">
       <rect x="4" y="7.5" width="8" height="6" rx="1" />
       <path d="M6 7.5V5.5a2 2 0 0 1 4 0v2" />
+    </g>
+    <g v-else-if="name === 'info'">
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 7.5v3.5M8 5v.01" />
+    </g>
+    <g v-else-if="name === 'check-circle'">
+      <circle cx="8" cy="8" r="6" />
+      <path d="M5.5 8.2l1.8 1.8 3.2-3.5" />
+    </g>
+    <path v-else-if="name === 'check'" d="M3.5 8.5l3 3 6-6.5" />
+    <!-- Jamais : cercle barré. -->
+    <g v-else-if="name === 'never'">
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M4.2 11.8l7.6-7.6" />
     </g>
     <!-- Signal perdu : antenne barrée. -->
     <g v-else>

@@ -89,6 +89,7 @@ Défilement automatique désactivable, désactivé automatiquement quand on remo
 - Une image à faible opacité (`--bg-opacity`) occupe le fond de toute l'application.
 - Les zones denses en texte (tableaux, console, listes) reposent toujours sur une surface opaque, jamais directement sur l'image.
 - Le contraste est porté par les surfaces : n'importe quelle image doit pouvoir être utilisée sans retoucher le reste.
+- L'utilisateur peut la remplacer par sa propre image (PNG, JPEG ou WebP), régler l'assombrissement (opacité = 1 − assombrissement, 85 % par défaut) et la garder dans ses couleurs d'origine (préférences, planche VI).
 - Deux traitements à comparer en performance, notamment sous WebKitGTK : l'actuel (`--bg-blend: luminosity` + `--bg-filter`) et une image déjà désaturée avec la seule opacité.
 
 ## Animations
