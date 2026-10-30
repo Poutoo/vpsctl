@@ -16,6 +16,7 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 
 - Réglages : onglets Profils et Préférences. Les préférences règlent l'assombrissement de l'image de fond (85 % par défaut), avec un aperçu en direct de la lisibilité, et proposent d'afficher l'image dans ses couleurs d'origine. Elles sont conservées d'un lancement à l'autre ; un fichier de préférences absent ou abîmé redonne les réglages par défaut sans gêner le démarrage.
 - Fond d'écran personnalisé : une image PNG, JPEG ou WebP (10 Mo et 8 192 px de côté au plus) choisie sur l'ordinateur est copiée dans le dossier de configuration d'Atlas et s'affiche dans toute l'application, écran de connexion compris. Un fichier d'un autre format, trop lourd, trop grand ou abîmé est refusé avec sa raison, sans changer le fond. « Rétablir le fond d'origine » supprime la copie. Si la copie a disparu ou est devenue illisible, Atlas reprend le fond d'origine et le signale au lancement.
+- Discord Rich Presence, désactivée par défaut : une fois activée dans les préférences, la carte « Atlas · Contrôle de mission » affiche sur votre profil Discord « En liaison » ou « Au sol » et la durée écoulée, rien d'autre (ni profil, ni serveur, ni fichier, ni commande). Discord fermé ou absent : Atlas réessaie sans bruit et propose « Réessayer ». La carte est effacée quand on désactive l'interrupteur et à la fermeture d'Atlas. Disponible uniquement dans l'application installée.
 
 ## [1.1.0] - 2026-10-21
 

@@ -161,6 +161,10 @@
   /* trait d'action (sélection, section active) */
   --opacity-frozen: 0.6;
   /* données figées pendant un LOS : lisibles, atténuées */
+  --opacity-unpublished: 0.6;
+  /* aperçu de la carte Discord tant qu'elle n'est pas publiée */
+  --discord-image-size: 56px;
+  /* image de la carte dans l'aperçu Discord */
 
   /* ---------- Superposition ---------- */
   --z-background: 0;

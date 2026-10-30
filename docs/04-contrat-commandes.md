@@ -371,7 +371,7 @@ preferences_set_original_colors(enabled: boolean): Preferences
 
 - Fichier `preferences.json` du dossier de configuration, séparé des profils, écrit atomiquement (temporaire puis renommage) à chaque modification ; la valeur en mémoire ne change qu'après une écriture réussie (sinon `Io`).
 - Lecture tolérante, une seule fois au démarrage : un fichier absent, illisible ou qui n'est pas un objet JSON donne les valeurs par défaut ; un champ manquant, d'un autre type ou hors limites reprend sa valeur par défaut sans toucher aux autres ; les champs inconnus et `version` sont ignorés. Le premier enregistrement remplace un fichier invalide.
-- Format écrit : `{ "version": 1, "dimming": 85, "originalColors": false, "background": null }` ; `background` reprend `BackgroundInfo` pour une image personnalisée.
+- Format écrit : `{ "version": 1, "dimming": 85, "originalColors": false, "background": null, "discordPresence": false }` ; `background` reprend `BackgroundInfo` pour une image personnalisée.
 
 ### Image de fond
 
@@ -396,6 +396,24 @@ background_lost_at_startup(): boolean           // vrai une seule fois si la cop
 - **Copie** : `background_commit` écrit les octets dans `background` (dossier de configuration, sans extension : le format est relu sur le contenu) par un temporaire renommé, puis enregistre `BackgroundInfo` dans les préférences. `background_reset` enregistre `background: null` puis supprime la copie.
 - **Démarrage** : une copie absente, trop lourde, d'un format non reconnu ou dont l'en-tête est illisible est écartée (préférence remise à `null`, copie supprimée) et `background_lost_at_startup` le signale une fois. Format et dimensions sont relus sur la copie. L'interface décode ensuite la copie ; si le moteur web la refuse, elle appelle `background_reset` et affiche le même message.
 - Les octets passent en binaire (`tauri::ipc::Response`), sans JSON. L'interface les affiche par une URL `blob:`, seule source d'image ajoutée à la CSP (voir `docs/03-architecture.md`).
+
+## Présence Discord
+
+```ts
+presence_status(): PresenceStatus
+presence_set_enabled(enabled: boolean): void   // enregistre discordPresence puis l'applique ; Io si l'enregistrement échoue
+presence_retry(): void                         // nouvelle tentative immédiate (bouton « Réessayer »)
+// Événement `presence-status` : PresenceStatus, à chaque changement d'état ou de phase.
+```
+
+- **Disponibilité** : uniquement dans un build release lancé hors `tauri dev` (`!tauri::is_dev() && !cfg!(debug_assertions)`), sinon `devUnavailable` ; avec un identifiant d'application valide (`presence::CLIENT_ID`, 17 à 20 chiffres), sinon `notConfigured`. Dans ces deux cas, aucune connexion à Discord n'est jamais tentée.
+- **Désactivée par défaut** (`discordPresence: false`). Interrupteur éteint : aucune connexion, rien n'est envoyé.
+- **Connexion locale uniquement** : tube nommé `\\?\pipe\discord-ipc-N` sous Windows ; socket Unix `discord-ipc-N` sous Linux, dans `$XDG_RUNTIME_DIR`, `$TMPDIR`, `$TMP`, `$TEMP` puis `/tmp`, et dans leurs sous-dossiers `app/com.discordapp.Discord/` (Flatpak) et `snap.discord/` (Snap), N de 0 à 9. Les dossiers de base viennent de la documentation RPC de Discord ; les sous-dossiers Flatpak et Snap sont ceux des crates `discord-rich-presence` et `discord-presence`, qui concordent.
+- **Protocole** (implémentation maison, `presence/`) : trames `opcode` (u32 LE), longueur (u32 LE), JSON. Poignée de main `{"v": 1, "client_id": …}`, attente de l'événement READY (5 s au plus), puis `SET_ACTIVITY` avec `pid` (Discord efface la carte si le processus disparaît). Les PING reçoivent un PONG ; une trame CLOSE ou une lecture en erreur signale Discord fermé.
+- **Contenu** : `{"details": "En liaison" | "Au sol", "timestamps": {"start": <début de la phase, secondes>}, "assets": {"large_image": "papillon", "large_text": "Atlas · Contrôle de mission"}}`. Le nom affiché en titre de la carte est celui de l'application sur le portail Discord. « En liaison » : de l'établissement de la liaison (AOS) à sa perte ou à la déconnexion ; « Au sol » : tous les autres cas, connexion en cours et LOS compris. La durée part du début de la phase en cours (`AppState::link_phase`). La fonction qui construit l'activité ne reçoit que la phase et son début : aucune donnée d'un profil, d'un serveur, d'un fichier ou d'une commande ne peut y entrer (test `no_profile_file_or_command_data_reaches_discord`).
+- **Discord absent ou fermé** : état `searching`, nouvelle tentative toutes les 15 s tant que l'interrupteur est actif, ou tout de suite par `presence_retry`. Aucune erreur n'est remontée ni notifiée.
+- **Limite de fréquence** : 5 mises à jour d'activité par 20 secondes (documentation de Discord : Game SDK, `UpdateActivity` ; objet Activity des événements du gateway). Fenêtre glissante comptée sur tous les envois, effacements compris ; une phase qui change plus vite est regroupée et seule la dernière part.
+- **Effacement** : `SET_ACTIVITY` avec `activity: null` (la documentation RPC ne décrit pas l'effacement ; c'est la forme employée par les deux crates citées), puis trame CLOSE. À la désactivation (dans la limite de fréquence) et à la fermeture de l'application (aussitôt, en 1 s au plus).
 
 ## Structures
 
@@ -516,6 +534,7 @@ interface Preferences {
   dimming: number             // assombrissement de l'image de fond, 0 (image nette) à 100 (masquée) ; 85 par défaut
   originalColors: boolean     // image en couleurs, sans la désaturation habituelle ; false par défaut
   background: BackgroundInfo | null   // null : fond fourni avec l'application
+  discordPresence: boolean    // présence Discord ; false par défaut
 }
 
 interface BackgroundInfo {
@@ -536,6 +555,16 @@ type Refusal =
   | { kind: "tooLarge"; bytes: number }
   | { kind: "dimensions"; width: number; height: number }
   | { kind: "unreadable" }                  // en-tête incohérent, ou décodage refusé par la webview
+
+interface PresenceStatus {
+  state: "off" | "searching" | "connected" | "devUnavailable" | "notConfigured"
+  phase: PhaseState             // pour l'aperçu de la carte
+}
+
+interface PhaseState {
+  phase: "linked" | "ground"    // En liaison (AOS) ou Au sol
+  since: number                 // début de la phase, millisecondes depuis l'epoch Unix
+}
 
 interface Script {
   id: string                     // "" à la création : attribué par le backend

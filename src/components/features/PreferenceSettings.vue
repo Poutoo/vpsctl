@@ -4,6 +4,7 @@ import { useConnectionStore } from "../../stores/connection";
 import PageHeader from "../layout/PageHeader.vue";
 import AppButton from "../ui/AppButton.vue";
 import BackgroundSettings from "./BackgroundSettings.vue";
+import DiscordSettings from "./DiscordSettings.vue";
 import SettingsTabs from "./SettingsTabs.vue";
 
 const connection = useConnectionStore();
@@ -20,6 +21,7 @@ const connection = useConnectionStore();
 
     <div class="columns">
       <BackgroundSettings />
+      <DiscordSettings />
     </div>
   </div>
 </template>

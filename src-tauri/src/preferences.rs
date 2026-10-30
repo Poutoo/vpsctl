@@ -43,6 +43,8 @@ pub struct Preferences {
     pub original_colors: bool,
     /// Image personnalisée ; `null` pour le fond fourni avec l'application.
     pub background: Option<BackgroundInfo>,
+    /// Présence Discord, désactivée par défaut.
+    pub discord_presence: bool,
 }
 
 impl Default for Preferences {
@@ -51,6 +53,7 @@ impl Default for Preferences {
             dimming: DEFAULT_DIMMING,
             original_colors: false,
             background: None,
+            discord_presence: false,
         }
     }
 }
@@ -136,6 +139,10 @@ impl PreferenceStore {
 
     pub fn set_original_colors(&self, enabled: bool) -> Result<Preferences, AppError> {
         self.update(|p| p.original_colors = enabled)
+    }
+
+    pub fn set_discord_presence(&self, enabled: bool) -> Result<Preferences, AppError> {
+        self.update(|p| p.discord_presence = enabled)
     }
 
     /// Vrai une seule fois si la copie a été écartée au démarrage.
@@ -327,10 +334,15 @@ fn parse(content: &str) -> Preferences {
     let background = fields
         .get("background")
         .and_then(|v| serde_json::from_value::<BackgroundInfo>(v.clone()).ok());
+    let discord_presence = fields
+        .get("discordPresence")
+        .and_then(Value::as_bool)
+        .unwrap_or(defaults.discord_presence);
     Preferences {
         dimming,
         original_colors,
         background,
+        discord_presence,
     }
 }
 
@@ -370,6 +382,7 @@ mod tests {
                 dimming: 85,
                 original_colors: false,
                 background: None,
+                discord_presence: false,
             }
         );
     }
@@ -387,10 +400,14 @@ mod tests {
         assert_eq!(prefs.dimming, DEFAULT_DIMMING);
         assert!(prefs.original_colors);
 
-        let prefs = parse(r#"{"dimming":40,"originalColors":"oui","background":{"fileName":1}}"#);
+        let prefs = parse(
+            r#"{"dimming":40,"originalColors":"oui","background":{"fileName":1},"discordPresence":1}"#,
+        );
         assert_eq!(prefs.dimming, 40);
         assert!(!prefs.original_colors);
         assert_eq!(prefs.background, None);
+        assert!(!prefs.discord_presence);
+        assert!(parse(r#"{"discordPresence":true}"#).discord_presence);
 
         for dimming in ["-1", "12.5", "\"50\"", "null"] {
             let prefs = parse(&format!(r#"{{"dimming":{dimming}}}"#));

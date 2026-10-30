@@ -6,6 +6,7 @@ pub mod config;
 pub mod docker;
 pub mod error;
 pub mod preferences;
+pub mod presence;
 pub mod run_state;
 pub mod scripts;
 pub mod secrets;
@@ -35,8 +36,27 @@ pub fn run() {
             let on_link_lost: state::LinkLostSink = Arc::new(move |event| {
                 let _ = handle.emit(state::LINK_LOST_EVENT, event);
             });
-            app.manage(state::AppState::new(&config_dir, on_link_lost));
-            app.manage(preferences::PreferenceStore::load(&config_dir));
+            let state = state::AppState::new(&config_dir, on_link_lost);
+            let preferences = preferences::PreferenceStore::load(&config_dir);
+
+            // Présence Discord : uniquement dans l'application installée
+            // (build release, hors `tauri dev`).
+            let release = !tauri::is_dev() && !cfg!(debug_assertions);
+            let handle = app.handle().clone();
+            let (presence, task) = presence::Presence::new(
+                presence::availability(release, presence::CLIENT_ID),
+                preferences.get().discord_presence,
+                state.link_phase(),
+                presence::LocalDiscord,
+                Arc::new(move |status| {
+                    let _ = handle.emit(presence::STATUS_EVENT, status);
+                }),
+            );
+            tauri::async_runtime::spawn(task);
+
+            app.manage(state);
+            app.manage(preferences);
+            app.manage(presence);
             Ok(())
         })
         // Page (re)chargée : les canaux de l'ancienne page sont morts, mais
@@ -101,15 +121,24 @@ pub fn run() {
             commands::preferences::background_image,
             commands::preferences::background_reset,
             commands::preferences::background_lost_at_startup,
+            commands::presence::presence_status,
+            commands::presence::presence_set_enabled,
+            commands::presence::presence_retry,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app, event| {
             // Fermeture de l'application : les flux sont arrêtés (aucun
-            // processus ne reste sur le serveur) et la liaison fermée.
+            // processus ne reste sur le serveur), la liaison fermée et
+            // l'activité Discord effacée.
             if let RunEvent::Exit = event {
-                if let Some(state) = app.try_state::<state::AppState>() {
-                    tauri::async_runtime::block_on(state.shutdown());
+                if let (Some(state), Some(presence)) = (
+                    app.try_state::<state::AppState>(),
+                    app.try_state::<presence::Presence>(),
+                ) {
+                    tauri::async_runtime::block_on(async {
+                        tokio::join!(state.shutdown(), presence.shutdown());
+                    });
                 }
             }
         });

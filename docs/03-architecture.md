@@ -46,6 +46,11 @@ src-tauri/src/
 ├── config.rs
 ├── preferences.rs  préférences de l'interface (preferences.json), lecture tolérante, copie de l'image de fond
 ├── background.rs   fonctions pures : contrôle d'une image (taille, signature, dimensions de l'en-tête)
+├── presence/
+│   ├── mod.rs        tâche de présence Discord : connexion, relances, limite de fréquence, effacement
+│   ├── activity.rs   fonctions pures : contenu envoyé (phase et durée uniquement)
+│   ├── frame.rs      trames de l'IPC locale de Discord
+│   └── socket.rs     tube nommé (Windows) ou socket Unix (Linux, Flatpak, Snap)
 ├── secrets.rs
 └── commands/
     ├── connection.rs
@@ -54,6 +59,7 @@ src-tauri/src/
     ├── systemd.rs
     ├── logs.rs
     ├── preferences.rs
+    ├── presence.rs
     └── scripts.rs
 ```
 
@@ -174,6 +180,8 @@ Création et suppression (`manage.rs`) : séquences décrites dans `docs/04-cont
 **preferences** : préférences de l'interface (image de fond, assombrissement et couleurs) dans `preferences.json`, séparé des profils, et copie de l'image personnalisée (`background`). Lecture tolérante au démarrage, champ par champ (fonction pure `parse`) : un fichier absent ou invalide ne bloque jamais l'application. Chaque modification est écrite atomiquement avant d'être appliquée en mémoire. L'état est géré à part d'`AppState` (`PreferenceStore`), sans lien avec la liaison SSH. Import d'une image en deux temps (contrôles et attente, puis enregistrement après décodage par la webview) et vérification de la copie au démarrage : voir `docs/04-contrat-commandes.md`, « Image de fond ».
 
 **background** : fonctions pures de contrôle d'une image choisie : taille, format d'après la signature, dimensions lues dans l'en-tête PNG, JPEG ou WebP et fin de fichier présente, par un analyseur maison (aucune crate de décodage : le décodage réel est fait par la webview), limites, nom affiché. Testées sur des en-têtes construits octet par octet.
+
+**presence** : présence Discord (Rich Presence), implémentation maison du protocole IPC local plutôt qu'une crate : aucune dépendance ajoutée (tokio fournit le tube nommé et le socket Unix), tâche tokio arrêtée proprement, relances silencieuses et limite de fréquence maîtrisées. Écartées : `discord-rich-presence` 1.1.0 (E/S bloquantes, dépend d'`uuid` 0.8 en doublon) et `discord-presence` 3.2.0 (treize dépendances, son propre fil et ses propres relances). Une tâche unique (`Presence`, gérée à part d'`AppState`) suit l'interrupteur et la phase de la liaison publiée par `AppState` (`watch`), et publie son statut par une fonction de rappel que `lib.rs` relie à l'événement `presence-status`. La lecture des trames se fait dans une tâche séparée, pour qu'aucune trame lue à moitié ne soit perdue quand une autre branche de `select!` l'emporte. Testée avec un faux Discord (`tokio::io::duplex`) en temps virtuel (`tokio` `test-util`, dépendance de test) : poignée de main, phases, limite de fréquence, effacement, absence, relances, fermeture. Contrat : `docs/04-contrat-commandes.md`, « Présence Discord ».
 
 **secrets** : surcouche de la crate `keyring` pour la passphrase de la clé SSH (Credential Manager sous Windows, Secret Service sous Linux).
 
@@ -357,6 +365,7 @@ src/
 - **Barre de titre personnalisée** : la barre native est désactivée (`decorations: false`). La zone de déplacement utilise `data-tauri-drag-region`, les boutons réduire, agrandir et fermer appellent l'API de fenêtre de Tauri, avec les permissions correspondantes dans les capabilities. Le double-clic sur la barre agrandit la fenêtre. Le symbole de la marque est importé avec `?no-inline` : Vite ne le transforme jamais en URI `data:`, que la CSP (`img-src 'self'`) bloquerait ; `draggable="false"` évite qu'un glisser sur lui déplace une image au lieu de la fenêtre. Limite connue : sous Windows, le menu d'ancrage (Snap Layouts) au survol du bouton agrandir n'est pas disponible ; sous Linux, le comportement est à tester selon le gestionnaire de fenêtres.
 - **Build de production** (`productionGuards.ts`) : F5, Ctrl+R et Ctrl+Maj+R sont bloqués (un rechargement interromprait sans confirmation les scripts en cours), ainsi que le menu contextuel du moteur web, sauf dans un champ de saisie (couper, copier, coller). Les menus de l'application ne sont pas touchés. En développement, rien ne change.
 - **Préférences** (planche VI) : store `preferences`, lu une fois au lancement par `App.vue` (écran de connexion compris). `BackgroundLayer` pose `--bg-opacity` (1 − assombrissement) et `--bg-filter` (`--bg-filter-original` pour les couleurs d'origine, sinon la désaturation) sur la racine du document : le fond, la vignette et l'aperçu en direct des Réglages suivent les mêmes variables. Avant la lecture, l'image n'est pas affichée (opacité 0), pour ne pas montrer un fond qui changerait aussitôt. Image personnalisée : octets lus par `background_image`, URL `blob:` (`src/imageUrl.ts`) posée dans `--bg-image`, décodée (`img.decode()`) avant d'être affichée ; refusée au lancement, elle est abandonnée pour le fond d'origine avec un avis persistant. Un import ne remplace l'URL affichée qu'après `background_commit` ; un refus s'affiche dans le panneau jusqu'au choix suivant (`src/backgroundText.ts`). Le curseur applique la valeur tout de suite et l'enregistre 300 ms après le dernier mouvement ; un échec d'enregistrement est notifié, la valeur reste celle choisie pour la session.
+- **Présence Discord** (planche VI) : store `presence`, initialisé à l'ouverture des préférences (statut lu puis suivi par l'événement `presence-status`). L'interrupteur est enregistré dans les préférences ; indisponible (`devUnavailable`, `notConfigured`), il est désactivé. Discord absent n'est jamais notifié : le panneau l'affiche, avec « Réessayer ». L'aperçu de la carte reprend la phase réelle et sa durée ; l'autre onglet montre l'autre état à 00:00:00. Textes par état : `src/presenceText.ts`.
 - **Barre d'état** : affiche `server_info` (système, Docker, systemd), récupéré une fois après la connexion.
 - **Erreurs** : chaque `kind` de `AppError` est traduit en message clair. `HostKeyMismatch` redirige vers un écran d'alerte dédié, jamais une simple notification.
 
@@ -367,7 +376,7 @@ src/
 | Permission | Usage |
 |---|---|
 | `core:app:allow-version` | version dans la barre d'état (`getVersion`) |
-| `core:event:allow-listen`, `core:event:allow-unlisten` | `onResized`, `onFocusChanged`, `onCloseRequested`, événement `link-lost` |
+| `core:event:allow-listen`, `core:event:allow-unlisten` | `onResized`, `onFocusChanged`, `onCloseRequested`, événements `link-lost` et `presence-status` |
 | `core:path:allow-resolve-directory`, `core:path:allow-join` | dossier Téléchargements proposé à l'enregistrement (`downloadDir`, `join`) |
 | `core:window:allow-is-minimized`, `core:window:allow-is-maximized` | visibilité réelle de la fenêtre, état agrandi |
 | `core:window:allow-start-dragging`, `core:window:allow-internal-toggle-maximize` | `data-tauri-drag-region` : déplacement et double-clic |

@@ -32,6 +32,10 @@ uuid = { version = "1.28.0", features = ["v4"] }
 zeroize = "1.9.1"
 tokio = { version = "1.53.2", features = ["net", "time", "sync", "rt", "macros", "fs", "io-util"] }
 
+[dev-dependencies]
+# Temps virtuel pour les tests de la présence Discord (relances, limite de fréquence).
+tokio = { version = "1.53.2", features = ["test-util"] }
+
 
 # Build de publication : https://tauri.app/concept/size/#cargo-configuration
 # - opt-level 3 plutôt que "s" : chiffrement SSH et transferts SFTP en

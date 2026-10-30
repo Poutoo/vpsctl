@@ -41,6 +41,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const ready = ref(false);
   const dimming = ref(DEFAULT_DIMMING);
   const originalColors = ref(false);
+  /** Interrupteur de la présence Discord (piloté par le store `presence`). */
+  const discordPresence = ref(false);
   const background = ref<BackgroundInfo | null>(null);
   /** URL `blob:` de l'image personnalisée affichée. */
   const backgroundUrl = ref<string | null>(null);
@@ -57,6 +59,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
   function apply(preferences: Preferences) {
     dimming.value = preferences.dimming;
     originalColors.value = preferences.originalColors;
+    discordPresence.value = preferences.discordPresence;
     background.value = preferences.background;
   }
 
@@ -201,6 +204,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     ready,
     dimming,
     originalColors,
+    discordPresence,
     background,
     backgroundUrl,
     refusal,

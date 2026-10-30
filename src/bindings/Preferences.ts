@@ -13,4 +13,8 @@ originalColors: boolean,
 /**
  * Image personnalisée ; `null` pour le fond fourni avec l'application.
  */
-background: BackgroundInfo | null, };
+background: BackgroundInfo | null, 
+/**
+ * Présence Discord, désactivée par défaut.
+ */
+discordPresence: boolean, };

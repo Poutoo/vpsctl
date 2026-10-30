@@ -20,13 +20,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use ts_rs::TS;
 use zeroize::Zeroizing;
 
 use crate::config::{Profile, ProfileStore};
 use crate::error::AppError;
+use crate::presence::{LinkPhase, PhaseState};
 use crate::scripts::{self, LastRunRecorder, Script, ScriptParser, ScriptStore};
 use crate::secrets;
 use crate::sftp::fs::SftpFs;
@@ -151,6 +152,9 @@ pub struct AppState {
     stream_start: tokio::sync::Mutex<()>,
     /// Transferts en cours. Un transfert terminé s'en retire.
     transfers: StreamRegistry,
+    /// Phase de la liaison (« En liaison » ou « Au sol ») et son début,
+    /// suivie par la présence Discord.
+    phase: Arc<watch::Sender<PhaseState>>,
 }
 
 impl AppState {
@@ -167,7 +171,17 @@ impl AppState {
             streams: Arc::new(Mutex::new(HashMap::new())),
             stream_start: tokio::sync::Mutex::new(()),
             transfers: Arc::new(Mutex::new(HashMap::new())),
+            phase: Arc::new(watch::Sender::new(PhaseState {
+                phase: LinkPhase::Ground,
+                since: now_millis(),
+            })),
         }
+    }
+
+    /// Phase de la liaison : « En liaison » de l'établissement à la perte ou
+    /// à la déconnexion, « Au sol » sinon (connexion en cours comprise).
+    pub fn link_phase(&self) -> watch::Receiver<PhaseState> {
+        self.phase.subscribe()
     }
 
     /// Réglages de détection de la perte, pour les tests (délais courts).
@@ -333,6 +347,7 @@ impl AppState {
                 let active = self.start_active(profile.id.clone(), connection, attempt);
                 let info = active.info();
                 *link = Link::Connected(active);
+                set_phase(&self.phase, LinkPhase::Linked);
                 Ok(info)
             }
             Err(error) => {
@@ -366,6 +381,7 @@ impl AppState {
             Link::Connecting { abort, .. } => abort.abort(),
             Link::Connected(active) => close_active(active).await,
         }
+        set_phase(&self.phase, LinkPhase::Ground);
     }
 
     /// Liaison active, ou `None`. Une liaison fermée dont la perte n'est pas
@@ -417,6 +433,7 @@ impl AppState {
                 streams: self.streams.clone(),
                 transfers: self.transfers.clone(),
                 on_link_lost: self.on_link_lost.clone(),
+                phase: self.phase.clone(),
             },
             connection.loss_signal(),
             generation,
@@ -744,6 +761,7 @@ struct LinkWatch {
     streams: StreamRegistry,
     transfers: StreamRegistry,
     on_link_lost: LinkLostSink,
+    phase: Arc<watch::Sender<PhaseState>>,
 }
 
 /// Attend la perte de la liaison `generation`. Si elle est toujours la
@@ -764,6 +782,7 @@ async fn watch_link(watch: LinkWatch, signal: LossSignal, generation: u64) {
         active
     };
     active.latency_task.abort();
+    set_phase(&watch.phase, LinkPhase::Ground);
     (watch.on_link_lost)(LinkLost {
         profile_id: active.profile_id.clone(),
         cause: loss.cause,
@@ -776,6 +795,20 @@ async fn watch_link(watch: LinkWatch, signal: LossSignal, generation: u64) {
         stop_all(&watch.streams, STREAM_STOP_TIMEOUT),
         stop_all(&watch.transfers, TRANSFER_CANCEL_TIMEOUT)
     );
+}
+
+/// Change la phase ; son début n'est remis à zéro que si elle change.
+fn set_phase(sender: &watch::Sender<PhaseState>, phase: LinkPhase) {
+    sender.send_if_modified(|current| {
+        let changed = current.phase != phase;
+        if changed {
+            *current = PhaseState {
+                phase,
+                since: now_millis(),
+            };
+        }
+        changed
+    });
 }
 
 async fn close_active(active: Active) {

@@ -6,5 +6,6 @@ pub mod docker;
 pub mod files;
 pub mod logs;
 pub mod preferences;
+pub mod presence;
 pub mod scripts;
 pub mod systemd;

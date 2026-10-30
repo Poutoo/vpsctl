@@ -15,7 +15,12 @@ import {
 vi.mock("../api/preferences");
 vi.mock("../imageUrl");
 
-const saved = { dimming: 40, originalColors: true, background: null };
+const saved = {
+  dimming: 40,
+  originalColors: true,
+  background: null,
+  discordPresence: false,
+};
 const image: BackgroundInfo = {
   fileName: "nebuleuse-nord.jpg",
   format: "jpeg",

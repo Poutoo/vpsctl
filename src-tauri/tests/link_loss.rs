@@ -18,6 +18,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
 use vpsctl_lib::config::Profile;
 use vpsctl_lib::error::AppError;
+use vpsctl_lib::presence::LinkPhase;
 use vpsctl_lib::scripts::ScriptParser;
 use vpsctl_lib::ssh::host_key;
 use vpsctl_lib::ssh::link::{LinkTiming, LossCause};
@@ -488,4 +489,32 @@ async fn reconnection_after_loss_starts_clean() {
 
     bench.relay.cut(Cut::Close);
     assert_eq!(bench.next_loss().await.cause, LossCause::Closed);
+}
+
+/// Phase suivie par la présence Discord : « En liaison » de l'AOS à la
+/// perte ou à la déconnexion, « Au sol » sinon ; son début change avec elle.
+#[tokio::test]
+async fn link_phase_follows_aos_los_and_disconnection() {
+    let mut bench = Bench::new(FAST).await;
+    let phase = bench.state.link_phase();
+    assert_eq!(phase.borrow().phase, LinkPhase::Ground);
+
+    bench.connect().await;
+    let linked = *phase.borrow();
+    assert_eq!(linked.phase, LinkPhase::Linked);
+
+    bench.relay.cut(Cut::Close);
+    bench.next_loss().await;
+    let lost = *phase.borrow();
+    assert_eq!(lost.phase, LinkPhase::Ground);
+    assert!(lost.since >= linked.since);
+
+    bench.connect().await;
+    assert_eq!(phase.borrow().phase, LinkPhase::Linked);
+    bench.state.disconnect().await;
+    assert_eq!(phase.borrow().phase, LinkPhase::Ground);
+    // Déconnexion répétée au sol : le début de la phase ne bouge pas.
+    let ground = *phase.borrow();
+    bench.state.disconnect().await;
+    assert_eq!(*phase.borrow(), ground);
 }
