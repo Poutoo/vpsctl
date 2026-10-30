@@ -1,6 +1,7 @@
 //! Contenu envoyé à Discord. Fonctions pures, qui ne reçoivent que la phase
 //! de la liaison et un horodatage : aucune donnée d'un profil, d'un serveur,
-//! d'un fichier ou d'une commande ne peut y entrer.
+//! d'un fichier ou d'une commande ne peut y entrer. Le reste est fixe : nom,
+//! papillon et bouton vers le code source.
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -33,9 +34,14 @@ pub const LINKED_LABEL: &str = "En liaison";
 pub const GROUND_LABEL: &str = "Au sol";
 /// Clé de l'image (papillon) déposée sur le portail Discord.
 pub const IMAGE_KEY: &str = "papillon";
+/// Bouton de la carte (libellé de 32 caractères au plus pour Discord),
+/// visible des autres utilisateurs ; Discord ne le montre pas à soi-même.
+pub const SOURCE_LABEL: &str = "Source Code";
+pub const SOURCE_URL: &str = "https://github.com/Poutoo/vpsctl";
 
 /// Activité affichée : l'état et la durée écoulée depuis le début de la
-/// phase (en secondes, comme l'exemple de la documentation RPC).
+/// phase (en secondes, comme l'exemple de la documentation RPC), et le
+/// bouton vers le code source.
 pub fn activity(state: PhaseState) -> Value {
     let details = match state.phase {
         LinkPhase::Linked => LINKED_LABEL,
@@ -45,6 +51,7 @@ pub fn activity(state: PhaseState) -> Value {
         "details": details,
         "timestamps": { "start": state.since / 1000 },
         "assets": { "large_image": IMAGE_KEY, "large_text": APP_NAME },
+        "buttons": [{ "label": SOURCE_LABEL, "url": SOURCE_URL }],
     })
 }
 
@@ -105,6 +112,7 @@ mod tests {
                 "details": "En liaison",
                 "timestamps": { "start": 1_760_000_000 },
                 "assets": { "large_image": "papillon", "large_text": "Atlas · VPS Control" },
+                "buttons": [{ "label": "Source Code", "url": "https://github.com/Poutoo/vpsctl" }],
             })
         );
         let ground = PhaseState {
@@ -122,7 +130,16 @@ mod tests {
         assert_eq!(frame["args"]["pid"], 1);
     }
 
-    /// Seuls le nom, l'état, la durée et le papillon peuvent être envoyés :
+    /// Limites de Discord pour un bouton : libellé de 1 à 32 caractères,
+    /// URL de 1 à 512 caractères.
+    #[test]
+    fn source_button_fits_discord_limits() {
+        assert!((1..=32).contains(&SOURCE_LABEL.chars().count()));
+        assert!(SOURCE_URL.starts_with("https://") && SOURCE_URL.len() <= 512);
+    }
+
+    /// Seuls le nom, l'état, la durée, le papillon et le bouton vers le code
+    /// source peuvent être envoyés :
     /// toutes les chaînes et toutes les clés des trames appartiennent à une
     /// liste fixe, quelle que soit la phase.
     #[test]
@@ -132,6 +149,8 @@ mod tests {
             LINKED_LABEL,
             GROUND_LABEL,
             IMAGE_KEY,
+            SOURCE_LABEL,
+            SOURCE_URL,
             "SET_ACTIVITY",
             "123456789012345678",
             "nonce-1",
@@ -151,6 +170,9 @@ mod tests {
             "assets",
             "large_image",
             "large_text",
+            "buttons",
+            "label",
+            "url",
         ];
         for phase in [LinkPhase::Linked, LinkPhase::Ground] {
             let (mut strings, mut keys) = (Vec::new(), Vec::new());

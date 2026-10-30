@@ -70,6 +70,7 @@ Désactivée par défaut. Une fois l'interrupteur activé, Atlas affiche une car
 | Le nom « Atlas · VPS Control » et le papillon                                                            | Le nom du profil                                         |
 | L'état : « En liaison » (liaison établie) ou « Au sol » (tous les autres cas, perte de liaison comprise) | Le serveur, son adresse, l'utilisateur, l'empreinte      |
 | La durée écoulée depuis le début de cet état                                                             | Les fichiers, services, conteneurs, scripts et commandes |
+| Un bouton « Source Code » vers le dépôt GitHub d'Atlas (visible des autres, pas de vous)                 |                                                          |
 
 - Discord fermé ou absent : Atlas réessaie toutes les 15 secondes, sans notification ; « Réessayer » tente tout de suite.
 - La carte est effacée quand on désactive l'interrupteur et à la fermeture d'Atlas. Atlas respecte la limite de Discord (5 mises à jour par 20 secondes).

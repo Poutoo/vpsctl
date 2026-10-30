@@ -18,6 +18,8 @@ export const PHASE_LABEL: Record<LinkPhase, string> = {
 };
 
 export const APP_NAME = "Atlas · VPS Control";
+/** Bouton de la carte vers le dépôt GitHub (`presence/activity.rs`). */
+export const SOURCE_LABEL = "Source Code";
 
 /** Statut à droite du bandeau. */
 export function presenceBadge(state: PresenceState): string {

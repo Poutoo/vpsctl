@@ -10,6 +10,7 @@ import { formatClock, useElapsed } from "../../composables/useElapsed";
 import {
   APP_NAME,
   PHASE_LABEL,
+  SOURCE_LABEL,
   presenceBadge,
   presenceNotice,
   previewKicker,
@@ -83,6 +84,10 @@ const elapsed = useElapsed(since, { clock: () => Date.now(), tickMs: 1_000 });
           <li><AppIcon name="check" />Le nom : {{ APP_NAME }}</li>
           <li><AppIcon name="check" />Votre état : En liaison ou Au sol</li>
           <li><AppIcon name="check" />La durée écoulée</li>
+          <li>
+            <AppIcon name="check" />Un bouton « {{ SOURCE_LABEL }} » vers le
+            dépôt GitHub d'Atlas
+          </li>
         </ul>
       </section>
       <section class="list">
@@ -138,6 +143,8 @@ const elapsed = useElapsed(since, { clock: () => Date.now(), tickMs: 1_000 });
           </p>
         </div>
       </div>
+      <!-- Imitation du bouton de Discord, non cliquable ici. -->
+      <span class="card-button" aria-hidden="true">{{ SOURCE_LABEL }}</span>
     </div>
   </PanelCard>
 </template>
@@ -306,5 +313,19 @@ const elapsed = useElapsed(since, { clock: () => Date.now(), tickMs: 1_000 });
 .card-elapsed {
   color: var(--color-text-muted);
   font-size: var(--fs-sm);
+}
+
+.card-button {
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--color-surface-raised);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--r-1);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-align: center;
+}
+
+.card:not(.published) .card-button {
+  opacity: var(--opacity-unpublished);
 }
 </style>
