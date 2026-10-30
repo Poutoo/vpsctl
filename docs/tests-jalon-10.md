@@ -91,7 +91,7 @@ Après chaque refus : encadré « Image refusée · … » avec le nom du fichie
 Avec l'application installée (build release) et un `CLIENT_ID` valide. Vérifier la carte sur un **autre** compte ou appareil Discord, ou sur son propre profil (clic sur son avatar).
 
 - [ ] Premier lancement : interrupteur éteint, « DÉSACTIVÉ », encadré « Désactivé · Rien n'est partagé avec Discord. », aperçu « APERÇU · NON PUBLIÉ » en pointillés. Aucune carte sur Discord.
-- [ ] Discord lancé, activer l'interrupteur : « ACTIF · CONNECTÉ » en quelques secondes, encadré « Connecté à Discord », aperçu « PUBLIÉ SUR DISCORD ». Sur Discord : « Atlas · Contrôle de mission », « Au sol », la durée écoulée et le papillon.
+- [ ] Discord lancé, activer l'interrupteur : « ACTIF · CONNECTÉ » en quelques secondes, encadré « Connecté à Discord », aperçu « PUBLIÉ SUR DISCORD ». Sur Discord : « Atlas · VPS Control », « Au sol », la durée écoulée et le papillon.
 - [ ] Établir la liaison : la carte passe à « En liaison », durée repartie de zéro.
 - [ ] Couper le réseau du VPS (LOS) : « Au sol » à la détection de la perte ; rétablir : « En liaison » de nouveau.
 - [ ] « Couper la liaison » : « Au sol ».
@@ -103,7 +103,7 @@ Avec l'application installée (build release) et un `CLIENT_ID` valide. Vérifie
 - [ ] Lancer Discord ensuite : la carte apparaît en 15 secondes au plus, ou tout de suite avec « Réessayer ».
 - [ ] Fermer Discord (quitter complètement) pendant qu'Atlas tourne : « Discord non détecté », sans notification ; relancer Discord : la carte revient seule.
 - [ ] Préférence conservée au redémarrage (interrupteur actif, carte publiée au lancement).
-- [ ] **Confidentialité** : sur la carte affichée par Discord (profil, liste des membres, infobulle du papillon), seuls apparaissent le nom « Atlas · Contrôle de mission », « En liaison » ou « Au sol », la durée et le papillon. Jamais le nom du profil, l'hôte, l'adresse IP, l'utilisateur, un nom de fichier, de service ou de conteneur, une commande.
+- [ ] **Confidentialité** : sur la carte affichée par Discord (profil, liste des membres, infobulle du papillon), seuls apparaissent le nom « Atlas · VPS Control », « En liaison » ou « Au sol », la durée et le papillon. Jamais le nom du profil, l'hôte, l'adresse IP, l'utilisateur, un nom de fichier, de service ou de conteneur, une commande.
 - [ ] Interrupteur éteint depuis le lancement : vérifier qu'Atlas ne se connecte pas à Discord (Windows : Process Explorer, onglet des handles d'Atlas, aucun `\Device\NamedPipe\discord-ipc-*` ; Linux : `ss -xp | grep atlas-vps` sans `discord-ipc`).
 - [ ] L'aperçu « En liaison / Au sol » change l'aperçu seulement ; il montre la durée réelle pour l'état en cours, 00:00:00 pour l'autre.
 

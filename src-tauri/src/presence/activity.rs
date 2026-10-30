@@ -28,7 +28,7 @@ pub struct PhaseState {
 }
 
 /// Nom de l'application sur le portail Discord, repris en infobulle.
-pub const APP_NAME: &str = "Atlas · Contrôle de mission";
+pub const APP_NAME: &str = "Atlas · VPS Control";
 pub const LINKED_LABEL: &str = "En liaison";
 pub const GROUND_LABEL: &str = "Au sol";
 /// Clé de l'image (papillon) déposée sur le portail Discord.
@@ -104,7 +104,7 @@ mod tests {
             json!({
                 "details": "En liaison",
                 "timestamps": { "start": 1_760_000_000 },
-                "assets": { "large_image": "papillon", "large_text": "Atlas · Contrôle de mission" },
+                "assets": { "large_image": "papillon", "large_text": "Atlas · VPS Control" },
             })
         );
         let ground = PhaseState {

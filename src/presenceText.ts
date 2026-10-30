@@ -17,7 +17,7 @@ export const PHASE_LABEL: Record<LinkPhase, string> = {
   ground: "Au sol",
 };
 
-export const APP_NAME = "Atlas · Contrôle de mission";
+export const APP_NAME = "Atlas · VPS Control";
 
 /** Statut à droite du bandeau. */
 export function presenceBadge(state: PresenceState): string {

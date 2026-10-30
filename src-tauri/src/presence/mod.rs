@@ -40,7 +40,7 @@ use frame::{OP_CLOSE, OP_FRAME, OP_HANDSHAKE, OP_PING, OP_PONG};
 
 /// Identifiant public de l'application sur le portail Discord (17 à 20
 /// chiffres). Vide ou invalide : présence indisponible.
-pub const CLIENT_ID: &str = "";
+pub const CLIENT_ID: &str = "1565817590667026583";
 
 /// Nom de l'événement émis vers l'interface.
 pub const STATUS_EVENT: &str = "presence-status";

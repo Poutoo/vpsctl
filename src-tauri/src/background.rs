@@ -401,6 +401,25 @@ mod tests {
         assert_eq!(inspect(&webp[..webp.len() - 1]), Err(Refusal::Unreadable));
     }
 
+    /// Certains téléphones ajoutent des données après le marqueur de fin
+    /// (bloc final de plusieurs Kio, qui peut contenir des 0xFF) : le
+    /// fichier reste valide tant que le marqueur est présent.
+    #[test]
+    fn jpeg_with_data_after_the_end_marker_is_accepted() {
+        let mut with_trailer = jpeg(4000, 3000);
+        with_trailer.extend_from_slice(b"SEFH");
+        with_trailer.extend(std::iter::repeat_n([0xFF, 0x00, 0x12, 0xFF], 16 * 1024).flatten());
+        with_trailer.extend_from_slice(b"SEFT");
+        assert_eq!(
+            inspect(&with_trailer),
+            Ok(Probe {
+                format: ImageFormat::Jpeg,
+                width: 4000,
+                height: 3000
+            })
+        );
+    }
+
     #[test]
     fn dimensions_are_limited_by_side_and_surface() {
         assert!(inspect(&png(8192, 4882)).is_ok());

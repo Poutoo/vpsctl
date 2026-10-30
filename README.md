@@ -67,7 +67,7 @@ Désactivée par défaut. Une fois l'interrupteur activé, Atlas affiche une car
 
 | Partagé avec Discord                                                                                     | Jamais partagé                                           |
 | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Le nom « Atlas · Contrôle de mission » et le papillon                                                    | Le nom du profil                                         |
+| Le nom « Atlas · VPS Control » et le papillon                                                            | Le nom du profil                                         |
 | L'état : « En liaison » (liaison établie) ou « Au sol » (tous les autres cas, perte de liaison comprise) | Le serveur, son adresse, l'utilisateur, l'empreinte      |
 | La durée écoulée depuis le début de cet état                                                             | Les fichiers, services, conteneurs, scripts et commandes |
 
