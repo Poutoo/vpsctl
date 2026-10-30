@@ -12,6 +12,8 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 
 ## [Non publié]
 
+## [1.2.0] - 2026-10-30
+
 ### Ajouté
 
 - Réglages : onglets Profils et Préférences. Les préférences règlent l'assombrissement de l'image de fond (85 % par défaut), avec un aperçu en direct de la lisibilité, et proposent d'afficher l'image dans ses couleurs d'origine. Elles sont conservées d'un lancement à l'autre ; un fichier de préférences absent ou abîmé redonne les réglages par défaut sans gêner le démarrage.
@@ -63,6 +65,7 @@ Première version publiée, installable sous Windows et Linux.
 - Politique de sécurité du contenu stricte et permissions de l'application réduites à ce qui est utilisé.
 - Aucune commande avec `sudo` ; valeurs envoyées au serveur validées puis échappées ; opérations sur les fichiers uniquement par SFTP.
 
-[Non publié]: https://github.com/Poutoo/vpsctl/compare/v1.1.0...HEAD
+[Non publié]: https://github.com/Poutoo/vpsctl/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Poutoo/vpsctl/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Poutoo/vpsctl/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Poutoo/vpsctl/releases/tag/v1.0.0

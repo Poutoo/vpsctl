@@ -1,6 +1,6 @@
 [package]
 name = "vpsctl"
-version = "1.1.0"
+version = "1.2.0"
 description = "Contrôle d'un VPS Linux via SSH"
 authors = ["Poutoo"]
 edition = "2021"
