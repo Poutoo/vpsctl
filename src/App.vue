@@ -12,6 +12,7 @@ import ConfirmDialog from "./components/ui/ConfirmDialog.vue";
 import ToastHost from "./components/ui/ToastHost.vue";
 import { useScriptGuards } from "./composables/useScriptGuards";
 import { useConnectionStore } from "./stores/connection";
+import { usePreferencesStore } from "./stores/preferences";
 import { useProfilesStore } from "./stores/profiles";
 
 const connection = useConnectionStore();
@@ -21,6 +22,7 @@ const router = useRouter();
 const { confirmLeave } = useScriptGuards();
 
 void profiles.ensureLoaded().catch(() => undefined);
+void usePreferencesStore().load();
 
 // Fermeture de l'application pendant un script : GO / NO GO, il sera
 // interrompu. Sinon, la fenêtre se ferme directement.

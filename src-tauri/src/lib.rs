@@ -4,6 +4,7 @@ pub mod commands;
 pub mod config;
 pub mod docker;
 pub mod error;
+pub mod preferences;
 pub mod run_state;
 pub mod scripts;
 pub mod secrets;
@@ -34,6 +35,7 @@ pub fn run() {
                 let _ = handle.emit(state::LINK_LOST_EVENT, event);
             });
             app.manage(state::AppState::new(&config_dir, on_link_lost));
+            app.manage(preferences::PreferenceStore::load(&config_dir));
             Ok(())
         })
         // Page (re)chargée : les canaux de l'ancienne page sont morts, mais
@@ -88,6 +90,9 @@ pub fn run() {
             commands::files::upload,
             commands::files::download,
             commands::files::transfer_cancel,
+            commands::preferences::preferences_get,
+            commands::preferences::preferences_set_dimming,
+            commands::preferences::preferences_set_original_colors,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

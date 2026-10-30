@@ -56,10 +56,11 @@ export const router = createRouter({
       meta: { requiresConnection: true, fullBleed: true },
     },
     {
-      path: "/settings",
+      // `/settings` : profils ; `/settings/preferences` : préférences.
+      path: "/settings/:tab(preferences)?",
       name: "settings",
-      // Accessible sans connexion : les profils sont des données locales,
-      // nécessaires pour établir la première liaison.
+      // Accessible sans connexion : profils et préférences sont des données
+      // locales, les profils nécessaires pour établir la première liaison.
       component: () => import("../views/SettingsView.vue"),
     },
   ],

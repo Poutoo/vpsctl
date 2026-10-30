@@ -361,6 +361,18 @@ script_stop(runId: string): void
 - `script_stop` : comme `logs_stop` (rend la main une fois le processus distant arrêté, 3 s au plus ; identifiant inconnu ignoré).
 - `lastRun` est enregistré à la fin de chaque exécution : `at` est l'heure de **début** de l'exécution, `exitCode` le code de sortie de la fin naturelle, ou `null` pour une exécution interrompue (`script_stop`, déconnexion, liaison perdue, rechargement de l'interface, fermeture de l'application) ou tuée par un signal.
 
+## Préférences
+
+```ts
+preferences_get(): Preferences
+preferences_set_dimming(dimming: number): Preferences        // 0 à 100, sinon InvalidInput
+preferences_set_original_colors(enabled: boolean): Preferences
+```
+
+- Fichier `preferences.json` du dossier de configuration, séparé des profils, écrit atomiquement (temporaire puis renommage) à chaque modification ; la valeur en mémoire ne change qu'après une écriture réussie (sinon `Io`).
+- Lecture tolérante, une seule fois au démarrage : un fichier absent, illisible ou qui n'est pas un objet JSON donne les valeurs par défaut ; un champ manquant, d'un autre type ou hors limites reprend sa valeur par défaut sans toucher aux autres ; les champs inconnus et `version` sont ignorés. Le premier enregistrement remplace un fichier invalide.
+- Format écrit : `{ "version": 1, "dimming": 85, "originalColors": false }`.
+
 ## Structures
 
 ```ts
@@ -474,6 +486,11 @@ interface ServiceDeleteInfo {
   dropIn: string | null         // chemin absolu du dossier de surcharge <unit>.d/, s'il existe
   dropInEntries: number         // éléments qu'il contient (fichiers, liens, sous-dossiers)
   active: boolean               // le service n'est pas arrêté : il sera arrêté
+}
+
+interface Preferences {
+  dimming: number             // assombrissement de l'image de fond, 0 (image nette) à 100 (masquée) ; 85 par défaut
+  originalColors: boolean     // image en couleurs, sans la désaturation habituelle ; false par défaut
 }
 
 interface Script {

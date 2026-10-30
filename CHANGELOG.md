@@ -12,6 +12,10 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 
 ## [Non publié]
 
+### Ajouté
+
+- Réglages : onglets Profils et Préférences. Les préférences règlent l'assombrissement de l'image de fond (85 % par défaut), avec un aperçu en direct de la lisibilité, et proposent d'afficher l'image dans ses couleurs d'origine. Elles sont conservées d'un lancement à l'autre ; un fichier de préférences absent ou abîmé redonne les réglages par défaut sans gêner le démarrage.
+
 ## [1.1.0] - 2026-10-21
 
 ### Ajouté

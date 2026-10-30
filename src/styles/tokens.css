@@ -148,6 +148,9 @@
   /* colonne « Au démarrage » des services systemd */
   --switch-width: 32px;
   --switch-height: 18px;
+  --range-thumb-size: 14px;
+  --range-track-height: 4px;
+  /* curseur (assombrissement de l'image de fond) */
 
   --titlebar-height: 32px;
   --titlebar-button-width: 46px;
@@ -184,10 +187,19 @@
   --bg-image: url("../assets/bg/girl-orange.png");
   /* à définir quand une image sous licence compatible sera choisie */
   --bg-opacity: 0.15;
+  /* remplacée par l'assombrissement des préférences (85 % par défaut) */
   --bg-blend: normal;
   /* variante économe à tester : normal, avec une image déjà désaturée */
-  --bg-filter: grayscale(1) contrast(1.1);
+  --bg-filter-grayscale: grayscale(1) contrast(1.1);
+  --bg-filter-original: none;
+  /* préférence « Couleurs d'origine » */
+  --bg-filter: var(--bg-filter-grayscale);
   --bg-parallax-shift: 16px;
+  --dimming-preview-height: 140px;
+  /* aperçu en direct de la lisibilité, dans les préférences */
+  --thumbnail-width: 132px;
+  --thumbnail-height: 78px;
+  /* vignette de l'image de fond, dans les préférences */
   /* décalage de l'image par section */
 }
 

@@ -44,6 +44,7 @@ src-tauri/src/
 │   └── manage.rs     séquences de création et de suppression d'un service
 ├── scripts.rs
 ├── config.rs
+├── preferences.rs  préférences de l'interface (preferences.json), lecture tolérante
 ├── secrets.rs
 └── commands/
     ├── connection.rs
@@ -51,6 +52,7 @@ src-tauri/src/
     ├── docker.rs
     ├── systemd.rs
     ├── logs.rs
+    ├── preferences.rs
     └── scripts.rs
 ```
 
@@ -167,6 +169,8 @@ Création et suppression (`manage.rs`) : séquences décrites dans `docs/04-cont
 - `stream::run` renvoie l'issue du flux ; à la fin de la tâche, une fonction enregistre `lastRun` (début de l'exécution, code de sortie ou `null`).
 
 **config** : lit et écrit les profils de connexion en JSON dans le dossier de configuration de l'application, et fournit l'écriture atomique (temporaire puis renommage) utilisée aussi pour les scripts.
+
+**preferences** : préférences de l'interface (assombrissement et couleurs de l'image de fond) dans `preferences.json`, séparé des profils. Lecture tolérante au démarrage, champ par champ (fonction pure `parse`) : un fichier absent ou invalide ne bloque jamais l'application. Chaque modification est écrite atomiquement avant d'être appliquée en mémoire. L'état est géré à part d'`AppState` (`PreferenceStore`), sans lien avec la liaison SSH.
 
 **secrets** : surcouche de la crate `keyring` pour la passphrase de la clé SSH (Credential Manager sous Windows, Secret Service sous Linux).
 
@@ -312,7 +316,7 @@ WantedBy=default.target
 src/
 ├── bindings/          types générés par ts-rs (jamais modifiés à la main)
 ├── api/               une fonction typée par commande Tauri, regroupées par domaine
-├── stores/            Pinia : connection, profiles, files, transfers, services, scripts, telemetry
+├── stores/            Pinia : connection, profiles, preferences, files, transfers, services, scripts, telemetry
 ├── composables/       logSession, useDockedStream, useConfirm, useNotify, useVisiblePolling
 ├── router/            routes + garde « connexion requise »
 ├── styles/            tokens.css, base.css
@@ -349,6 +353,7 @@ src/
 - **Console** : un seul composant console, utilisé à l'identique dans l'écran Télémétrie (logs et sortie des scripts) et le panneau ancré du tableau de bord (défilement automatique, indicateur de nouvelles lignes, bannière LOS). Le panneau ancré réduit la zone du tableau au-dessus de lui, il ne la recouvre pas.
 - **Barre de titre personnalisée** : la barre native est désactivée (`decorations: false`). La zone de déplacement utilise `data-tauri-drag-region`, les boutons réduire, agrandir et fermer appellent l'API de fenêtre de Tauri, avec les permissions correspondantes dans les capabilities. Le double-clic sur la barre agrandit la fenêtre. Le symbole de la marque est importé avec `?no-inline` : Vite ne le transforme jamais en URI `data:`, que la CSP (`img-src 'self'`) bloquerait ; `draggable="false"` évite qu'un glisser sur lui déplace une image au lieu de la fenêtre. Limite connue : sous Windows, le menu d'ancrage (Snap Layouts) au survol du bouton agrandir n'est pas disponible ; sous Linux, le comportement est à tester selon le gestionnaire de fenêtres.
 - **Build de production** (`productionGuards.ts`) : F5, Ctrl+R et Ctrl+Maj+R sont bloqués (un rechargement interromprait sans confirmation les scripts en cours), ainsi que le menu contextuel du moteur web, sauf dans un champ de saisie (couper, copier, coller). Les menus de l'application ne sont pas touchés. En développement, rien ne change.
+- **Préférences** (planche VI) : store `preferences`, lu une fois au lancement par `App.vue`. `BackgroundLayer` pose `--bg-opacity` (1 − assombrissement) et `--bg-filter` (`--bg-filter-original` pour les couleurs d'origine, sinon la désaturation) sur la racine du document : le fond, la vignette et l'aperçu en direct des Réglages suivent les mêmes variables. Avant la lecture, l'image n'est pas affichée (opacité 0), pour ne pas montrer un fond qui changerait aussitôt. Le curseur applique la valeur tout de suite et l'enregistre 300 ms après le dernier mouvement ; un échec d'enregistrement est notifié, la valeur reste celle choisie pour la session.
 - **Barre d'état** : affiche `server_info` (système, Docker, systemd), récupéré une fois après la connexion.
 - **Erreurs** : chaque `kind` de `AppError` est traduit en message clair. `HostKeyMismatch` redirige vers un écran d'alerte dédié, jamais une simple notification.
 
@@ -398,7 +403,8 @@ Définie dans `tauri.conf.json` (`app.security.csp`) : tout vient de l'applicati
 | `/files/:path*` | FilesView (chemin absolu ; `/files` = racine) | oui |
 | `/scripts` | ScriptsView | oui |
 | `/telemetry/:tab?` | TelemetryView (onglets des flux ; section d'origine surlignée : Scripts ou Tableau de bord) | oui |
-| `/settings` | SettingsView (profils) | oui |
+| `/settings` | SettingsView, onglet Profils | non |
+| `/settings/preferences` | SettingsView, onglet Préférences (planche VI) | non |
 
 ## Tests
 
