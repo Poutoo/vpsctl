@@ -49,11 +49,38 @@ Pas de mise à jour automatique : installer la nouvelle version par-dessus l'anc
 4. **Passphrase de la clé** : si la clé en a une, elle est demandée. « Mémoriser dans le trousseau du système » (coché par défaut) évite de la ressaisir.
 5. Le **tableau de bord** s'ouvre : conteneurs Docker et services systemd du compte. Les sections Fichiers et Scripts sont dans la navigation.
 
+## Préférences
+
+Réglages → onglet **Préférences**. Les préférences sont gardées dans `preferences.json`, à côté des profils ; un fichier absent ou abîmé redonne les réglages par défaut.
+
+### Fond d'écran
+
+- **Choisir une image** : une image PNG, JPEG ou WebP de l'ordinateur, de 10 Mo et 8 192 px de côté (40 mégapixels) au plus. Le format est reconnu sur le contenu du fichier, pas sur son extension. Atlas en garde une copie dans son dossier de configuration (fichier `background`) et seulement le nom du fichier, jamais son emplacement : l'original peut être déplacé ou supprimé. L'image ne quitte pas l'ordinateur.
+- Un fichier d'un autre format, trop lourd, trop grand, tronqué ou abîmé est refusé avec sa raison ; le fond en place ne change pas.
+- **Assombrissement** : de 0 % (image nette) à 100 % (image masquée), 85 % par défaut, avec un aperçu de la lisibilité. **Couleurs d'origine** affiche l'image sans la désaturation habituelle.
+- Le fond s'applique à toute l'application, écran de connexion compris. **Rétablir le fond d'origine** supprime la copie.
+- Si la copie a disparu ou est devenue illisible, Atlas reprend le fond d'origine et le signale au lancement.
+
+### Discord Rich Presence
+
+Désactivée par défaut. Une fois l'interrupteur activé, Atlas affiche une carte sur votre profil Discord, par la connexion locale de Discord (tube nommé sous Windows, socket Unix sous Linux, y compris Discord en Flatpak ou en Snap) ; aucune connexion réseau n'est ouverte par Atlas pour cela.
+
+| Partagé avec Discord                                                                                     | Jamais partagé                                           |
+| -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Le nom « Atlas · Contrôle de mission » et le papillon                                                    | Le nom du profil                                         |
+| L'état : « En liaison » (liaison établie) ou « Au sol » (tous les autres cas, perte de liaison comprise) | Le serveur, son adresse, l'utilisateur, l'empreinte      |
+| La durée écoulée depuis le début de cet état                                                             | Les fichiers, services, conteneurs, scripts et commandes |
+
+- Discord fermé ou absent : Atlas réessaie toutes les 15 secondes, sans notification ; « Réessayer » tente tout de suite.
+- La carte est effacée quand on désactive l'interrupteur et à la fermeture d'Atlas. Atlas respecte la limite de Discord (5 mises à jour par 20 secondes).
+- Disponible uniquement dans l'application installée : en développement, le panneau affiche « Indisponible en mode développement ». Création de l'application sur le portail Discord : [docs/discord/README.md](docs/discord/README.md).
+
 ## Données stockées
 
 | Donnée                                                                      | Windows                                                                                                  | Linux                                                                                         |
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Profils (`profiles.json`, empreintes comprises) et scripts (`scripts.json`) | `%APPDATA%\dev.poutoo.atlas\`                                                                            | `~/.config/dev.poutoo.atlas/`                                                                 |
+| Préférences (`preferences.json`) et copie de l'image de fond (`background`) | `%APPDATA%\dev.poutoo.atlas\`                                                                            | `~/.config/dev.poutoo.atlas/`                                                                 |
 | Passphrases des clés                                                        | Gestionnaire d'identification Windows, entrées `passphrase:<id du profil>` du service `dev.poutoo.atlas` | Trousseau Secret Service, mêmes entrées (`secret-tool search --all service dev.poutoo.atlas`) |
 | Données du moteur web (cache)                                               | `%LOCALAPPDATA%\dev.poutoo.atlas\`                                                                       | `~/.local/share/dev.poutoo.atlas/`                                                            |
 
