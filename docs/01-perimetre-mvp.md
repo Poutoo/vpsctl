@@ -48,8 +48,8 @@ Il s'agit de services utilisateur (`systemctl --user`), pas de services système
 
 ## Hors MVP
 
-- Création de conteneurs Docker : remplacée en v2 par une gestion `docker compose` (up/down sur un dossier de projet)
-- Édition de fichiers texte dans l'appli
+- Création de conteneurs Docker : remplacée en v1.3 par une gestion `docker compose` (up/down sur un dossier de projet, jalon 11)
+- Édition de fichiers texte dans l'appli : v1.3 (jalon 12)
 - Terminal intégré
 - Monitoring CPU, RAM, disque
 - Connexions simultanées à plusieurs VPS

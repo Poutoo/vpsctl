@@ -44,10 +44,22 @@ Maquettes : `docs/design/planche III/`.
   - [x] Détection des conteneurs tués par manque de mémoire (`OOMKilled`)
   - [x] Papillon dans la barre de titre
 
+## v1.2 « Préférences »
+
+Maquettes : `docs/design/planche VI/`.
+
+- [ ] Jalon 10 : préférences
+  - [ ] Fichier de préférences séparé des profils, lecture tolérante ; onglets Profils / Préférences dans les Réglages
+  - [ ] Fond d'écran personnalisable : image PNG, JPEG ou WebP copiée dans le dossier de configuration, assombrissement réglable, couleurs d'origine, retour au fond fourni
+  - [ ] Discord Rich Presence : désactivée par défaut, état « En liaison » ou « Au sol », uniquement dans l'application installée
+
+## v1.3
+
+- [ ] Jalon 11 : gestion `docker compose` (up/down sur un dossier de projet)
+- [ ] Jalon 12 : édition de fichiers texte
+
 ## v2
 
-- [ ] Gestion `docker compose` (up/down sur un dossier de projet)
-- [ ] Édition de fichiers texte
 - [ ] Monitoring
 - [ ] Glisser/Déposer de dossiers entier dans le gestionnaire
 - [ ] Gestion des droits pour MCP Claude (écriture, périmètre d'accès...)
