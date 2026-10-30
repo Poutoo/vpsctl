@@ -20,8 +20,6 @@ pub const MAX_SIDE: u32 = 8192;
 pub const MAX_PIXELS: u64 = 40_000_000;
 /// Longueur maximale du nom affiché, en caractères.
 const MAX_NAME_CHARS: usize = 128;
-/// Fin de fichier où chercher le bloc `IEND` d'un PNG.
-const TAIL_BYTES: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -162,11 +160,25 @@ fn png_size(data: &[u8]) -> Option<(u32, u32)> {
     Some((be_u32(data, 16)?, be_u32(data, 20)?))
 }
 
-/// Bloc final `IEND` (vide) présent vers la fin du fichier ; quelques
-/// octets superflus après lui sont tolérés.
+/// Parcours des blocs depuis la signature (longueur, type, données, CRC)
+/// jusqu'au bloc final `IEND`, entier. Un bloc coupé rend le fichier
+/// incomplet ; les données placées après `IEND` sont tolérées, quelle que
+/// soit leur taille.
 fn png_complete(data: &[u8]) -> bool {
-    let tail = &data[data.len().saturating_sub(TAIL_BYTES)..];
-    tail.windows(8).any(|w| w == b"\0\0\0\0IEND")
+    let mut at = 8;
+    while let Some(length) = be_u32(data, at) {
+        let Some(end) = (length as usize)
+            .checked_add(at + 12)
+            .filter(|end| *end <= data.len())
+        else {
+            return false;
+        };
+        if &data[at + 4..at + 8] == b"IEND" {
+            return true;
+        }
+        at = end;
+    }
+    false
 }
 
 /// Taille annoncée par l'en-tête RIFF disponible en entier.
@@ -399,6 +411,41 @@ mod tests {
 
         let webp = webp_lossy(640, 480);
         assert_eq!(inspect(&webp[..webp.len() - 1]), Err(Refusal::Unreadable));
+    }
+
+    /// PNG avec un bloc de données d'image `IDAT` de `payload`, annoncé
+    /// avec la longueur `declared`.
+    fn png_with_idat(declared: u32, payload: &[u8], end: bool) -> Vec<u8> {
+        let mut data = png(640, 480);
+        data.truncate(data.len() - 12);
+        data.extend_from_slice(&declared.to_be_bytes());
+        data.extend_from_slice(b"IDAT");
+        data.extend_from_slice(payload);
+        data.extend_from_slice(&[0; 4]);
+        if end {
+            data.extend_from_slice(b"\0\0\0\0IEND\xAE\x42\x60\x82");
+        }
+        data
+    }
+
+    #[test]
+    fn png_with_data_after_its_end_is_accepted() {
+        let mut with_trailer = png_with_idat(4, b"abcd", true);
+        with_trailer.extend(std::iter::repeat_n(0xFFu8, 64 * 1024));
+        assert!(inspect(&with_trailer).is_ok());
+    }
+
+    #[test]
+    fn png_cut_inside_a_chunk_is_unreadable() {
+        // Bloc annoncé de 100 octets, 50 présents, et pas de fin.
+        let cut = png_with_idat(100, &[7; 50], false);
+        assert_eq!(inspect(&cut), Err(Refusal::Unreadable));
+        // Longueur absurde : pas de dépassement de capacité, fichier refusé.
+        let absurd = png_with_idat(u32::MAX, b"abcd", true);
+        assert_eq!(inspect(&absurd), Err(Refusal::Unreadable));
+        // Un « IEND » dans les données d'image n'est pas la fin du fichier.
+        let fake_end = png_with_idat(12, b"\0\0\0\0IEND\xAE\x42\x60\x82", false);
+        assert_eq!(inspect(&fake_end), Err(Refusal::Unreadable));
     }
 
     /// Certains téléphones ajoutent des données après le marqueur de fin

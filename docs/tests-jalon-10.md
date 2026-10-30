@@ -44,6 +44,7 @@ Dossier de configuration : `%APPDATA%\dev.poutoo.atlas\` sous Windows, `~/.confi
 - [ ] « Choisir une image » ouvre la fenêtre de sélection du système, filtrée sur les images PNG, JPEG ou WebP (un second filtre propose tous les fichiers).
 - [ ] `fond.png` : le fond de toute l'application change aussitôt (écran affiché, navigation, barre de titre) ; le panneau indique « IMAGE PERSONNALISÉE », le nom du fichier, la taille et les dimensions (ex. « 2,4 Mo · 3840 × 2160 »), et la vignette.
 - [ ] Même chose avec `fond.jpg` puis `fond.webp`.
+- [ ] Fichiers suivis de données après leur fin (`cat fond.png lourd.png | head -c 9000000 > png-suivi.png`, idem avec `fond.jpg`) : acceptés.
 - [ ] Le dossier de configuration contient un fichier `background` ; `preferences.json` contient le nom du fichier, **jamais son chemin**.
 - [ ] Déplacer ou supprimer l'image d'origine puis relancer : le fond est toujours là.
 
