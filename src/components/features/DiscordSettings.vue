@@ -46,11 +46,8 @@ watch(
   { immediate: true },
 );
 
-/** Durée de la phase réelle ; zéro pour l'autre onglet de l'aperçu. */
-const since = computed(() => {
-  const phase = presence.status?.phase;
-  return phase && phase.phase === previewPhase.value ? phase.since : null;
-});
+/** Durée depuis le lancement d'Atlas, la même dans les deux états. */
+const since = computed(() => presence.status?.startedAt ?? null);
 const elapsed = useElapsed(since, { clock: () => Date.now(), tickMs: 1_000 });
 </script>
 

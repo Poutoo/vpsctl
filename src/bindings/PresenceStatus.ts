@@ -6,4 +6,9 @@ export type PresenceStatus = { state: PresenceState,
 /**
  * Phase de la liaison, pour l'aperçu de la carte dans l'interface.
  */
-phase: PhaseState, };
+phase: PhaseState, 
+/**
+ * Lancement d'Atlas (millisecondes depuis l'epoch Unix) : départ de la
+ * durée affichée, quel que soit l'état.
+ */
+startedAt: number, };

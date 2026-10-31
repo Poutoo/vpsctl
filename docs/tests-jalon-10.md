@@ -94,7 +94,7 @@ Avec l'application installée (build release) et un `CLIENT_ID` valide. Vérifie
 - [ ] Premier lancement : interrupteur éteint, « DÉSACTIVÉ », encadré « Désactivé · Rien n'est partagé avec Discord. », aperçu « APERÇU · NON PUBLIÉ » en pointillés. Aucune carte sur Discord.
 - [ ] Discord lancé, activer l'interrupteur : « ACTIF · CONNECTÉ » en quelques secondes, encadré « Connecté à Discord », aperçu « PUBLIÉ SUR DISCORD ». Sur Discord : « Atlas · VPS Control », « Au sol », la durée écoulée et le papillon.
 - [ ] Depuis un **autre** compte Discord : la carte porte un bouton « Source Code » qui ouvre https://github.com/Poutoo/vpsctl. Sur son propre compte, Discord n'affiche pas le bouton : c'est normal.
-- [ ] Établir la liaison : la carte passe à « En liaison », durée repartie de zéro.
+- [ ] Établir la liaison : la carte passe à « En liaison » ; la durée **continue** (elle compte depuis le lancement d'Atlas, sans repartir de zéro).
 - [ ] Couper le réseau du VPS (LOS) : « Au sol » à la détection de la perte ; rétablir : « En liaison » de nouveau.
 - [ ] « Couper la liaison » : « Au sol ».
 - [ ] Enchaîner rapidement plusieurs connexions et déconnexions : aucune erreur, la carte finit sur l'état réel (5 mises à jour par 20 secondes au plus ; un changement peut arriver avec quelques secondes de retard).
@@ -107,7 +107,7 @@ Avec l'application installée (build release) et un `CLIENT_ID` valide. Vérifie
 - [ ] Préférence conservée au redémarrage (interrupteur actif, carte publiée au lancement).
 - [ ] **Confidentialité** : sur la carte affichée par Discord (profil, liste des membres, infobulle du papillon), seuls apparaissent le nom « Atlas · VPS Control », « En liaison » ou « Au sol », la durée, le papillon et le bouton « Source Code ». Jamais le nom du profil, l'hôte, l'adresse IP, l'utilisateur, un nom de fichier, de service ou de conteneur, une commande.
 - [ ] Interrupteur éteint depuis le lancement : vérifier qu'Atlas ne se connecte pas à Discord (Windows : Process Explorer, onglet des handles d'Atlas, aucun `\Device\NamedPipe\discord-ipc-*` ; Linux : `ss -xp | grep atlas-vps` sans `discord-ipc`).
-- [ ] L'aperçu « En liaison / Au sol » change l'aperçu seulement ; il montre la durée réelle pour l'état en cours, 00:00:00 pour l'autre.
+- [ ] L'aperçu « En liaison / Au sol » change l'aperçu seulement ; il montre la même durée, depuis le lancement d'Atlas, dans les deux onglets.
 
 ### Linux : Flatpak et Snap (si possible)
 

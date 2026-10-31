@@ -39,17 +39,19 @@ pub const IMAGE_KEY: &str = "papillon";
 pub const SOURCE_LABEL: &str = "Source Code";
 pub const SOURCE_URL: &str = "https://github.com/Poutoo/vpsctl";
 
-/// Activité affichée : l'état et la durée écoulée depuis le début de la
-/// phase (en secondes, comme l'exemple de la documentation RPC), et le
-/// bouton vers le code source.
-pub fn activity(state: PhaseState) -> Value {
-    let details = match state.phase {
+/// Activité affichée : l'état, la durée écoulée depuis `started_at`
+/// (lancement d'Atlas, en millisecondes ; envoyé en secondes comme dans
+/// l'exemple de la documentation RPC), et le bouton vers le code source.
+/// Le départ ne dépend pas de la phase : la durée continue de tourner quand
+/// on passe d'« En liaison » à « Au sol ».
+pub fn activity(phase: LinkPhase, started_at: u64) -> Value {
+    let details = match phase {
         LinkPhase::Linked => LINKED_LABEL,
         LinkPhase::Ground => GROUND_LABEL,
     };
     json!({
         "details": details,
-        "timestamps": { "start": state.since / 1000 },
+        "timestamps": { "start": started_at / 1000 },
         "assets": { "large_image": IMAGE_KEY, "large_text": APP_NAME },
         "buttons": [{ "label": SOURCE_LABEL, "url": SOURCE_URL }],
     })
@@ -95,19 +97,15 @@ mod tests {
     fn sent_frames(state: PhaseState) -> Vec<Value> {
         vec![
             handshake("123456789012345678"),
-            set_activity(4242, "nonce-1", Some(activity(state))),
+            set_activity(4242, "nonce-1", Some(activity(state.phase, 7_000))),
             set_activity(4242, "nonce-2", None),
         ]
     }
 
     #[test]
-    fn activity_shows_the_phase_and_its_start() {
-        let linked = PhaseState {
-            phase: LinkPhase::Linked,
-            since: 1_760_000_000_999,
-        };
+    fn activity_shows_the_phase_and_the_launch_time() {
         assert_eq!(
-            activity(linked),
+            activity(LinkPhase::Linked, 1_760_000_000_999),
             json!({
                 "details": "En liaison",
                 "timestamps": { "start": 1_760_000_000 },
@@ -115,11 +113,10 @@ mod tests {
                 "buttons": [{ "label": "Source Code", "url": "https://github.com/Poutoo/vpsctl" }],
             })
         );
-        let ground = PhaseState {
-            phase: LinkPhase::Ground,
-            since: 0,
-        };
-        assert_eq!(activity(ground)["details"], "Au sol");
+        let ground = activity(LinkPhase::Ground, 1_760_000_000_999);
+        assert_eq!(ground["details"], "Au sol");
+        // Même départ dans les deux états : la durée ne repart pas de zéro.
+        assert_eq!(ground["timestamps"]["start"], 1_760_000_000);
     }
 
     #[test]

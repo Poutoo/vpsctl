@@ -2,7 +2,8 @@
 //!
 //! Une tâche unique tient la connexion locale à Discord (`socket`) tant que
 //! l'interrupteur est actif : poignée de main, puis une activité à chaque
-//! changement de phase de la liaison (`activity`, seul contenu envoyé).
+//! changement de phase de la liaison (`activity`, seul contenu envoyé). La
+//! durée affichée part du lancement d'Atlas et ne repart jamais de zéro.
 //! Discord absent ou fermé : nouvelle tentative silencieuse toutes les 15 s,
 //! ou tout de suite sur « Réessayer ». Désactivation et fermeture de
 //! l'application effacent l'activité.
@@ -74,6 +75,10 @@ pub struct PresenceStatus {
     pub state: PresenceState,
     /// Phase de la liaison, pour l'aperçu de la carte dans l'interface.
     pub phase: PhaseState,
+    /// Lancement d'Atlas (millisecondes depuis l'epoch Unix) : départ de la
+    /// durée affichée, quel que soit l'état.
+    #[ts(type = "number")]
+    pub started_at: u64,
 }
 
 pub type StatusSink = Arc<dyn Fn(PresenceStatus) + Send + Sync>;
@@ -129,10 +134,12 @@ pub struct Presence {
 
 impl Presence {
     /// Crée la poignée et la tâche à lancer sur le runtime asynchrone.
+    /// `started_at` : lancement d'Atlas, en millisecondes depuis l'epoch.
     pub fn new<C: Connector>(
         availability: Availability,
         enabled: bool,
         phase: watch::Receiver<PhaseState>,
+        started_at: u64,
         connector: C,
         on_status: StatusSink,
     ) -> (Self, impl Future<Output = ()> + Send + 'static) {
@@ -143,6 +150,7 @@ impl Presence {
                 Availability::Available { .. } => PresenceState::Off,
             },
             phase: *phase.borrow(),
+            started_at,
         };
         let (enabled_tx, enabled_rx) = watch::channel(enabled);
         let (stop_tx, stop_rx) = oneshot::channel();
@@ -158,6 +166,7 @@ impl Presence {
             publisher: Publisher {
                 status: status.clone(),
                 sink: on_status,
+                started_at,
             },
             limiter: RateLimiter::default(),
         };
@@ -203,11 +212,16 @@ impl Presence {
 struct Publisher {
     status: Arc<Mutex<PresenceStatus>>,
     sink: StatusSink,
+    started_at: u64,
 }
 
 impl Publisher {
     fn publish(&self, state: PresenceState, phase: PhaseState) {
-        let next = PresenceStatus { state, phase };
+        let next = PresenceStatus {
+            state,
+            phase,
+            started_at: self.started_at,
+        };
         let changed = {
             let mut current = self.status.lock().unwrap_or_else(|e| e.into_inner());
             let changed = *current != next;
@@ -385,7 +399,8 @@ async fn session<C: Connector>(task: &mut Task<C>, stream: C::Stream) -> Ending 
                 Some(_) => {}
             },
             _ = sleep(delay), if pending => {
-                let current = activity::activity(*task.phase.borrow());
+                let phase = task.phase.borrow().phase;
+                let current = activity::activity(phase, task.publisher.started_at);
                 if send_activity(&mut writer, Some(current)).await.is_err() {
                     break Ending::Lost;
                 }
@@ -436,6 +451,8 @@ mod tests {
     use tokio::io::DuplexStream;
 
     const ID: &str = "123456789012345678";
+    /// Lancement d'Atlas dans les tests (millisecondes).
+    const LAUNCH: u64 = 900_000;
 
     #[derive(Clone, Default)]
     struct FakeDiscord {
@@ -498,6 +515,7 @@ mod tests {
             availability,
             enabled,
             phase_rx,
+            LAUNCH,
             discord.clone(),
             Arc::new(move |s| sink_statuses.lock().unwrap().push(s)),
         );
@@ -591,14 +609,21 @@ mod tests {
         assert_eq!(accept(&mut discord).await, json!({"v": 1, "client_id": ID}));
         let first = next_activity(&mut discord).await;
         assert_eq!(first["details"], "Au sol");
-        assert_eq!(first["timestamps"]["start"], 1_000);
+        assert_eq!(first["timestamps"]["start"], 900);
         until(|| h.presence.status().state == PresenceState::Connected).await;
 
+        // Changement d'état : la durée continue depuis le lancement.
         h.phase.send_replace(linked(2_000_000));
         let second = next_activity(&mut discord).await;
         assert_eq!(second["details"], "En liaison");
-        assert_eq!(second["timestamps"]["start"], 2_000);
+        assert_eq!(second["timestamps"]["start"], 900);
         assert_eq!(h.presence.status().phase, linked(2_000_000));
+        assert_eq!(h.presence.status().started_at, LAUNCH);
+
+        h.phase.send_replace(ground(3_000_000));
+        let third = next_activity(&mut discord).await;
+        assert_eq!(third["details"], "Au sol");
+        assert_eq!(third["timestamps"]["start"], 900);
     }
 
     #[tokio::test(start_paused = true)]
@@ -618,15 +643,16 @@ mod tests {
             h.phase.send_replace(phase);
             sleep(Duration::from_millis(100)).await;
         }
-        // La dernière phase finit par partir ; aucune fenêtre de 20 s ne
-        // contient plus de 5 envois.
-        loop {
-            let activity = next_activity(&mut discord).await;
+        // Tout ce qui part jusqu'au silence : la dernière phase (« En
+        // liaison ») finit par partir, et aucune fenêtre de 20 s ne contient
+        // plus de 5 envois.
+        let mut last = Value::Null;
+        while let Ok(activity) = timeout(Duration::from_secs(60), next_activity(&mut discord)).await
+        {
             sent.push(Instant::now());
-            if activity["timestamps"]["start"] == 8 {
-                break;
-            }
+            last = activity;
         }
+        assert_eq!(last["details"], "En liaison");
         for (i, t) in sent.iter().enumerate() {
             let in_window = sent[i..]
                 .iter()

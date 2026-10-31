@@ -11,12 +11,17 @@ vi.mock("../api/presence");
 vi.mock("../api/preferences");
 
 const phase = { phase: "ground" as const, since: 1_000 };
+const startedAt = 500;
 let emit: (status: PresenceStatus) => void = () => undefined;
 
 beforeEach(() => {
   setActivePinia(createPinia());
   useNotify().items.splice(0);
-  vi.mocked(api.presenceStatus).mockResolvedValue({ state: "off", phase });
+  vi.mocked(api.presenceStatus).mockResolvedValue({
+    state: "off",
+    phase,
+    startedAt,
+  });
   vi.mocked(api.onPresenceStatus).mockImplementation(async (handler) => {
     emit = handler;
     return () => undefined;
@@ -31,7 +36,7 @@ describe("présence Discord", () => {
     await presence.initialize();
     expect(presence.status?.state).toBe("off");
     expect(presence.available).toBe(true);
-    emit({ state: "connected", phase });
+    emit({ state: "connected", phase, startedAt });
     expect(presence.status?.state).toBe("connected");
   });
 
@@ -44,9 +49,9 @@ describe("présence Discord", () => {
   it("est indisponible en développement ou sans identifiant", async () => {
     const presence = usePresenceStore();
     await presence.initialize();
-    emit({ state: "devUnavailable", phase });
+    emit({ state: "devUnavailable", phase, startedAt });
     expect(presence.available).toBe(false);
-    emit({ state: "notConfigured", phase });
+    emit({ state: "notConfigured", phase, startedAt });
     expect(presence.available).toBe(false);
   });
 

@@ -47,6 +47,7 @@ pub fn run() {
                 presence::availability(release, presence::CLIENT_ID),
                 preferences.get().discord_presence,
                 state.link_phase(),
+                ssh::link::now_millis(),
                 presence::LocalDiscord,
                 Arc::new(move |status| {
                     let _ = handle.emit(presence::STATUS_EVENT, status);
