@@ -2,6 +2,7 @@
 
 pub mod background;
 pub mod commands;
+pub mod compose;
 pub mod config;
 pub mod docker;
 pub mod error;

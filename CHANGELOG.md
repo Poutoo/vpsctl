@@ -12,6 +12,10 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 
 ## [Non publié]
 
+### Ajouté
+
+- Barre d'état : version du plugin docker compose du serveur, ou « Compose absent ».
+
 ## [1.2.0] - 2026-10-30
 
 ### Ajouté

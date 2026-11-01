@@ -17,6 +17,7 @@ beforeEach(() => {
     os: "Ubuntu",
     docker: "29",
     systemd: "259",
+    compose: { status: "present", version: "5.3.1" },
   });
 });
 

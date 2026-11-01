@@ -2,6 +2,7 @@
 /** Barre d'état : système du serveur pendant une liaison, version de l'application. */
 import { computed, onMounted, ref } from "vue";
 import { appVersion } from "../../api/app";
+import { serverSummary } from "../../serverSummary";
 import { useConnectionStore } from "../../stores/connection";
 
 const connection = useConnectionStore();
@@ -15,25 +16,17 @@ onMounted(async () => {
   }
 });
 
-const serverSummary = computed(() => {
+const summary = computed(() => {
   const info = connection.serverInfo;
   if (!connection.isConnected || !info) return null;
-  return [
-    info.os,
-    info.docker && `Docker ${info.docker}`,
-    info.systemd && `systemd ${info.systemd}`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  return serverSummary(info);
 });
 </script>
 
 <template>
   <footer class="status-bar">
     <span class="summary">
-      <template v-if="connection.isConnected">{{
-        serverSummary ?? ""
-      }}</template>
+      <template v-if="connection.isConnected">{{ summary ?? "" }}</template>
       <template v-else>
         Empreintes mémorisées dans les profils · connexion par clé uniquement
       </template>

@@ -60,6 +60,8 @@ server_info(): ServerInfo      // appelé une fois après la connexion, affiché
 
 `server_info` lit `PRETTY_NAME` dans `/etc/os-release`, `docker version --format '{{.Server.Version}}'` et la première ligne de `systemctl --version`. Si une information n'est pas disponible, le champ vaut `null` : l'échec d'une de ces commandes ne doit jamais bloquer la connexion.
 
+Plugin compose : `docker compose version --short`, qui affiche la version sans « v » (`cmd/compose/version.go`). Réponse lisible : `present` avec la version ; code de sortie non nul (le CLI docker sort avec le code 1 sur une commande inconnue, 127 sans docker) : `absent` ; pas de réponse ou sortie inattendue : `unknown`. Seul le code de sortie est consulté, jamais le texte du message. `absent` masque les actions de projet (voir « Docker compose ») ; `unknown` les laisse proposées, une commande sans plugin échouant dans sa console.
+
 ### Séquence de connexion
 
 `connect` émet une étape par phase réelle, affichée dans la télémétrie de liaison :
@@ -433,7 +435,13 @@ interface ServerInfo {
   os: string | null        // ex. "Ubuntu 24.04.1 LTS"
   docker: string | null    // ex. "27.3.1"
   systemd: string | null   // ex. "255"
+  compose: ComposeSupport
 }
+
+type ComposeSupport =
+  | { status: "present"; version: string }   // ex. "5.3.1"
+  | { status: "absent" }
+  | { status: "unknown" }
 
 interface FileEntry {
   name: string

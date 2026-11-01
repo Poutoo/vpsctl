@@ -29,6 +29,7 @@ use tokio::net::TcpStream;
 use ts_rs::TS;
 use zeroize::Zeroizing;
 
+use crate::compose::{self, ComposeSupport};
 use crate::error::{AppError, NetworkFailure};
 use host_key::HostKeyCheck;
 use link::{Ending, LinkTiming, LossReporter, LossSignal, TrackedStream};
@@ -944,16 +945,20 @@ pub struct ServerInfo {
     pub os: Option<String>,
     pub docker: Option<String>,
     pub systemd: Option<String>,
+    pub compose: ComposeSupport,
 }
 
-/// Lit le système, Docker et systemd. Une information indisponible vaut
-/// `None` : l'échec d'une commande ne bloque jamais la connexion.
+/// Lit le système, Docker, systemd et le plugin compose. Une information
+/// indisponible vaut `None` (`Unknown` pour compose) : l'échec d'une
+/// commande ne bloque jamais la connexion.
 pub async fn server_info(connection: &Connection) -> ServerInfo {
-    let (os, docker, systemd) = tokio::join!(
+    let (os, docker, systemd, compose) = tokio::join!(
         connection.exec("cat /etc/os-release"),
         connection.exec("docker version --format '{{.Server.Version}}'"),
         connection.exec("systemctl --version"),
+        connection.exec(compose::VERSION_COMMAND),
     );
+    let compose = compose::interpret_version(&compose);
     let ok_text = |result: Result<ExecOutput, AppError>| {
         result
             .ok()
@@ -964,6 +969,7 @@ pub async fn server_info(connection: &Connection) -> ServerInfo {
         os: ok_text(os).as_deref().and_then(parse_os_release),
         docker: ok_text(docker).as_deref().and_then(parse_docker_version),
         systemd: ok_text(systemd).as_deref().and_then(parse_systemd_version),
+        compose,
     }
 }
 
