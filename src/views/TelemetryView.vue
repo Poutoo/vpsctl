@@ -55,7 +55,14 @@ async function closeTab(tab: TelemetryTab) {
 
 <template>
   <div class="telemetry">
-    <PageHeader kicker="Télémétrie · Flux de journal" title="Console">
+    <PageHeader
+      :kicker="
+        active?.kind === 'compose'
+          ? 'Télémétrie · Commandes compose'
+          : 'Télémétrie · Flux de journal'
+      "
+      title="Console"
+    >
       <TelemetryTabs
         v-if="store.tabs.length > 0"
         :tabs="store.tabs"
@@ -67,8 +74,9 @@ async function closeTab(tab: TelemetryTab) {
     <div class="body">
       <StreamConsole v-if="active" :key="active.id" :stream="active" />
       <StateMessage v-else kicker="0 flux" title="Aucun flux ouvert">
-        Les logs ouverts en plein écran depuis le tableau de bord et la sortie
-        des scripts exécutés s'affichent ici, chacun dans son onglet.
+        Les logs ouverts en plein écran depuis le tableau de bord, la sortie des
+        scripts exécutés et celle des commandes compose s'affichent ici, chacun
+        dans son onglet.
         <template #actions>
           <AppButton :to="{ name: 'dashboard' }">Tableau de bord</AppButton>
           <AppButton :to="{ name: 'scripts' }">Scripts</AppButton>

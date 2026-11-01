@@ -205,6 +205,9 @@ docker_remove(id: string): void
 
 ```ts
 compose_check(): ProjectCheck[]         // dossier et fichiers de chaque projet, par SFTP
+compose_run(project: string, action: ComposeAction, onEvent: Channel<LogEvent>): ComposeRun
+compose_stop(runId: string): void
+compose_down_info(project: string): DownInfo   // contenu du GO / NO GO de down, délai 20 s après la liste
 compose_forget(project: string): void   // projet descendu uniquement ; rien n'est touché sur le serveur
 ```
 
@@ -263,6 +266,61 @@ Le premier problème trouvé est renvoyé. Accès refusé au `stat` (dossier par
 - Fréquence : toutes les 30 s (une liste sur six) tant que le tableau de bord est affiché et la fenêtre visible, à l'apparition d'un projet non encore vérifié, sur « Actualiser », et après chaque commande compose. Jamais à chaque rafraîchissement de la liste. Pendant un LOS, aucune vérification ; la dernière reste affichée.
 - Démarrer et Récupérer les images refont la vérification avant de partir et sont refusés si elle échoue (voir « Commandes »).
 - Affichage : en-tête teinté, « dossier introuvable », « fichier introuvable », « fichier illisible »… dans la colonne Détail, chemin du dossier barré s'il manque, et une ligne d'explication sous l'en-tête.
+
+### Commandes
+
+Actions de la maquette uniquement. Jamais d'option qui supprime des volumes ou des images (`-v`, `--volumes`, `--rmi`), ni `--remove-orphans`.
+
+| Action | Interface | Arguments |
+|---|---|---|
+| `up` | Démarrer | `up -d` |
+| `pull` | Récupérer les images | `pull` |
+| `restart` | Redémarrer | `restart` |
+| `down` | Arrêter et supprimer (GO / NO GO) | `down` |
+
+Construction (fonction pure `compose/command.rs`), chaque valeur validée (règles des étiquettes) puis échappée par `shell::quote` :
+
+```sh
+# Démarrer, Récupérer les images
+docker compose --ansi never --progress plain -p '<projet>' --project-directory '<dossier>' -f '<fichier 1>' -f '<fichier 2>' [--env-file '<fichier>'…] up -d | pull
+# Redémarrer, Arrêter et supprimer
+docker compose --ansi never --progress plain -p '<projet>' restart | down
+```
+
+- Fichiers de configuration dans l'ordre de l'étiquette ; `--env-file` seulement si l'étiquette `environment_file` existe (sinon compose relit le `.env` du dossier, grâce à `--project-directory`).
+- Sortie en texte simple : `--ansi never` choisit déjà le rendu `plain` de compose (`selectEventProcessor`, v5.3.1) ; `--progress plain` l'impose même si `COMPOSE_PROGRESS` vaut `tty` sur le serveur. Le rendu `plain` écrit une ligne par événement, sans déplacement du curseur (`cmd/display/plain.go`) ; les séquences ANSI restantes sont retirées comme pour toute ligne. Les deux options sont des options globales de `docker compose` (v5.3.1 vérifiée). compose écrit sa progression sur la sortie d'erreur.
+- **Redémarrer et Arrêter passent toujours par le seul nom**, même quand les fichiers sont présents : avec `-f`, un service retiré du fichier depuis le dernier `up` laisserait un conteneur orphelin, puisque `--remove-orphans` est exclu. Sans `-f` ni `--project-directory`, `projectOrName` (`cmd/compose/compose.go`) ne charge aucun fichier : `restart` et `down` relisent le projet depuis les conteneurs, réseaux et volumes étiquetés (`projectOrFromResources`). Ils fonctionnent donc aussi quand le dossier a disparu.
+- Limite : les profils compose (`--profile`) ne sont enregistrés dans aucune étiquette. Démarrer ne lance que les services sans profil ; un service lancé avec un profil n'est pas recréé par Atlas.
+
+`compose_run` (délai de 30 s pour la préparation, puis 10 s pour ouvrir le canal ; la commande elle-même n'a pas d'échéance) :
+
+1. Nom validé, liste relue (mêmes commandes que `docker_list`) : le projet doit y figurer (conteneurs ou mémoire), sinon `InvalidInput`. Le frontend ne transmet que le nom et l'action, jamais un chemin.
+2. Démarrer et Récupérer : étiquettes utilisables, puis vérification SFTP du dossier et des fichiers (voir ci-dessus) ; un dossier ou un fichier manquant, qui n'est pas un fichier, ou illisible → `InvalidInput` avec la raison. Redémarrer et Arrêter : au moins un conteneur, sinon `InvalidInput`.
+3. Commande enveloppée dans le script de surveillance et lancée par le registre des flux, comme un script : sortie horodatée à la réception, lots, ANSI retiré, `ended` avec le code de sortie. **Seul le code de sortie juge le résultat** : compose écrit toute sa progression sur la sortie d'erreur.
+4. Une seule commande à la fois par projet (`InvalidInput` : « une commande compose est déjà en cours sur ce projet… »). Les commandes compose comptent dans la limite de 4 flux, avec les logs et les scripts (« 4 flux déjà ouverts : fermez un onglet de télémétrie pour lancer cette commande ») : un quota séparé dépasserait les 10 canaux d'OpenSSH.
+
+```ts
+interface ComposeRun {
+  runId: string
+  command: string   // commande exacte, sans le script de surveillance
+}
+```
+
+- `compose_stop` : comme `script_stop` (TERM au groupe de processus, 3 s au plus ; identifiant inconnu ignoré). Ce qui est déjà fait n'est pas annulé : un `up` interrompu peut laisser le projet à moitié démarré. L'interface demande un GO / NO GO.
+- Liaison perdue pendant une commande : même traitement que les scripts, aucun événement final (`link-lost` en tient lieu), aucune relance automatique. Le script de surveillance termine la commande quand sshd ferme le canal : l'issue est inconnue.
+
+`compose_down_info` : liste relue (au moins un conteneur, sinon `InvalidInput`), puis, dans un délai de 20 s :
+
+```sh
+docker inspect --type container --format '{{json .Mounts}}' -- '<id>' '<id>'…
+docker network ls --filter 'label=com.docker.compose.project=<projet>' --format '{{.Name}}'
+docker volume ls --filter label=com.docker.volume.anonymous --format '{{.Name}}'
+```
+
+- Montages (`MountPoint` de l'API Engine) : `volume` → nommé ou anonyme ; `bind` → dossier du serveur (`Source`) ; les autres (`tmpfs`…) ne survivent pas au conteneur. Le code de retour d'`inspect` n'est pas consulté (un conteneur supprimé entre-temps ne masque pas les autres).
+- Volumes anonymes : Docker leur pose l'étiquette `com.docker.volume.anonymous` à la création (`AnonymousLabel`, `daemon/volume/service/service.go` de moby), jamais aux volumes nommés. Un volume anonyme créé par une version de Docker antérieure à cette étiquette serait compté comme nommé.
+- Les fichiers du projet sont vérifiés (relance possible ou non par Démarrer).
+- Sans `-v`, `down` conserve les volumes nommés **et** anonymes (documentation de `docker compose down`) ; un volume anonyme n'est simplement plus monté par le `up` suivant.
 
 ### Mémorisation
 
@@ -378,7 +436,7 @@ logs_stop(streamId: string): void
 
 - `source` : ID complet du conteneur (64 caractères hexadécimaux) ou nom d'unité respectant `^[a-zA-Z0-9@._-]+\.service$`, sinon `InvalidInput`. Une unité masquée est acceptée : ses logs restent consultables. Une unité dont le nom ne respecte pas la regex n'a donc pas de logs dans l'appli.
 - `tail` : nombre de lignes d'historique, de 0 à 5 000 (taille de la mémoire tampon de la console), sinon `InvalidInput`.
-- 4 flux simultanés au maximum (logs et scripts confondus) ; au-delà, `InvalidInput`. OpenSSH limite une connexion à 10 canaux par défaut (`MaxSessions`) : il en reste pour la session SFTP, la mesure de latence et les listes.
+- 4 flux simultanés au maximum (logs, scripts et commandes compose confondus) ; au-delà, `InvalidInput`. OpenSSH limite une connexion à 10 canaux par défaut (`MaxSessions`) : il en reste pour la session SFTP, la mesure de latence et les listes.
 - `logs_start` : délai maximal de 10 s pour ouvrir le canal et lancer la commande ; le flux lui-même n'a pas d'échéance.
 - `logs_stop` rend la main une fois le processus distant arrêté, au plus tard après 3 s. Un identifiant inconnu (flux déjà terminé) est ignoré.
 - Commandes distantes :
@@ -429,7 +487,7 @@ script_stop(runId: string): void
 - Ni terminal ni entrée standard (`/dev/null`) : un script qui attend une saisie (`read`, mot de passe de `sudo`) lit une fin de fichier et échoue aussitôt au lieu de rester bloqué.
 - Comme les logs, la commande est enveloppée dans le script de surveillance (voir « Arrêt des flux » dans `docs/03-architecture.md`) ; elle tourne dans le même groupe de processus que l'enveloppe. Limite : un processus qui ignore SIGTERM ou quitte le groupe (`setsid`, démon) survit à l'arrêt. C'est voulu pour `docker compose up -d` : les conteneurs appartiennent au daemon Docker.
 - Délai maximal de 10 s pour ouvrir le canal et lancer la commande ; l'exécution elle-même n'a pas d'échéance.
-- Limite de 4 flux simultanés, partagée avec les logs. Au-delà, `InvalidInput` avec le message « 4 flux déjà ouverts : fermez un onglet de télémétrie pour lancer ce script ».
+- Limite de 4 flux simultanés, partagée avec les logs et les commandes compose. Au-delà, `InvalidInput` avec le message « 4 flux déjà ouverts : fermez un onglet de télémétrie pour lancer ce script ».
 - Un script déjà en cours d'exécution ne peut pas être relancé avant la fin de la première exécution (`InvalidInput`).
 - Événements : comme les logs (lots de `lines`, puis `ended` avec le code de sortie, ou `error`). Origine `stdout` / `stderr` ; `timestamp` est l'heure de réception par le backend (le programme n'en fournit pas). `exitCode` vaut `null` si la commande a été tuée par un signal.
 - `script_stop` : comme `logs_stop` (rend la main une fois le processus distant arrêté, 3 s au plus ; identifiant inconnu ignoré).
@@ -609,6 +667,26 @@ type ProjectProblem =
   | { kind: "divergent" }
 
 type ProjectState = "nominal" | "partial" | "failed" | "transition" | "stopped" | "down"
+
+type ComposeAction = "up" | "pull" | "restart" | "down"
+
+interface DownInfo {
+  project: string
+  command: string                  // commande exacte de down
+  containers: DownContainer[]      // arrêtés puis supprimés, compose run compris
+  networks: string[]               // supprimés
+  namedVolumes: string[]           // conservés
+  anonymousVolumes: string[]       // conservés, plus rattachés au projet après le down
+  binds: string[]                  // dossiers du serveur montés, conservés
+  files: ProjectFiles | null
+  filesStatus: FilesStatus | null  // relance possible par Démarrer
+}
+
+interface DownContainer {
+  name: string
+  service: string | null
+  running: boolean
+}
 
 interface Service {
   unit: string

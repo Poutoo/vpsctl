@@ -1,7 +1,9 @@
 import { computed, ref, shallowRef } from "vue";
 import { defineStore } from "pinia";
+import * as composeApi from "../api/compose";
 import * as logs from "../api/logs";
 import * as scriptsApi from "../api/scripts";
+import type { ComposeAction } from "../bindings/ComposeAction";
 import type { LogSource } from "../bindings/LogSource";
 import type { Script } from "../bindings/Script";
 import {
@@ -88,8 +90,29 @@ function scriptDriver(id: string): StreamDriver {
   };
 }
 
+/** Commande docker compose sur un projet, toujours dans un onglet. */
+export interface ComposeStream {
+  kind: "compose";
+  /** Un onglet par verbe et par projet : relancer la même commande réutilise le sien. */
+  key: string;
+  project: string;
+  action: ComposeAction;
+  /** Commande exacte renvoyée par le backend ; `null` avant le lancement. */
+  command: string | null;
+  /** Dossier du projet (Démarrer, Récupérer) ; `null` : par le seul nom. */
+  directory: string | null;
+  session: LogSession;
+}
+
+/** Onglets de commandes compose gardés au plus : le plus ancien terminé sort. */
+export const MAX_COMPOSE_TABS = 6;
+
+function composeKey(project: string, action: ComposeAction): string {
+  return `compose:${project}:${action}`;
+}
+
 /** Flux affiché par une console : panneau ancré ou onglet. */
-export type TelemetryStream = LogsStream | ScriptStream;
+export type TelemetryStream = LogsStream | ScriptStream | ComposeStream;
 
 /** Onglet de l'écran Télémétrie. */
 export type TelemetryTab = TelemetryStream & {
@@ -99,12 +122,19 @@ export type TelemetryTab = TelemetryStream & {
 
 /** Nom d'un flux : conteneur, unité ou script. */
 export function streamName(stream: TelemetryStream): string {
-  return stream.kind === "logs" ? stream.target.name : stream.script.name;
+  switch (stream.kind) {
+    case "logs":
+      return stream.target.name;
+    case "script":
+      return stream.script.name;
+    case "compose":
+      return `${stream.action} · ${stream.project}`;
+  }
 }
 
 /** Section de la navigation dont vient un flux, surlignée sur l'écran Télémétrie. */
 export function streamOrigin(stream: TelemetryStream): "dashboard" | "scripts" {
-  return stream.kind === "logs" ? "dashboard" : "scripts";
+  return stream.kind === "script" ? "scripts" : "dashboard";
 }
 
 /**
@@ -304,6 +334,109 @@ export const useTelemetryStore = defineStore("telemetry", () => {
     tabs.value.filter((tab) => tab.kind === "script" && tab.session.active),
   );
 
+  // --- Commandes compose -----------------------------------------------------
+
+  /** Onglet d'une commande compose (verbe et projet). */
+  function composeTab(
+    project: string,
+    action: ComposeAction,
+  ): (TelemetryTab & ComposeStream) | null {
+    const tab = tabByKey(composeKey(project, action));
+    return tab?.kind === "compose" ? tab : null;
+  }
+
+  /** Commandes compose en cours. */
+  const runningCompose = computed(() =>
+    tabs.value.filter(
+      (tab): tab is TelemetryTab & ComposeStream =>
+        tab.kind === "compose" && tab.session.active,
+    ),
+  );
+
+  /** Commande compose en cours sur un projet : une seule à la fois. */
+  function composeRunning(
+    project: string,
+  ): (TelemetryTab & ComposeStream) | null {
+    return runningCompose.value.find((tab) => tab.project === project) ?? null;
+  }
+
+  function composeDriver(project: string, action: ComposeAction): StreamDriver {
+    return {
+      open: async (onEvent) => {
+        const run = await composeApi.runCompose(project, action, onEvent);
+        const tab = composeTab(project, action);
+        if (tab) tab.command = run.command;
+        return run.runId;
+      },
+      close: composeApi.stopCompose,
+    };
+  }
+
+  /** Au-delà de la limite, les onglets compose terminés les plus anciens sont fermés. */
+  function trimComposeTabs(keepId: string) {
+    const composeTabs = tabs.value.filter((tab) => tab.kind === "compose");
+    let excess = composeTabs.length - MAX_COMPOSE_TABS;
+    for (const tab of composeTabs) {
+      if (excess <= 0) break;
+      if (tab.id === keepId || tab.session.active) continue;
+      closeTab(tab.id);
+      excess--;
+    }
+  }
+
+  /**
+   * Lance une commande compose (la confirmation est faite avant) dans son
+   * onglet : relancer la même commande remplace son onglet terminé. Une
+   * commande déjà en cours sur le projet est renvoyée telle quelle. Échec du
+   * lancement (limite de flux, fichiers refusés, liaison absente) :
+   * notification, et l'onglet créé pour l'occasion est retiré.
+   */
+  async function runCompose(
+    project: string,
+    action: ComposeAction,
+    directory: string | null,
+    onFinish: (project: string, action: ComposeAction) => void,
+  ): Promise<TelemetryTab | null> {
+    const running = composeRunning(project);
+    if (running) return running;
+
+    let tab = composeTab(project, action);
+    const existing = tab;
+    if (tab) {
+      tab.directory = directory;
+      tab.command = null;
+    } else {
+      const session = createLogSession(composeDriver(project, action), {
+        onFinish: () => onFinish(project, action),
+      });
+      const added = addTab({
+        kind: "compose",
+        key: composeKey(project, action),
+        project,
+        action,
+        command: null,
+        directory,
+        session,
+      });
+      trimComposeTabs(added.id);
+      tab = composeTab(project, action);
+    }
+    if (!tab) return null;
+    const launched = existing
+      ? await tab.session.replay()
+      : await tab.session.start();
+    if (launched || tab.session.status !== "error") return tab;
+
+    notify({
+      tone: "error",
+      title: "Commande non lancée",
+      detail: `docker compose ${action} · ${project}`,
+      message: tab.session.error ?? undefined,
+    });
+    if (!existing) closeTab(tab.id);
+    return existing;
+  }
+
   /** Fin de session (déconnexion voulue) : tout est vidé. */
   function reset() {
     closeDock();
@@ -332,6 +465,10 @@ export const useTelemetryStore = defineStore("telemetry", () => {
     scriptTab,
     runScript,
     runningScripts,
+    composeTab,
+    composeRunning,
+    runningCompose,
+    runCompose,
     openDock,
     closeDock,
     suspendDock,

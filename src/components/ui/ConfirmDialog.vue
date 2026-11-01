@@ -61,13 +61,28 @@ function focusNoGo(event: Event) {
             <StatusIcon name="triangle" />
             Confirmation requise
           </span>
-          <span v-if="state.danger" class="caps aside">Irréversible</span>
+          <span v-if="state.aside" class="caps aside">{{ state.aside }}</span>
+          <span v-else-if="state.danger" class="caps aside">Irréversible</span>
         </header>
 
         <div class="body">
           <AlertDialogTitle class="title">{{ state.title }}</AlertDialogTitle>
           <p v-if="state.subject" class="subject">{{ state.subject }}</p>
+          <p v-if="state.command" class="command">{{ state.command }}</p>
           <AlertDialogDescription as="ul" class="consequences">
+            <li
+              v-for="removal in state.removals"
+              :key="removal.label"
+              class="check"
+            >
+              <StatusIcon class="removal-shape" name="bang" />
+              <span>
+                <strong>{{ removal.label }}</strong>
+                <span v-if="removal.detail" class="check-detail">{{
+                  removal.detail
+                }}</span>
+              </span>
+            </li>
             <li v-for="check in state.checks" :key="check.label" class="check">
               <StatusIcon class="check-shape" name="check" />
               <span>
@@ -179,6 +194,19 @@ function focusNoGo(event: Event) {
 
 .title {
   font-size: var(--fs-2xl);
+}
+
+.command {
+  margin-top: calc(-1 * var(--sp-2));
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.removal-shape {
+  flex-shrink: 0;
+  color: var(--color-warning);
 }
 
 .subject {

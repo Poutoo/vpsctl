@@ -16,6 +16,12 @@ export interface ConfirmOptions {
   title: string;
   /** Objet de l'action (nom, chemin), affiché sous le titre. */
   subject?: string;
+  /** Commande exacte, affichée sous l'objet. */
+  command?: string;
+  /** Mention à droite du bandeau, à la place de « Irréversible ». */
+  aside?: string;
+  /** Ce qui est supprimé, listé en premier, avec une marque d'avertissement. */
+  removals?: ConfirmCheck[];
   /** Conditions vérifiées, listées avant les conséquences (ex. « Conteneur arrêté »). */
   checks?: ConfirmCheck[];
   /** Conséquences de l'action, listées dans la fenêtre. */
@@ -39,6 +45,9 @@ const state = reactive<ConfirmState>({
   open: false,
   title: "",
   subject: undefined,
+  command: undefined,
+  aside: undefined,
+  removals: [],
   checks: [],
   consequences: [],
   confirmLabel: "",
@@ -57,6 +66,9 @@ export function useConfirm() {
     state.resolve?.(false);
     Object.assign(state, {
       subject: undefined,
+      command: undefined,
+      aside: undefined,
+      removals: [],
       checks: [],
       danger: false,
       acknowledge: undefined,

@@ -6,6 +6,7 @@
  * « Hors compose », jamais replié.
  */
 import { computed } from "vue";
+import type { ComposeAction } from "../../bindings/ComposeAction";
 import type { ComposeProject } from "../../bindings/ComposeProject";
 import type { Container } from "../../bindings/Container";
 import { type ContainerGroup } from "../../composeView";
@@ -26,14 +27,18 @@ const props = withDefaults(
     query?: string;
     /** Conteneurs de la liste complète, avant le filtre. */
     total?: number;
+    /** Plugin compose présent (ou non détecté) : actions de projet affichées. */
+    composeActions?: boolean;
   }>(),
-  { loading: false, query: "", total: 0 },
+  { loading: false, query: "", total: 0, composeActions: true },
 );
 
 const emit = defineEmits<{
   logs: [container: Container];
   operate: [container: Container, operation: Operation];
   forget: [project: ComposeProject];
+  run: [project: ComposeProject, action: ComposeAction];
+  showTab: [tabId: string];
   clearFilter: [];
 }>();
 
@@ -109,8 +114,11 @@ const looseCount = computed(() => {
             :expanded="expanded(group)"
             :query="query"
             :check="compose.checks[group.project.name] ?? null"
+            :actions="composeActions"
             @toggle="store.toggleProject(group.project.name)"
             @forget="emit('forget', group.project)"
+            @run="(action) => emit('run', group.project, action)"
+            @show-tab="(id) => emit('showTab', id)"
           />
           <tr v-else class="loose-row">
             <td colspan="5">
@@ -138,6 +146,11 @@ const looseCount = computed(() => {
             :container="container"
             :query="query"
             :branch="branch(group, index)"
+            :compose-run="
+              group.kind === 'project'
+                ? compose.running(group.project.name)
+                : null
+            "
             @logs="(c) => emit('logs', c)"
             @operate="(c, operation) => emit('operate', c, operation)"
           />

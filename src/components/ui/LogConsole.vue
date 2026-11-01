@@ -30,8 +30,8 @@ import AppSwitch from "./AppSwitch.vue";
 const props = withDefaults(
   defineProps<{
     stream: LogSession;
-    /** `output` : Docker et scripts ; `journal` : systemd. */
-    legend: "output" | "journal";
+    /** `output` : Docker et scripts ; `journal` : systemd ; `compose` : commandes compose. */
+    legend: "output" | "journal" | "compose";
     /** Nom accessible de la zone de logs. */
     label: string;
     /** Libellé du bouton qui rouvre le flux terminé (« Relancer » un script). */
@@ -367,7 +367,9 @@ const counts = computed(() => {
         <span><span class="key">out</span> sortie standard</span>
         <span
           ><span class="key">err</span> sortie d'erreur, sans gravité
-          implicite</span
+          implicite<template v-if="legend === 'compose'">
+            · compose y écrit sa progression</template
+          ></span
         >
       </p>
       <span class="counts">{{ counts }}</span>

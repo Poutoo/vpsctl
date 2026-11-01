@@ -124,13 +124,19 @@ enum Link {
     Lost,
 }
 
+/// Propriétaire exclusif d'un flux : un script, ou un projet compose, n'a
+/// qu'une exécution à la fois.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamOwner {
+    Script(String),
+    Compose(String),
+}
+
 /// Flux ou transfert en cours : son signal d'arrêt et sa tâche.
 struct StreamEntry {
     stop: oneshot::Sender<()>,
     task: JoinHandle<()>,
-    /// Exécution d'un script : son identifiant (un script ne tourne qu'une
-    /// fois à la fois).
-    script: Option<String>,
+    owner: Option<StreamOwner>,
 }
 
 type StreamRegistry = Arc<Mutex<HashMap<String, StreamEntry>>>;
@@ -452,6 +458,43 @@ impl AppState {
             .await
     }
 
+    /// Lance une commande compose sur un projet relu sur le serveur. Elle
+    /// passe par le registre des flux (limite de 4, une seule par projet),
+    /// sans échéance ; sa sortie est horodatée à la réception.
+    pub async fn compose_run(
+        &self,
+        project: &str,
+        action: compose::ComposeAction,
+        sink: EventSink,
+    ) -> Result<compose::ComposeRun, AppError> {
+        let profile = self.connected_profile().await?;
+        let memory = self.compose_memory.clone();
+        let command = self
+            .remote(|connection| async move {
+                compose::prepare(connection, &memory, &profile, project, action).await
+            })
+            .await?;
+        let run_id = self
+            .start_stream(
+                &command,
+                ScriptParser::new(),
+                sink,
+                Some(StreamOwner::Compose(project.to_owned())),
+            )
+            .await?;
+        Ok(compose::ComposeRun { run_id, command })
+    }
+
+    /// Contenu du GO / NO GO de `down`.
+    pub async fn compose_down_info(&self, project: &str) -> Result<compose::DownInfo, AppError> {
+        let profile = self.connected_profile().await?;
+        let memory = self.compose_memory.clone();
+        self.remote(|connection| async move {
+            compose::down_info(connection, &memory, &profile, project).await
+        })
+        .await
+    }
+
     /// Oublie un projet compose descendu du profil connecté.
     pub async fn compose_forget(&self, project: &str) -> Result<(), AppError> {
         let profile = self.connected_profile().await?;
@@ -550,7 +593,7 @@ impl AppState {
                 &command,
                 ScriptParser::new(),
                 recorder.wrap(sink),
-                Some(script.id),
+                Some(StreamOwner::Script(script.id)),
             )
             .await;
         if result.is_err() {
@@ -560,33 +603,42 @@ impl AppState {
     }
 
     /// Lance `command` (enveloppée dans le script de surveillance) et lit sa
-    /// sortie avec `parser`. `script` : identifiant du script exécuté.
+    /// sortie avec `parser`. `owner` : script ou projet compose exécuté.
     /// Renvoie l'identifiant du flux.
     pub async fn start_stream(
         &self,
         command: &str,
         parser: impl LineParser,
         sink: EventSink,
-        script: Option<String>,
+        owner: Option<StreamOwner>,
     ) -> Result<String, AppError> {
         let _start = self.stream_start.lock().await;
-        if let Some(script_id) = &script {
+        if let Some(owner) = &owner {
             let running = lock_streams(&self.streams)
                 .values()
-                .any(|entry| entry.script.as_ref() == Some(script_id));
+                .any(|entry| entry.owner.as_ref() == Some(owner));
             if running {
-                return Err(AppError::invalid_input(
-                    "ce script est déjà en cours d'exécution : attendez sa fin ou interrompez-le",
-                ));
+                return Err(AppError::invalid_input(match owner {
+                    StreamOwner::Script(_) => {
+                        "ce script est déjà en cours d'exécution : attendez sa fin ou interrompez-le"
+                    }
+                    StreamOwner::Compose(_) => {
+                        "une commande compose est déjà en cours sur ce projet : attendez sa fin ou interrompez-la"
+                    }
+                }));
             }
         }
         if self.stream_count() >= MAX_STREAMS {
-            return Err(AppError::invalid_input(if script.is_some() {
-                format!(
+            return Err(AppError::invalid_input(match owner {
+                Some(StreamOwner::Script(_)) => format!(
                     "{MAX_STREAMS} flux déjà ouverts : fermez un onglet de télémétrie pour lancer ce script"
-                )
-            } else {
-                format!("{MAX_STREAMS} flux au maximum : fermez-en un avant d'en ouvrir un autre")
+                ),
+                Some(StreamOwner::Compose(_)) => format!(
+                    "{MAX_STREAMS} flux déjà ouverts : fermez un onglet de télémétrie pour lancer cette commande"
+                ),
+                None => {
+                    format!("{MAX_STREAMS} flux au maximum : fermez-en un avant d'en ouvrir un autre")
+                }
             }));
         }
         let connection = self.connection().await?;
@@ -613,7 +665,7 @@ impl AppState {
                 lock_streams(&registry).remove(&id);
             })
         };
-        streams.insert(id.clone(), StreamEntry { stop, task, script });
+        streams.insert(id.clone(), StreamEntry { stop, task, owner });
         Ok(id)
     }
 
@@ -694,7 +746,7 @@ impl AppState {
             StreamEntry {
                 stop,
                 task,
-                script: None,
+                owner: None,
             },
         );
         id

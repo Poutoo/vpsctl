@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import ContainerTable from "../components/features/ContainerTable.vue";
 import DashboardSection from "../components/features/DashboardSection.vue";
 import DockedConsole from "../components/features/DockedConsole.vue";
@@ -11,6 +12,7 @@ import FilterField from "../components/ui/FilterField.vue";
 import NoticeBox from "../components/ui/NoticeBox.vue";
 import type { ComposeProject } from "../bindings/ComposeProject";
 import { useConfirm } from "../composables/useConfirm";
+import { useComposeActions } from "../composables/useComposeActions";
 import { formatElapsed, useElapsed } from "../composables/useElapsed";
 import { useDockedStream } from "../composables/useDockedStream";
 import { useServiceActions } from "../composables/useServiceActions";
@@ -33,6 +35,8 @@ const telemetry = useDockedStream();
 const { onContainer, onService } = useServiceActions();
 const profiles = useProfilesStore();
 const { confirm } = useConfirm();
+const composeActions = useComposeActions();
+const router = useRouter();
 const { trigger } = useVisiblePolling(
   () => store.refresh(),
   REFRESH_INTERVAL_MS,
@@ -216,6 +220,11 @@ const refreshedLabel = computed(() => {
           @logs="(c) => telemetry.showLogs(containerLogTarget(c.id, c.name))"
           @operate="onContainer"
           @forget="forgetProject"
+          :compose-actions="!composeAbsent"
+          @run="composeActions.run"
+          @show-tab="
+            (id) => router.push({ name: 'telemetry', params: { tab: id } })
+          "
         />
       </DashboardSection>
 

@@ -2,12 +2,15 @@
 /**
  * Ligne d'un conteneur : nom, image, état, durée et actions. Pendant une
  * action, « en transition » avec le libellé et le chrono de l'action, et
- * toutes les actions indisponibles sauf les logs. Dans un projet compose, un
- * trait relie la ligne à l'en-tête du groupe.
+ * toutes les actions indisponibles sauf les logs ; de même pendant une
+ * commande compose sur son projet. Dans un projet compose, un trait relie la
+ * ligne à l'en-tête du groupe.
  */
 import { computed } from "vue";
 import type { Container } from "../../bindings/Container";
 import type { RunState } from "../../bindings/RunState";
+import { containerProgress } from "../../composeActions";
+import type { ComposeRunning } from "../../stores/compose";
 import { useConnectionStore } from "../../stores/connection";
 import {
   containerTarget,
@@ -27,8 +30,10 @@ const props = withDefaults(
     query: string;
     /** Position dans un groupe : trait de rattachement à l'en-tête. */
     branch?: "middle" | "last" | null;
+    /** Commande compose en cours sur le projet du conteneur. */
+    composeRun?: ComposeRunning | null;
   }>(),
-  { branch: null },
+  { branch: null, composeRun: null },
 );
 
 const emit = defineEmits<{
@@ -48,14 +53,34 @@ const RUN_ACTIONS = [
 
 const key = computed(() => targetKey(containerTarget(props.container)));
 const pending = computed(() => store.pending[key.value] ?? null);
+/** Libellé de transition pendant une commande compose (« Démarrage »). */
+const progress = computed(() =>
+  props.composeRun
+    ? containerProgress(props.composeRun.action, props.container)
+    : null,
+);
 const state = computed<RunState>(() =>
-  pending.value ? "transition" : props.container.state,
+  pending.value || progress.value ? "transition" : props.container.state,
+);
+const label = computed(() =>
+  pending.value ? OPERATION_PROGRESS[pending.value.operation] : progress.value,
+);
+const since = computed(
+  () =>
+    pending.value?.since ??
+    (progress.value ? (props.composeRun?.since ?? null) : null),
+);
+const detail = computed(() =>
+  progress.value && props.composeRun
+    ? `via docker compose ${props.composeRun.action}`
+    : (props.container.duration ?? "—"),
 );
 const reasons = computed(() => containerAvailability(props.container));
 
 function reason(operation: Operation): string | null {
   if (connection.lost) return "liaison perdue";
   if (pending.value) return "action en cours";
+  if (props.composeRun) return "commande compose en cours sur son projet";
   return reasons.value[operation];
 }
 
@@ -65,7 +90,13 @@ function busySince(operation: Operation): number | null {
 </script>
 
 <template>
-  <tr :class="{ failed: state === 'failed', member: branch !== null }">
+  <tr
+    :class="{
+      failed: state === 'failed',
+      member: branch !== null,
+      'compose-busy': progress !== null,
+    }"
+  >
     <td class="truncate name-cell" :title="container.name">
       <span v-if="branch" class="branch" :class="branch" aria-hidden="true" />
       <HighlightText :text="container.name" :query="query" />
@@ -83,18 +114,18 @@ function busySince(operation: Operation): number | null {
       <RunStateLabel
         :state="state"
         :detail="containerStateDetail(container)"
-        :tag="container.oomKilled && !pending ? 'Mémoire' : null"
+        :tag="container.oomKilled && state !== 'transition' ? 'Mémoire' : null"
         :raw="containerStateHelp(container)"
-        :label="pending ? OPERATION_PROGRESS[pending.operation] : null"
-        :since="pending?.since ?? null"
+        :label="label"
+        :since="since"
         :arrival="store.arrivals[key] ?? null"
       />
       <span class="stacked-detail" :title="container.status">
-        {{ container.duration ?? "—" }}
+        {{ detail }}
       </span>
     </td>
     <td class="truncate detail-cell" :title="container.status">
-      {{ container.duration ?? "—" }}
+      {{ detail }}
     </td>
     <td>
       <div class="row-actions">
@@ -174,6 +205,11 @@ function busySince(operation: Operation): number | null {
 .failed .detail-cell,
 .failed .stacked-detail {
   color: var(--color-danger-text);
+}
+
+.compose-busy .detail-cell,
+.compose-busy .stacked-detail {
+  color: var(--color-warning);
 }
 
 /* Fenêtre étroite : la durée passe sous l'état (colonne « État · Détail »). */

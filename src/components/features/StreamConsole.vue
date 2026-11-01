@@ -3,20 +3,25 @@
  * Console d'un flux du store `telemetry` (panneau ancré ou onglet) :
  * identification de la source dans l'en-tête, légende selon la source.
  * Pour un script : « Relancer » avec le GO / NO GO éventuel, sur sa
- * définition actuelle. Les boutons propres à l'emplacement passent par le
- * slot `actions`.
+ * définition actuelle. Pour une commande compose : la commande exacte, le
+ * dossier, et « Relancer » la même commande (GO / NO GO pour down).
+ * Interrompre l'un ou l'autre demande un GO / NO GO. Les boutons propres à
+ * l'emplacement passent par le slot `actions`.
  *
  * La commande équivalente se coupe avec « … » quand la place manque (texte
  * complet en infobulle) ; le bouton à côté la copie en entier.
  */
 import { computed } from "vue";
 import { copyText } from "../../api/local";
+import { useComposeActions } from "../../composables/useComposeActions";
 import { useScriptActions } from "../../composables/useScriptActions";
 import { useNotify } from "../../composables/useNotify";
 import { useScriptGuards } from "../../composables/useScriptGuards";
+import { useComposeStore } from "../../stores/compose";
 import { useConnectionStore } from "../../stores/connection";
 import { useScriptsStore } from "../../stores/scripts";
-import type { TelemetryStream } from "../../stores/telemetry";
+import { useServicesStore } from "../../stores/services";
+import { streamName, type TelemetryStream } from "../../stores/telemetry";
 import IconButton from "../ui/IconButton.vue";
 import LogConsole from "../ui/LogConsole.vue";
 
@@ -27,6 +32,9 @@ defineSlots<{ actions?(): unknown }>();
 const scripts = useScriptsStore();
 const connection = useConnectionStore();
 const { run } = useScriptActions();
+const composeActions = useComposeActions();
+const compose = useComposeStore();
+const services = useServicesStore();
 const { confirmStop } = useScriptGuards();
 const { notify } = useNotify();
 
@@ -38,12 +46,26 @@ function firstLine(command: string): string {
 
 const ident = computed(() => {
   const stream = props.stream;
+  if (stream.kind === "compose") {
+    const command = stream.command ?? `docker compose ${stream.action}`;
+    return {
+      kind: "Compose",
+      name: streamName(stream),
+      command,
+      fullCommand: command,
+      where: stream.directory
+        ? `dans ${stream.directory}`
+        : "par le nom du projet",
+      legend: "compose" as const,
+    };
+  }
   if (stream.kind === "script") {
     return {
       kind: "Procédure",
       name: stream.script.name,
       command: firstLine(stream.script.command),
       fullCommand: stream.script.command,
+      where: null,
       legend: "output" as const,
     };
   }
@@ -53,6 +75,7 @@ const ident = computed(() => {
     name: target.name,
     command: target.command,
     fullCommand: target.command,
+    where: null,
     legend:
       target.kind === "systemd" ? ("journal" as const) : ("output" as const),
   };
@@ -74,20 +97,36 @@ async function copyCommand() {
   }
 }
 
-/** Interruption d'un script : après GO / NO GO. */
+/** Interruption d'un script ou d'une commande compose : après GO / NO GO. */
 const requestStop = computed(() => {
   const stream = props.stream;
-  if (stream.kind !== "script") return undefined;
+  if (stream.kind === "logs") return undefined;
   return async () => {
-    if (await confirmStop(stream)) await stream.session.stop();
+    if (!(await confirmStop(stream))) return;
+    if (stream.kind === "compose") await compose.stop(stream);
+    else await stream.session.stop();
   };
 });
 
-/** Relance d'un script : sa définition enregistrée, sinon celle de l'onglet. */
+/**
+ * Relance d'un script : sa définition enregistrée, sinon celle de l'onglet.
+ * Relance d'une commande compose : sur le projet tel que relu à la dernière
+ * liste (absent de la liste : rien n'est lancé).
+ */
 const requestReplay = computed(() => {
   const stream = props.stream;
-  if (stream.kind !== "script") return undefined;
-  return () => void run(scripts.byId(stream.script.id) ?? stream.script);
+  if (stream.kind === "script") {
+    return () => void run(scripts.byId(stream.script.id) ?? stream.script);
+  }
+  if (stream.kind === "compose") {
+    return () => {
+      const project = services.containers.projects.find(
+        (p) => p.name === stream.project,
+      );
+      if (project) void composeActions.run(project, stream.action);
+    };
+  }
+  return undefined;
 });
 </script>
 
@@ -96,23 +135,24 @@ const requestReplay = computed(() => {
     :stream="stream.session"
     :legend="ident.legend"
     :label="`Télémétrie de ${ident.name}`"
-    :procedure="stream.kind === 'script'"
-    :replay-label="stream.kind === 'script' ? 'Relancer' : 'Rejouer'"
+    :procedure="stream.kind !== 'logs'"
+    :replay-label="stream.kind === 'logs' ? 'Rejouer' : 'Relancer'"
     :request-stop="requestStop"
     :request-replay="requestReplay"
     :link-down="connection.lost"
   >
     <template #title>
       <span v-if="stream.session.status === 'lost'" class="caps lost">{{
-        stream.kind === "script"
-          ? "Liaison perdue · issue inconnue"
-          : "Interrompu"
+        stream.kind === "logs"
+          ? "Interrompu"
+          : "Liaison perdue · issue inconnue"
       }}</span>
       <span class="caps kind">{{ ident.kind }}</span>
       <span class="name" :title="ident.name">{{ ident.name }}</span>
       <span class="command" :title="ident.fullCommand">{{
         ident.command
       }}</span>
+      <span v-if="ident.where" class="where">{{ ident.where }}</span>
       <IconButton icon="copy" label="Copier la commande" @click="copyCommand" />
     </template>
     <template v-if="$slots.actions" #actions>
@@ -142,6 +182,13 @@ const requestReplay = computed(() => {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.where {
+  flex-shrink: 0;
+  color: var(--color-text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
 }
 
 .command {

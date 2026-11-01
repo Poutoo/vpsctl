@@ -15,10 +15,12 @@ import {
 withDefaults(
   defineProps<{
     text: string;
+    /** Explication sous le texte, qui passe alors en gras. */
+    detail?: string | null;
     side?: "top" | "right" | "bottom" | "left";
     disabled?: boolean;
   }>(),
-  { side: "bottom", disabled: false },
+  { side: "bottom", disabled: false, detail: null },
 );
 </script>
 
@@ -30,7 +32,11 @@ withDefaults(
     <TooltipPortal>
       <!-- Décalage en px imposé par Reka UI (nombre) : égal à --sp-1. -->
       <TooltipContent class="app-tooltip" :side="side" :side-offset="4">
-        {{ text }}
+        <template v-if="detail">
+          <strong class="app-tooltip-title">{{ text }}</strong>
+          <span class="app-tooltip-detail">{{ detail }}</span>
+        </template>
+        <template v-else>{{ text }}</template>
       </TooltipContent>
     </TooltipPortal>
   </TooltipRoot>
@@ -56,6 +62,16 @@ withDefaults(
   font-family: var(--font-ui);
   font-size: var(--fs-sm);
   animation: app-tooltip-in var(--dur-fast) var(--ease-out);
+}
+
+.app-tooltip-title {
+  display: block;
+  font-weight: 600;
+}
+
+.app-tooltip-detail {
+  display: block;
+  color: var(--color-text-muted);
 }
 
 @keyframes app-tooltip-in {

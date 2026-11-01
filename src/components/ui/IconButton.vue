@@ -18,10 +18,12 @@ const props = withDefaults(
     /** Raison de l'indisponibilité, ou `null` si l'action est possible. */
     unavailable?: string | null;
     tone?: "default" | "danger";
+    /** Explication de l'action, sous le libellé dans l'infobulle. */
+    hint?: string | null;
     /** Début de l'action en cours (`performance.now()`). */
     busySince?: number | null;
   }>(),
-  { unavailable: null, tone: "default", busySince: null },
+  { unavailable: null, tone: "default", busySince: null, hint: null },
 );
 
 const emit = defineEmits<{ click: [] }>();
@@ -45,7 +47,7 @@ function onClick() {
 </script>
 
 <template>
-  <AppTooltip :text="description" side="top">
+  <AppTooltip :text="description" :detail="hint" side="top">
     <button
       type="button"
       class="icon-button"

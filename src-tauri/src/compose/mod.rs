@@ -2,6 +2,8 @@
 //! étiquettes des conteneurs et mémorisés par profil.
 
 pub mod check;
+pub mod command;
+pub mod down;
 pub mod labels;
 pub mod memory;
 
@@ -9,15 +11,33 @@ use serde::Serialize;
 use ts_rs::TS;
 
 pub use check::{FilesStatus, ProjectCheck};
+pub use command::ComposeAction;
+pub use down::DownInfo;
 pub use labels::{ComposeProject, ProjectFiles, ProjectProblem, ProjectState};
 pub use memory::ProjectMemory;
 
+use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::docker::{self, ContainerList};
 use crate::error::AppError;
 use crate::sftp::fs::SftpFs;
-use crate::ssh::{Connection, ExecOutput};
+use crate::ssh::{Connection, Deadline, ExecOutput};
+
+/// Délai des lectures du GO / NO GO de `down` (montages, réseaux, volumes
+/// anonymes), après la liste.
+const DOWN_INFO_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Exécution lancée par `compose_run`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ComposeRun {
+    pub run_id: String,
+    /// Commande exacte, sans le script de surveillance qui l'enveloppe.
+    pub command: String,
+}
 
 /// Conteneurs et projets compose du profil connecté. Les projets vus sont
 /// mémorisés ; un échec d'écriture n'empêche pas l'affichage, la mémoire
@@ -54,6 +74,151 @@ pub async fn check(
         }
     }
     Ok(checks)
+}
+
+/// Pourquoi les étiquettes d'un projet empêchent Démarrer et Récupérer.
+pub fn problem_message(problem: &ProjectProblem) -> String {
+    match problem {
+        ProjectProblem::InvalidName => "nom de projet hors du format de compose".to_owned(),
+        ProjectProblem::Incomplete => {
+            "étiquettes du dossier ou des fichiers absentes sur les conteneurs".to_owned()
+        }
+        ProjectProblem::InvalidPath { path } => format!("chemin refusé : {path}"),
+        ProjectProblem::AmbiguousPath { label } => {
+            format!("virgule dans un chemin de l'étiquette {label}")
+        }
+        ProjectProblem::Divergent => "étiquettes différentes d'un conteneur à l'autre".to_owned(),
+    }
+}
+
+/// Pourquoi la vérification des fichiers empêche Démarrer et Récupérer ;
+/// `None` si elle ne bloque rien.
+pub fn status_message(status: &FilesStatus, working_dir: &str) -> Option<String> {
+    match status {
+        FilesStatus::Ok | FilesStatus::Unchecked { .. } => None,
+        FilesStatus::DirMissing => Some(format!("dossier introuvable : {working_dir}")),
+        FilesStatus::NotDir => Some(format!("{working_dir} n'est pas un dossier")),
+        FilesStatus::Missing { path } => Some(format!("fichier introuvable : {path}")),
+        FilesStatus::NotFile { path } => Some(format!("{path} n'est pas un fichier")),
+        FilesStatus::Unreadable { path } => Some(format!(
+            "fichier illisible pour le compte connecté : {path}"
+        )),
+    }
+}
+
+/// Projet relu sur le serveur (étiquettes, ou mémoire s'il est descendu).
+async fn find_project(
+    connection: &Connection,
+    memory: &ProjectMemory,
+    profile: &str,
+    project: &str,
+) -> Result<(ContainerList, ComposeProject), AppError> {
+    if !labels::is_project_name(project) {
+        return Err(AppError::invalid_input("nom de projet compose invalide"));
+    }
+    let list = docker::list(connection).await?;
+    let found = labels::group(&list.containers, &memory.projects(profile))
+        .projects
+        .into_iter()
+        .find(|p| p.name == project)
+        .ok_or_else(|| AppError::invalid_input("projet compose inconnu sur ce serveur"))?;
+    Ok((list, found))
+}
+
+/// Relit le projet et construit la commande d'une action. Démarrer et
+/// Récupérer exigent des étiquettes utilisables et des fichiers vérifiés
+/// (SFTP) ; Redémarrer et Arrêter passent par le seul nom et exigent au
+/// moins un conteneur.
+pub async fn prepare(
+    connection: Arc<Connection>,
+    memory: &ProjectMemory,
+    profile: &str,
+    project: &str,
+    action: ComposeAction,
+) -> Result<String, AppError> {
+    let (_, found) = find_project(&connection, memory, profile, project).await?;
+    if !action.uses_files() {
+        if found.state == ProjectState::Down {
+            return Err(AppError::invalid_input(
+                "aucun conteneur : Démarrer recrée le projet",
+            ));
+        }
+        return command::command_line(project, action, None);
+    }
+    if let Some(problem) = &found.problem {
+        return Err(AppError::invalid_input(problem_message(problem)));
+    }
+    let files = found
+        .files
+        .ok_or_else(|| AppError::invalid_input("dossier et fichiers du projet inconnus"))?;
+    let status = check::check_files(&*SftpFs::shared(connection), &files).await?;
+    if let Some(message) = status_message(&status, &files.working_dir) {
+        return Err(AppError::invalid_input(message));
+    }
+    command::command_line(project, action, Some(&files))
+}
+
+/// Ce que `down` supprimerait et conserverait (GO / NO GO).
+pub async fn down_info(
+    connection: Arc<Connection>,
+    memory: &ProjectMemory,
+    profile: &str,
+    project: &str,
+) -> Result<DownInfo, AppError> {
+    let (list, found) = find_project(&connection, memory, profile, project).await?;
+    let members: Vec<&docker::Container> = list
+        .containers
+        .iter()
+        .filter(|c| c.project.as_deref() == Some(project))
+        .collect();
+    if members.is_empty() {
+        return Err(AppError::invalid_input("aucun conteneur à supprimer"));
+    }
+    let deadline = Deadline::after(DOWN_INFO_TIMEOUT);
+    let ids: Vec<&str> = members.iter().map(|c| c.id.as_str()).collect();
+    let mounts = match down::mounts_command(&ids) {
+        Some(command) => down::parse_mounts(
+            &connection
+                .exec_until(&command, deadline)
+                .await?
+                .stdout_text(),
+        ),
+        None => Vec::new(),
+    };
+    let networks = docker::checked_stdout(
+        &connection
+            .exec_until(&down::networks_command(project)?, deadline)
+            .await?,
+    )?;
+    let anonymous = docker::checked_stdout(
+        &connection
+            .exec_until(down::ANONYMOUS_VOLUMES_COMMAND, deadline)
+            .await?,
+    )?;
+    let anonymous: HashSet<String> = down::parse_names(&anonymous).into_iter().collect();
+    let (named_volumes, anonymous_volumes, binds) = down::classify_mounts(&mounts, &anonymous);
+    let files_status = match &found.files {
+        Some(files) => Some(check::check_files(&*SftpFs::shared(connection), files).await?),
+        None => None,
+    };
+    Ok(DownInfo {
+        project: project.to_owned(),
+        command: command::command_line(project, ComposeAction::Down, None)?,
+        containers: members
+            .iter()
+            .map(|c| down::DownContainer {
+                name: c.name.clone(),
+                service: c.service.clone(),
+                running: c.docker_state == "running",
+            })
+            .collect(),
+        networks: down::parse_names(&networks),
+        named_volumes,
+        anonymous_volumes,
+        binds,
+        files: found.files,
+        files_status,
+    })
 }
 
 /// Oublie un projet descendu, sans rien toucher sur le serveur. Refusé si le
@@ -194,6 +359,46 @@ mod tests {
         assert_eq!(
             serde_json::to_value(ComposeSupport::Absent).unwrap(),
             json!({ "status": "absent" })
+        );
+    }
+
+    #[test]
+    fn only_a_missing_or_unreadable_file_blocks_up_and_pull() {
+        assert_eq!(status_message(&FilesStatus::Ok, "/srv/app"), None);
+        assert_eq!(
+            status_message(
+                &FilesStatus::Unchecked {
+                    message: "Failure".into()
+                },
+                "/srv/app"
+            ),
+            None
+        );
+        assert_eq!(
+            status_message(&FilesStatus::DirMissing, "/srv/app").as_deref(),
+            Some("dossier introuvable : /srv/app")
+        );
+        assert_eq!(
+            status_message(
+                &FilesStatus::Unreadable {
+                    path: "/srv/app/.env".into()
+                },
+                "/srv/app"
+            )
+            .as_deref(),
+            Some("fichier illisible pour le compte connecté : /srv/app/.env")
+        );
+    }
+
+    #[test]
+    fn compose_run_serializes_in_camel_case() {
+        assert_eq!(
+            serde_json::to_value(ComposeRun {
+                run_id: "r1".into(),
+                command: "docker compose -p 'app' down".into(),
+            })
+            .unwrap(),
+            json!({ "runId": "r1", "command": "docker compose -p 'app' down" })
         );
     }
 }

@@ -274,6 +274,15 @@ pub fn action_timeout(action: Action) -> Duration {
     }
 }
 
+/// Sortie standard d'une lecture réussie, ou erreur compréhensible.
+pub fn checked_stdout(output: &ExecOutput) -> Result<String, AppError> {
+    if output.success() {
+        Ok(output.stdout_text())
+    } else {
+        Err(failure(output))
+    }
+}
+
 /// Résultat d'une action ou d'une suppression : rien, ou erreur compréhensible.
 pub fn interpret_done(output: &ExecOutput) -> Result<(), AppError> {
     if output.success() {

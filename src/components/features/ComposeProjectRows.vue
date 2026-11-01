@@ -3,17 +3,27 @@
  * En-tête d'un projet compose dans le tableau des conteneurs : bouton de
  * repli, nom, dossier, état agrégé, détail et actions du projet ; puis, au
  * besoin, une ligne d'explication (dossier ou fichier en défaut, projet
- * descendu).
+ * descendu). Pendant une commande, le verbe et son chrono remplacent l'état ;
+ * après un échec, la colonne Détail mène à la sortie jusqu'à la commande
+ * suivante.
  */
 import { computed } from "vue";
+import type { ComposeAction } from "../../bindings/ComposeAction";
 import type { ComposeProject } from "../../bindings/ComposeProject";
 import type { FilesStatus } from "../../bindings/FilesStatus";
 import {
+  DOWN_ACTION,
+  PROJECT_ACTIONS,
+  projectActionReasons,
+} from "../../composeActions";
+import {
+  baseName,
   filesProblem,
   projectCount,
   projectDetail,
   projectDetailHelp,
 } from "../../composeView";
+import { useComposeStore } from "../../stores/compose";
 import { useConnectionStore } from "../../stores/connection";
 import AppIcon from "../ui/AppIcon.vue";
 import HighlightText from "../ui/HighlightText.vue";
@@ -29,27 +39,56 @@ const props = defineProps<{
   query: string;
   /** Dernière vérification du dossier et des fichiers, si faite. */
   check: FilesStatus | null;
+  /** Plugin compose présent (ou non détecté) : actions de projet affichées. */
+  actions: boolean;
 }>();
 
-const emit = defineEmits<{ toggle: []; forget: [] }>();
+const emit = defineEmits<{
+  toggle: [];
+  forget: [];
+  run: [action: ComposeAction];
+  showTab: [tabId: string];
+}>();
 
 const connection = useConnectionStore();
+const compose = useComposeStore();
 
 const down = computed(() => props.project.state === "down");
 const workingDir = computed(() => props.project.files?.workingDir ?? null);
 const problem = computed(() =>
   filesProblem(props.check, workingDir.value ?? ""),
 );
-const failed = computed(
-  () => props.project.state === "failed" || problem.value !== null,
+const running = computed(() => compose.running(props.project.name));
+const outcome = computed(() =>
+  running.value ? null : compose.outcome(props.project.name),
 );
-const detail = computed(() =>
-  problem.value ? problem.value.short : projectDetail(props.project),
+const failed = computed(
+  () =>
+    !running.value &&
+    (props.project.state === "failed" || problem.value !== null),
+);
+const detail = computed(() => {
+  if (running.value) return `docker compose ${running.value.action} · en cours`;
+  if (problem.value) return problem.value.short;
+  return projectDetail(props.project);
+});
+const reasons = computed(() =>
+  projectActionReasons(props.project, props.check, {
+    lost: connection.lost,
+    busy: running.value !== null,
+  }),
+);
+const files = computed(() =>
+  (props.project.files?.configFiles ?? []).map(baseName).join(" + "),
 );
 const containerCount = computed(() => {
   const count = props.project.state === "down" ? 0 : props.shown;
   return `${count} ${count > 1 ? "conteneurs" : "conteneur"}`;
 });
+
+function busySince(action: ComposeAction): number | null {
+  return running.value?.action === action ? running.value.since : null;
+}
 </script>
 
 <template>
@@ -91,33 +130,93 @@ const containerCount = computed(() => {
       <ProjectStateLabel
         :state="project.state"
         :count="projectCount(project)"
+        :label="running?.action ?? null"
+        :since="running?.since ?? null"
       />
       <span
         class="stacked-detail"
-        :class="{ problem: project.problem || problem }"
+        :class="{
+          problem: !running && (outcome || project.problem || problem),
+          busy: running,
+        }"
         :title="projectDetailHelp(project)"
       >
-        <StatusIcon v-if="problem" class="problem-shape" name="triangle" />
-        {{ detail }}
+        <template v-if="outcome">
+          {{ outcome.action }} · {{ outcome.text }}
+        </template>
+        <template v-else>
+          <StatusIcon
+            v-if="problem && !running"
+            class="problem-shape"
+            name="triangle"
+          />
+          {{ detail }}
+        </template>
       </span>
     </td>
     <td
       class="truncate detail-cell"
-      :class="{ problem: project.problem || problem }"
+      :class="{
+        problem: !running && (outcome || project.problem || problem),
+        busy: running,
+      }"
       :title="projectDetailHelp(project)"
     >
-      <StatusIcon v-if="problem" class="problem-shape" name="triangle" />
-      {{ detail }}
+      <button
+        v-if="outcome && outcome.tabId"
+        type="button"
+        class="outcome"
+        @click="emit('showTab', outcome.tabId)"
+      >
+        {{ outcome.action }} · {{ outcome.text }} · voir
+        <AppIcon name="arrow-right" />
+      </button>
+      <template v-else-if="outcome">
+        {{ outcome.action }} · {{ outcome.text }}
+      </template>
+      <template v-else>
+        <StatusIcon
+          v-if="problem && !running"
+          class="problem-shape"
+          name="triangle"
+        />
+        {{ detail }}
+      </template>
     </td>
     <td>
       <div class="row-actions">
+        <template v-if="actions">
+          <IconButton
+            v-for="meta in PROJECT_ACTIONS"
+            :key="meta.action"
+            :icon="meta.icon"
+            :label="`${meta.label} le projet ${project.name}`"
+            :hint="meta.hint"
+            :unavailable="reasons[meta.action]"
+            :busy-since="busySince(meta.action)"
+            @click="emit('run', meta.action)"
+          />
+        </template>
         <template v-if="down">
           <span class="separator" aria-hidden="true" />
           <IconButton
             icon="forget"
             :label="`Oublier le projet ${project.name}`"
+            hint="Le retire de la liste de ce profil, sans rien toucher sur le serveur."
             :unavailable="connection.lost ? 'liaison perdue' : null"
             @click="emit('forget')"
+          />
+        </template>
+        <template v-else-if="actions">
+          <span class="separator" aria-hidden="true" />
+          <IconButton
+            :icon="DOWN_ACTION.icon"
+            tone="danger"
+            :label="`${DOWN_ACTION.label} le projet ${project.name}`"
+            :hint="DOWN_ACTION.hint"
+            :unavailable="reasons.down"
+            :busy-since="busySince('down')"
+            @click="emit('run', 'down')"
           />
         </template>
       </div>
@@ -132,6 +231,11 @@ const containerCount = computed(() => {
           <template v-if="project.running > 0">
             Les conteneurs tournent toujours.</template
           >
+          <template v-if="actions">
+            Démarrer et Récupérer les images ont besoin de
+            {{ files || "ses fichiers" }} ; Redémarrer et Arrêter et supprimer
+            passent par le nom du projet et restent possibles.</template
+          >
         </span>
       </p>
     </td>
@@ -142,9 +246,11 @@ const containerCount = computed(() => {
         <StatusIcon class="note-shape" name="circle" />
         <span>
           <strong>Aucun conteneur.</strong>
-          Docker ne connaît plus ce projet. Atlas l'a mémorisé pour ce profil,
-          avec son dossier {{ workingDir }}. Oublier ce projet le retire de la
-          liste, sans toucher au serveur.
+          Docker ne connaît plus ce projet. Atlas l'a mémorisé pour ce profil
+          avec son dossier {{ workingDir
+          }}<template v-if="actions"
+            >, et Démarrer le recrée depuis ce dossier</template
+          >. Oublier ce projet le retire de la liste, sans toucher au serveur.
         </span>
       </p>
     </td>
@@ -217,6 +323,31 @@ const containerCount = computed(() => {
 
 .problem {
   color: var(--color-danger-text);
+}
+
+.busy {
+  color: var(--color-warning);
+}
+
+/* Dernier échec : lien vers la sortie, texte d'erreur. */
+.outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  background: none;
+  border: none;
+  color: var(--color-danger-text);
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.outcome:hover {
+  text-decoration: underline;
 }
 
 .stacked-detail {

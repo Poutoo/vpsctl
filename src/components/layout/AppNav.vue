@@ -2,7 +2,8 @@
 /**
  * Navigation principale, affichée pendant une liaison. Section active : trait
  * d'action de 2 px, numéral en ambre, texte plein. En fenêtre étroite, seuls
- * les numéraux restent, chacun avec une infobulle.
+ * les numéraux restent, chacun avec une infobulle. Commandes compose en
+ * cours : demi-disque et nombre à côté de Tableau de bord.
  */
 import { computed } from "vue";
 import { useRoute } from "vue-router";
@@ -18,6 +19,7 @@ import { streamOrigin, useTelemetryStore } from "../../stores/telemetry";
 import AppButton from "../ui/AppButton.vue";
 import AppIcon from "../ui/AppIcon.vue";
 import AppTooltip from "../ui/AppTooltip.vue";
+import StatusIcon from "../ui/StatusIcon.vue";
 import TelemetryIndicator from "./TelemetryIndicator.vue";
 
 const route = useRoute();
@@ -29,6 +31,14 @@ const { confirmLeave } = useScriptGuards();
 const narrow = useMediaQuery(NARROW_QUERY);
 
 const profile = computed(() => profiles.byId(connection.profileId));
+
+/** Commandes compose en cours, signalées sur Tableau de bord. */
+const composeCount = computed(() => telemetry.runningCompose.length);
+const composeLabel = computed(() =>
+  composeCount.value > 1
+    ? `${composeCount.value} commandes compose en cours`
+    : "1 commande compose en cours",
+);
 
 /** Section active ; sur l'écran Télémétrie, celle d'où vient le flux affiché. */
 const active = computed(() => {
@@ -83,6 +93,17 @@ async function disconnect() {
             <span :class="{ 'visually-hidden': narrow }">{{
               section.label
             }}</span>
+            <span
+              v-if="section.route === 'dashboard' && composeCount > 0"
+              class="compose-badge"
+              :title="composeLabel"
+            >
+              <StatusIcon name="half" />
+              <span :class="{ 'visually-hidden': narrow }">{{
+                composeCount
+              }}</span>
+              <span class="visually-hidden">, {{ composeLabel }}</span>
+            </span>
           </RouterLink>
         </AppTooltip>
       </li>
@@ -195,6 +216,21 @@ async function disconnect() {
 }
 
 /* Numéraux romains : EB Garamond, alignés sur une colonne. */
+/* Commandes compose en cours : forme « en transition », statique. */
+.compose-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+  color: var(--color-warning);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.narrow .compose-badge {
+  margin-left: 0;
+}
+
 .numeral {
   min-width: 3ch;
   color: var(--color-text-muted);
