@@ -318,7 +318,7 @@ docker volume ls --filter label=com.docker.volume.anonymous --format '{{.Name}}'
 ```
 
 - Montages (`MountPoint` de l'API Engine) : `volume` → nommé ou anonyme ; `bind` → dossier du serveur (`Source`) ; les autres (`tmpfs`…) ne survivent pas au conteneur. Le code de retour d'`inspect` n'est pas consulté (un conteneur supprimé entre-temps ne masque pas les autres).
-- Volumes anonymes : Docker leur pose l'étiquette `com.docker.volume.anonymous` à la création (`AnonymousLabel`, `daemon/volume/service/service.go` de moby), jamais aux volumes nommés. Un volume anonyme créé par une version de Docker antérieure à cette étiquette serait compté comme nommé.
+- Volumes anonymes : un volume est anonyme s'il porte l'étiquette `com.docker.volume.anonymous` (Docker la pose à la création, `AnonymousLabel`, `daemon/volume/service/service.go` de moby, jamais aux volumes nommés), ou à défaut si son nom fait 64 caractères hexadécimaux, la forme des volumes sans nom (volume créé par une version de Docker antérieure à l'étiquette, par exemple). Le doute va toujours vers « anonyme » : le GO / NO GO ne présente jamais comme rattaché un volume que le `down` détachera. Fonction pure `is_anonymous_volume`.
 - Les fichiers du projet sont vérifiés (relance possible ou non par Démarrer).
 - Sans `-v`, `down` conserve les volumes nommés **et** anonymes (documentation de `docker compose down`) ; un volume anonyme n'est simplement plus monté par le `up` suivant.
 

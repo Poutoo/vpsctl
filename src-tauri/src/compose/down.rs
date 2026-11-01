@@ -128,6 +128,15 @@ pub fn parse_names(output: &str) -> Vec<String> {
         .collect()
 }
 
+/// Volume anonyme : étiquette `com.docker.volume.anonymous` (`labelled`), ou à
+/// défaut nom de 64 caractères hexadécimaux, la forme que Docker donne aux
+/// volumes sans nom (volume créé avant l'étiquette, étiquette illisible).
+/// Le doute va vers « anonyme » : le GO / NO GO ne présente jamais comme
+/// rattaché un volume que le `down` détachera.
+pub fn is_anonymous_volume(name: &str, labelled: &HashSet<String>) -> bool {
+    labelled.contains(name) || (name.len() == 64 && name.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
 /// Volumes nommés, volumes anonymes et dossiers montés, triés et sans
 /// doublon. Les autres montages (`tmpfs`, `npipe`…) ne survivent pas au
 /// conteneur et ne sont pas listés.
@@ -142,7 +151,7 @@ pub fn classify_mounts(
         match mount.kind.as_str() {
             "volume" => {
                 if let Some(name) = shown(&mount.name) {
-                    if anonymous.contains(&name) {
+                    if is_anonymous_volume(&name, anonymous) {
                         anon.insert(name);
                     } else {
                         named.insert(name);
@@ -226,11 +235,25 @@ mod tests {
     }
 
     #[test]
-    fn without_the_label_a_volume_counts_as_named() {
+    fn an_unlabelled_hexadecimal_volume_counts_as_anonymous() {
         let mounts = parse_mounts(&inspect_output());
         let (named, anon, _) = classify_mounts(&mounts, &HashSet::new());
-        assert_eq!(named.len(), 2);
-        assert!(anon.is_empty());
+        assert_eq!(named, ["urbanflow-mobility_pgdata"]);
+        assert_eq!(anon, [ANON]);
+    }
+
+    #[test]
+    fn anonymity_follows_the_label_then_the_name() {
+        let labelled = HashSet::from(["cache".to_owned()]);
+        assert!(is_anonymous_volume("cache", &labelled));
+        assert!(is_anonymous_volume(ANON, &HashSet::new()));
+        assert!(is_anonymous_volume(&ANON.to_uppercase(), &HashSet::new()));
+        assert!(!is_anonymous_volume("urbanflow-mobility_pgdata", &labelled));
+        assert!(!is_anonymous_volume(&ANON[..63], &HashSet::new()));
+        assert!(!is_anonymous_volume(
+            &format!("{}g", &ANON[..63]),
+            &HashSet::new()
+        ));
     }
 
     #[test]
