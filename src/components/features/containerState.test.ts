@@ -14,6 +14,9 @@ function container(overrides: Partial<Container>): Container {
     duration: "il y a 9 minutes",
     oomKilled: false,
     memoryLimit: null,
+    project: null,
+    service: null,
+    oneoff: false,
     ...overrides,
   };
 }

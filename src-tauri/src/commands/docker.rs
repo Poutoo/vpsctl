@@ -9,9 +9,7 @@ use crate::state::AppState;
 
 #[tauri::command]
 pub async fn docker_list(state: State<'_, AppState>) -> Result<ContainerList, AppError> {
-    state
-        .remote(|connection| async move { docker::list(&connection).await })
-        .await
+    state.docker_list().await
 }
 
 #[tauri::command]

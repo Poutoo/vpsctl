@@ -33,6 +33,8 @@ const props = defineProps<{
   frozenAt?: number | null;
   /** Éléments affichés après le filtre : le compteur passe à « 2 sur 4 ». */
   shown?: number;
+  /** Décompte affiché sans filtre, à la place du nombre d'éléments. */
+  summary?: string | null;
 }>();
 
 defineSlots<{
@@ -50,7 +52,8 @@ const loading = computed(() => !props.section.loaded);
 const countLabel = computed(() => {
   const total = props.section.items.length;
   const shown = props.shown ?? total;
-  return shown === total ? `${total}` : `${shown} sur ${total}`;
+  if (shown !== total) return `${shown} sur ${total}`;
+  return props.summary ?? `${total}`;
 });
 
 /** Chrono du premier chargement, depuis l'affichage de la section. */

@@ -1,10 +1,57 @@
-//! Projets docker compose : détection du plugin.
+//! Projets docker compose : détection du plugin, projets lus dans les
+//! étiquettes des conteneurs et mémorisés par profil.
+
+pub mod labels;
+pub mod memory;
 
 use serde::Serialize;
 use ts_rs::TS;
 
+pub use labels::{ComposeProject, ProjectFiles, ProjectProblem, ProjectState};
+pub use memory::ProjectMemory;
+
+use crate::docker::{self, ContainerList};
 use crate::error::AppError;
-use crate::ssh::ExecOutput;
+use crate::ssh::{Connection, ExecOutput};
+
+/// Conteneurs et projets compose du profil connecté. Les projets vus sont
+/// mémorisés ; un échec d'écriture n'empêche pas l'affichage, la mémoire
+/// sera mise à jour à la lecture suivante.
+pub async fn list(
+    connection: &Connection,
+    memory: &ProjectMemory,
+    profile: &str,
+) -> Result<ContainerList, AppError> {
+    let mut list = docker::list(connection).await?;
+    let grouping = labels::group(&list.containers, &memory.projects(profile));
+    let _ = memory.remember(profile, &grouping.seen);
+    list.projects = grouping.projects;
+    Ok(list)
+}
+
+/// Oublie un projet descendu, sans rien toucher sur le serveur. Refusé si le
+/// projet a encore des conteneurs (il réapparaîtrait aussitôt).
+pub async fn forget(
+    connection: &Connection,
+    memory: &ProjectMemory,
+    profile: &str,
+    project: &str,
+) -> Result<(), AppError> {
+    let list = docker::list(connection).await?;
+    if list
+        .containers
+        .iter()
+        .any(|c| c.project.as_deref() == Some(project))
+    {
+        return Err(AppError::invalid_input(
+            "ce projet a encore des conteneurs : il ne peut pas être oublié",
+        ));
+    }
+    if !memory.forget(profile, project)? {
+        return Err(AppError::invalid_input("projet inconnu de ce profil"));
+    }
+    Ok(())
+}
 
 /// Version du plugin, sans le « v » initial (`cmd/compose/version.go`).
 pub const VERSION_COMMAND: &str = "docker compose version --short";

@@ -1,6 +1,7 @@
 import { flushPromises } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as compose from "../api/compose";
 import * as docker from "../api/docker";
 import * as systemd from "../api/systemd";
 import type { Container } from "../bindings/Container";
@@ -11,6 +12,7 @@ import * as connectionApi from "../api/connection";
 import { lastToast, linked, lossEvent } from "../testUtils";
 import { serviceTarget, targetKey, useServicesStore } from "./services";
 
+vi.mock("../api/compose");
 vi.mock("../api/docker");
 vi.mock("../api/systemd");
 vi.mock("../api/connection");
@@ -45,6 +47,9 @@ function container(state: RunState): Container {
     duration: null,
     oomKilled: false,
     memoryLimit: null,
+    project: null,
+    service: null,
+    oneoff: false,
   };
 }
 
@@ -59,6 +64,7 @@ beforeEach(() => {
   vi.mocked(docker.listContainers).mockResolvedValue({
     containers: [container("nominal")],
     skipped: 0,
+    projects: [],
   });
   vi.mocked(systemd.serviceAction).mockResolvedValue();
 });
@@ -133,6 +139,7 @@ describe("action puis vérification", () => {
     vi.mocked(docker.listContainers).mockResolvedValue({
       containers: [container("stopped")],
       skipped: 0,
+      projects: [],
     });
     await services.perform(
       { kind: "docker", id: caddy.id, name: caddy.name },
@@ -266,9 +273,9 @@ describe("filtre du tableau de bord", () => {
       "api-reseau.service",
       "bot.service",
     ]);
-    expect(services.shownContainers).toHaveLength(0);
+    expect(services.containerGroups.shown).toBe(0);
     services.filter = "caddy:2";
-    expect(services.shownContainers).toHaveLength(1);
+    expect(services.containerGroups.shown).toBe(1);
   });
 
   it("garde le filtre sur les données figées pendant un LOS", async () => {
@@ -408,6 +415,7 @@ describe("conteneur tué par manque de mémoire", () => {
         },
       ],
       skipped: 0,
+      projects: [],
     });
     const target = {
       kind: "docker" as const,
@@ -418,5 +426,34 @@ describe("conteneur tué par manque de mémoire", () => {
     await vi.advanceTimersByTimeAsync(2_500);
     await done;
     expect(lastToast().detail).toBe("caddy · code 137 · manque de mémoire");
+  });
+});
+
+describe("oubli d'un projet compose", () => {
+  it("relit la liste puis confirme", async () => {
+    vi.mocked(compose.forgetProject).mockResolvedValue();
+    const services = useServicesStore();
+    services.toggleProject("old");
+    await services.forgetProject("old");
+    expect(compose.forgetProject).toHaveBeenCalledWith("old");
+    expect(docker.listContainers).toHaveBeenCalled();
+    expect(services.collapsed).toEqual({});
+    expect(lastToast()).toMatchObject({
+      tone: "success",
+      title: "Projet oublié",
+      detail: "old",
+    });
+  });
+
+  it("notifie un refus du backend", async () => {
+    vi.mocked(compose.forgetProject).mockRejectedValue({
+      kind: "InvalidInput",
+      message: "ce projet a encore des conteneurs : il ne peut pas être oublié",
+    });
+    await useServicesStore().forgetProject("app");
+    expect(lastToast()).toMatchObject({
+      tone: "error",
+      title: "Projet non oublié",
+    });
   });
 });

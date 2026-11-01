@@ -39,4 +39,16 @@ oomKilled: boolean,
  * Limite mémoire du conteneur en octets (`HostConfig.Memory`), lue avec
  * `OOMKilled` ; `None` : sans limite ou non lue.
  */
-memoryLimit: number | null, };
+memoryLimit: number | null, 
+/**
+ * Étiquette `com.docker.compose.project`, brute ; `None` si absente.
+ */
+project: string | null, 
+/**
+ * Étiquette `com.docker.compose.service`, brute ; `None` si absente.
+ */
+service: string | null, 
+/**
+ * Conteneur lancé par `docker compose run` (`com.docker.compose.oneoff`).
+ */
+oneoff: boolean, };

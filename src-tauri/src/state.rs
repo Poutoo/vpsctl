@@ -25,7 +25,9 @@ use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use ts_rs::TS;
 use zeroize::Zeroizing;
 
+use crate::compose::{self, ProjectMemory};
 use crate::config::{Profile, ProfileStore};
+use crate::docker::ContainerList;
 use crate::error::AppError;
 use crate::presence::{LinkPhase, PhaseState};
 use crate::scripts::{self, LastRunRecorder, Script, ScriptParser, ScriptStore};
@@ -139,6 +141,8 @@ pub struct AppState {
     profiles_lock: Mutex<()>,
     /// Partagé avec les tâches d'exécution, qui enregistrent `lastRun`.
     scripts: Arc<ScriptStore>,
+    /// Projets compose mémorisés par profil.
+    compose_memory: Arc<ProjectMemory>,
     link: Arc<tokio::sync::Mutex<Link>>,
     attempts: AtomicU64,
     on_link_lost: LinkLostSink,
@@ -163,6 +167,7 @@ impl AppState {
             profiles: ProfileStore::new(config_dir),
             profiles_lock: Mutex::new(()),
             scripts: Arc::new(ScriptStore::new(config_dir)),
+            compose_memory: Arc::new(ProjectMemory::load(config_dir)),
             link: Arc::new(tokio::sync::Mutex::new(Link::Idle)),
             attempts: AtomicU64::new(0),
             on_link_lost,
@@ -219,6 +224,9 @@ impl AppState {
             ));
         }
         self.with_profiles(|store| store.delete(id))?;
+        // Profil déjà supprimé : un échec ici laisse seulement des projets
+        // orphelins dans le fichier, jamais relus.
+        let _ = self.compose_memory.forget_profile(id);
         if let Ok(mut presented) = self.presented.lock() {
             presented.remove(id);
         }
@@ -417,6 +425,33 @@ impl AppState {
         operation(connection)
             .await
             .map_err(|error| probe.map(error))
+    }
+
+    /// Profil de la liaison établie.
+    async fn connected_profile(&self) -> Result<String, AppError> {
+        match &*self.link.lock().await {
+            Link::Connected(active) => Ok(active.profile_id.clone()),
+            Link::Lost => Err(AppError::LinkLost),
+            _ => Err(AppError::NotConnected),
+        }
+    }
+
+    /// Conteneurs et projets compose (mémorisés pour le profil connecté).
+    pub async fn docker_list(&self) -> Result<ContainerList, AppError> {
+        let profile = self.connected_profile().await?;
+        let memory = self.compose_memory.clone();
+        self.remote(|connection| async move { compose::list(&connection, &memory, &profile).await })
+            .await
+    }
+
+    /// Oublie un projet compose descendu du profil connecté.
+    pub async fn compose_forget(&self, project: &str) -> Result<(), AppError> {
+        let profile = self.connected_profile().await?;
+        let memory = self.compose_memory.clone();
+        self.remote(|connection| async move {
+            compose::forget(&connection, &memory, &profile, project).await
+        })
+        .await
     }
 
     pub async fn server_info(&self) -> Result<ServerInfo, AppError> {

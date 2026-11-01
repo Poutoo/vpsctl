@@ -37,7 +37,11 @@ export type AppIconName =
   | "info"
   | "check-circle"
   | "check"
-  | "never";
+  | "never"
+  | "chevron-down"
+  | "chevron-right"
+  | "folder-missing"
+  | "forget";
 
 defineProps<{
   name: AppIconName;
@@ -200,6 +204,20 @@ defineProps<{
     <g v-else-if="name === 'never'">
       <circle cx="8" cy="8" r="5.5" />
       <path d="M4.2 11.8l7.6-7.6" />
+    </g>
+    <!-- Groupe déplié ou replié. -->
+    <path v-else-if="name === 'chevron-down'" d="M4.5 6.5L8 10l3.5-3.5" />
+    <path v-else-if="name === 'chevron-right'" d="M6.5 4.5L10 8l-3.5 3.5" />
+    <!-- Dossier introuvable : contour pointillé. -->
+    <path
+      v-else-if="name === 'folder-missing'"
+      d="M2 4h4.5l1.5 1.5H14V13H2z"
+      stroke-dasharray="1.6 1.6"
+    />
+    <!-- Oublier : cercle et croix. -->
+    <g v-else-if="name === 'forget'">
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M6 6l4 4M10 6l-4 4" />
     </g>
     <!-- Signal perdu : antenne barrée. -->
     <g v-else>

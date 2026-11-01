@@ -1,27 +1,24 @@
 <script setup lang="ts">
-/** Conteneurs Docker et leurs actions. */
+/**
+ * Conteneurs Docker groupés par projet compose. L'en-tête d'un projet porte
+ * son dossier, son état agrégé et ses actions ; ses conteneurs gardent les
+ * leurs. Les conteneurs sans étiquette de projet forment un dernier groupe,
+ * « Hors compose », jamais replié.
+ */
 import { computed } from "vue";
+import type { ComposeProject } from "../../bindings/ComposeProject";
 import type { Container } from "../../bindings/Container";
-import type { RunState } from "../../bindings/RunState";
-import { useConnectionStore } from "../../stores/connection";
-import {
-  containerTarget,
-  targetKey,
-  useServicesStore,
-  type Operation,
-} from "../../stores/services";
+import { type ContainerGroup } from "../../composeView";
+import { useServicesStore, type Operation } from "../../stores/services";
 import DataTable from "../ui/DataTable.vue";
 import FilterNoMatch from "../ui/FilterNoMatch.vue";
-import HighlightText from "../ui/HighlightText.vue";
-import IconButton from "../ui/IconButton.vue";
-import RunStateLabel from "../ui/RunStateLabel.vue";
-import { containerAvailability, OPERATION_PROGRESS } from "./availability";
-import { containerStateDetail, containerStateHelp } from "./containerState";
+import ComposeProjectRows from "./ComposeProjectRows.vue";
+import ContainerRow from "./ContainerRow.vue";
 
 const props = withDefaults(
   defineProps<{
-    /** Conteneurs affichés, déjà filtrés. */
-    containers: Container[];
+    /** Groupes affichés, déjà filtrés. */
+    groups: ContainerGroup[];
     /** Premier chargement : registre tracé et vide. */
     loading?: boolean;
     /** Filtre en cours, surligné dans les noms et les images. */
@@ -35,50 +32,31 @@ const props = withDefaults(
 const emit = defineEmits<{
   logs: [container: Container];
   operate: [container: Container, operation: Operation];
+  forget: [project: ComposeProject];
   clearFilter: [];
 }>();
 
 const store = useServicesStore();
-const connection = useConnectionStore();
 
 /** Lignes vides tracées pendant le premier chargement. */
 const PLACEHOLDER_ROWS = 3;
 
-/** Démarrer, arrêter, redémarrer : icône et libellé. */
-const RUN_ACTIONS = [
-  { operation: "start", icon: "play", label: "Démarrer" },
-  { operation: "stop", icon: "stop", label: "Arrêter" },
-  { operation: "restart", icon: "refresh", label: "Redémarrer" },
-] as const;
-
-/**
- * Affichage d'une ligne : pendant une action, « en transition » avec le
- * libellé et le chrono de l'action, et toutes les actions indisponibles
- * sauf les logs.
- */
-function view(container: Container) {
-  const key = targetKey(containerTarget(container));
-  const pending = store.pending[key] ?? null;
-  const state: RunState = pending ? "transition" : container.state;
-  const reasons = containerAvailability(container);
-  return {
-    state,
-    pending,
-    arrival: store.arrivals[key] ?? null,
-    reason: (operation: Operation) =>
-      connection.lost
-        ? "liaison perdue"
-        : pending
-          ? "action en cours"
-          : reasons[operation],
-    busySince: (operation: Operation) =>
-      pending?.operation === operation ? pending.since : null,
-  };
+function groupKey(group: ContainerGroup): string {
+  return group.kind === "project" ? `project:${group.project.name}` : "loose";
 }
 
-const rows = computed(() =>
-  props.containers.map((container) => ({ container, row: view(container) })),
-);
+function expanded(group: ContainerGroup): boolean {
+  return group.kind === "loose" || !store.collapsed[group.project.name];
+}
+
+function branch(group: ContainerGroup, index: number): "middle" | "last" {
+  return index === group.containers.length - 1 ? "last" : "middle";
+}
+
+const looseCount = computed(() => {
+  const loose = props.groups.find((g) => g.kind === "loose");
+  return loose ? loose.containers.length : 0;
+});
 </script>
 
 <template>
@@ -87,15 +65,15 @@ const rows = computed(() =>
       <col class="name" />
       <col class="image" />
       <col class="state" />
-      <col class="duration" />
+      <col class="detail" />
       <col class="actions" />
     </colgroup>
     <thead>
       <tr>
         <th scope="col">Nom</th>
-        <th scope="col">Image</th>
-        <th scope="col">État</th>
-        <th scope="col">Durée</th>
+        <th scope="col">Image · Dossier</th>
+        <th scope="col">État<span class="narrow-only"> · Détail</span></th>
+        <th scope="col" class="detail-head">Détail</th>
         <th scope="col" class="actions-head">Actions</th>
       </tr>
     </thead>
@@ -108,7 +86,7 @@ const rows = computed(() =>
         <td />
       </tr>
     </tbody>
-    <tbody v-else-if="containers.length === 0 && total > 0">
+    <tbody v-else-if="groups.length === 0 && total > 0">
       <tr class="no-match-row">
         <td colspan="5">
           <FilterNoMatch
@@ -119,79 +97,65 @@ const rows = computed(() =>
         </td>
       </tr>
     </tbody>
-    <TransitionGroup v-else name="row-in" tag="tbody" appear>
-      <tr
-        v-for="{ container, row } in rows"
-        :key="container.id"
-        :class="{ failed: row.state === 'failed' }"
-      >
-        <td class="truncate" :title="container.name">
-          <HighlightText :text="container.name" :query="query" />
-        </td>
-        <td class="truncate muted" :title="container.image">
-          <HighlightText :text="container.image" :query="query" />
-        </td>
-        <td>
-          <RunStateLabel
-            :state="row.state"
-            :detail="containerStateDetail(container)"
-            :tag="container.oomKilled && !row.pending ? 'Mémoire' : null"
-            :raw="containerStateHelp(container)"
-            :label="
-              row.pending ? OPERATION_PROGRESS[row.pending.operation] : null
-            "
-            :since="row.pending?.since ?? null"
-            :arrival="row.arrival"
+    <template v-else>
+      <template v-for="group in groups" :key="groupKey(group)">
+        <tbody class="group-head">
+          <ComposeProjectRows
+            v-if="group.kind === 'project'"
+            :project="group.project"
+            :shown="group.containers.length"
+            :expanded="expanded(group)"
+            :query="query"
+            @toggle="store.toggleProject(group.project.name)"
+            @forget="emit('forget', group.project)"
           />
-        </td>
-        <td class="truncate duration-cell" :title="container.status">
-          {{ container.duration ?? "—" }}
-        </td>
-        <td>
-          <div class="row-actions">
-            <IconButton
-              v-for="action in RUN_ACTIONS"
-              :key="action.operation"
-              :icon="action.icon"
-              :label="`${action.label} ${container.name}`"
-              :unavailable="row.reason(action.operation)"
-              :busy-since="row.busySince(action.operation)"
-              @click="emit('operate', container, action.operation)"
-            />
-            <IconButton
-              icon="logs"
-              :label="`Télémétrie de ${container.name}`"
-              :unavailable="connection.lost ? 'liaison perdue' : null"
-              @click="emit('logs', container)"
-            />
-            <span class="separator" aria-hidden="true" />
-            <IconButton
-              icon="trash"
-              tone="danger"
-              :label="`Supprimer ${container.name}`"
-              :unavailable="row.reason('remove')"
-              :busy-since="row.busySince('remove')"
-              @click="emit('operate', container, 'remove')"
-            />
-          </div>
-        </td>
-      </tr>
-    </TransitionGroup>
+          <tr v-else class="loose-row">
+            <td colspan="5">
+              <span class="loose-title">Hors compose</span>
+              <span class="caps loose-meta">
+                {{ looseCount }}
+                {{ looseCount > 1 ? "conteneurs" : "conteneur" }}
+              </span>
+              <span class="loose-meta">
+                · sans étiquette com.docker.compose.project
+              </span>
+            </td>
+          </tr>
+        </tbody>
+        <TransitionGroup
+          v-if="expanded(group)"
+          name="row-in"
+          tag="tbody"
+          class="group-body"
+          appear
+        >
+          <ContainerRow
+            v-for="(container, index) in group.containers"
+            :key="container.id"
+            :container="container"
+            :query="query"
+            :branch="branch(group, index)"
+            @logs="(c) => emit('logs', c)"
+            @operate="(c, operation) => emit('operate', c, operation)"
+          />
+        </TransitionGroup>
+      </template>
+    </template>
   </DataTable>
 </template>
 
 <style scoped>
 /* Le nom prend la largeur restante. */
 .image {
-  width: 24%;
+  width: 22%;
 }
 
-/* Place pour « En échec » et la mention « Mémoire ». */
+/* Place pour « En échec · Mémoire » ou « Partiel · 12/12 ». */
 .state {
   width: var(--docker-state-column-width);
 }
 
-.duration {
+.detail {
   width: 18%;
 }
 
@@ -206,25 +170,49 @@ const rows = computed(() =>
   text-align: right;
 }
 
-.row-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--sp-1);
+.narrow-only {
+  display: none;
 }
 
-/* Isole la suppression des autres actions. */
-.separator {
-  align-self: stretch;
-  margin: var(--sp-1) var(--sp-1);
-  border-left: var(--border-width) solid var(--color-border-strong);
+/* Fenêtre étroite : Détail passe sous l'état, dans une colonne commune. */
+@media (max-width: 1100px) {
+  .detail {
+    width: 0;
+  }
+
+  .detail-head {
+    padding: 0;
+    font-size: 0;
+  }
+
+  .narrow-only {
+    display: inline;
+  }
 }
 
-.duration-cell {
+/* En-tête de groupe : séparé du groupe précédent par un trait marqué. */
+.group-head :deep(tr) {
+  background: var(--color-surface-raised);
+}
+
+.group-head:not(:first-of-type) :deep(tr:first-child td) {
+  border-top: var(--border-width) solid var(--color-border-strong);
+}
+
+.group-body :deep(tr:last-child td) {
+  border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.loose-title {
+  margin-right: var(--sp-3);
+  font-family: var(--font-title);
+  font-size: var(--fs-lg);
+  font-style: italic;
+}
+
+.loose-meta {
   color: var(--color-text-muted);
-}
-
-.failed .duration-cell {
-  color: var(--color-danger-text);
+  font-size: var(--fs-xs);
+  font-weight: 400;
 }
 </style>

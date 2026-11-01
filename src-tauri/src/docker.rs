@@ -1,5 +1,6 @@
-//! Conteneurs Docker : liste (`docker ps -a --format '{{json .}}'`, parsing
-//! dans des fonctions pures), start, stop, restart, rm et flux `docker logs -f`.
+//! Conteneurs Docker : liste (`docker ps -a`, parsing dans des fonctions
+//! pures, étiquettes compose comprises), start, stop, restart, rm et flux
+//! `docker logs -f`.
 //! Les conteneurs sortis avec le code 137 sont inspectés (`docker inspect`, un
 //! seul appel pour tous) pour distinguer un manque de mémoire (`OOMKilled`)
 //! d'un simple SIGKILL.
@@ -11,13 +12,29 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::compose::ComposeProject;
 use crate::error::AppError;
 use crate::run_state::{Action, RunState};
 use crate::ssh::{shell, Connection, Deadline, ExecOutput};
 use crate::stream::{self, LineParser, LogLine, Raw};
 
-/// `--no-trunc` : ID complet, utilisé pour les actions.
-const LIST_COMMAND: &str = "docker ps -a --no-trunc --format '{{json .}}'";
+/// `--no-trunc` : ID complet, utilisé pour les actions. Un objet JSON par
+/// conteneur : la ligne de `{{json .}}` et, à part, chaque étiquette compose
+/// utile, lue par `.Label` et encodée par la fonction `json` du gabarit. Le
+/// champ `Labels` de `{{json .}}` ne convient pas : les étiquettes y sont
+/// séparées par des virgules, et celle des fichiers de configuration en
+/// contient elle-même. Texte constant : aucune valeur extérieure n'y entre.
+pub const LIST_COMMAND: &str = concat!(
+    "docker ps -a --no-trunc --format '",
+    r#"{"ps":{{json .}},"#,
+    r#""project":{{json (.Label "com.docker.compose.project")}},"#,
+    r#""workingDir":{{json (.Label "com.docker.compose.project.working_dir")}},"#,
+    r#""configFiles":{{json (.Label "com.docker.compose.project.config_files")}},"#,
+    r#""envFiles":{{json (.Label "com.docker.compose.project.environment_file")}},"#,
+    r#""service":{{json (.Label "com.docker.compose.service")}},"#,
+    r#""oneoff":{{json (.Label "com.docker.compose.oneoff")}}}"#,
+    "'"
+);
 /// Délai maximal de `docker_list`. Plus long que la détection d'une perte
 /// silencieuse (20 s au plus) : une coupure brève retarde la liste au lieu
 /// de l'afficher en échec, une coupure plus longue donne un LOS.
@@ -55,6 +72,26 @@ pub struct Container {
     /// `OOMKilled` ; `None` : sans limite ou non lue.
     #[ts(type = "number | null")]
     pub memory_limit: Option<u64>,
+    /// Étiquette `com.docker.compose.project`, brute ; `None` si absente.
+    pub project: Option<String>,
+    /// Étiquette `com.docker.compose.service`, brute ; `None` si absente.
+    pub service: Option<String>,
+    /// Conteneur lancé par `docker compose run` (`com.docker.compose.oneoff`).
+    pub oneoff: bool,
+    /// Dossier et fichiers du projet, bruts : validés par `compose`, jamais
+    /// envoyés tels quels à l'interface.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub compose_paths: ComposePaths,
+}
+
+/// Étiquettes compose de dossier et de fichiers d'un conteneur, brutes
+/// (chaînes vides si absentes).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ComposePaths {
+    pub working_dir: String,
+    pub config_files: String,
+    pub env_files: String,
 }
 
 /// Résultat de `docker_list`.
@@ -67,9 +104,31 @@ pub struct ContainerList {
     /// Lignes de `docker ps` illisibles (JSON invalide, ID non hexadécimal),
     /// exclues de la liste.
     pub skipped: u32,
+    /// Projets compose, triés par nom, descendus compris (remplis par
+    /// `compose::list`).
+    pub projects: Vec<ComposeProject>,
 }
 
-/// Une ligne de `docker ps --format '{{json .}}'` (champs utiles seulement).
+/// Une ligne de `LIST_COMMAND`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListLine {
+    ps: PsLine,
+    #[serde(default)]
+    project: String,
+    #[serde(default)]
+    working_dir: String,
+    #[serde(default)]
+    config_files: String,
+    #[serde(default)]
+    env_files: String,
+    #[serde(default)]
+    service: String,
+    #[serde(default)]
+    oneoff: String,
+}
+
+/// La ligne de `{{json .}}` (champs utiles seulement).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct PsLine {
@@ -263,18 +322,29 @@ pub fn parse_ps_output(output: &str) -> ContainerList {
     ContainerList {
         containers,
         skipped,
+        projects: Vec::new(),
     }
 }
 
 /// Un conteneur, ou `None` si la ligne est illisible ou son ID n'est pas
 /// hexadécimal (il ne pourrait pas être manipulé sans risque).
 fn parse_ps_line(line: &str) -> Option<Container> {
-    let raw: PsLine = serde_json::from_str(line).ok()?;
+    let line: ListLine = serde_json::from_str(line).ok()?;
+    let raw = line.ps;
     if !is_container_id(&raw.id) {
         return None;
     }
     let exit_code = parse_exit_code(&raw.status);
+    let label = |value: String| (!value.is_empty()).then_some(value);
     Some(Container {
+        project: label(line.project),
+        service: label(line.service),
+        oneoff: line.oneoff == "True",
+        compose_paths: ComposePaths {
+            working_dir: line.working_dir,
+            config_files: line.config_files,
+            env_files: line.env_files,
+        },
         name: primary_name(&raw.names),
         image: display_image(&raw.image),
         state: run_state(&raw.state, exit_code),
@@ -478,11 +548,25 @@ mod tests {
     const ID_WEB: &str = "3f4e8a1c9b2d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f";
     const ID_DB: &str = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9";
 
-    /// Sortie réelle de `docker ps -a --no-trunc --format '{{json .}}'`
-    /// (Docker 29), raccourcie aux champs habituels.
+    /// Ligne de `LIST_COMMAND` : `ps` et étiquettes compose (absentes : "").
+    fn list_line(ps: serde_json::Value, project: &str, service: &str) -> serde_json::Value {
+        let compose = !project.is_empty();
+        json!({
+            "ps": ps,
+            "project": project,
+            "workingDir": if compose { "/srv/web" } else { "" },
+            "configFiles": if compose { "/srv/web/compose.yaml,/srv/web/compose.prod.yaml" } else { "" },
+            "envFiles": "",
+            "service": service,
+            "oneoff": if compose { "False" } else { "" },
+        })
+    }
+
+    /// Sortie de `LIST_COMMAND` ; les objets `ps` sont ceux de `{{json .}}`
+    /// (Docker 29), raccourcis aux champs habituels.
     fn ps_output() -> String {
         [
-            json!({
+            list_line(json!({
                 "Command": "\"/docker-entrypoint.sh nginx -g 'daemon off;'\"",
                 "CreatedAt": "2026-10-11 09:12:44 +0000 UTC",
                 "ID": ID_WEB,
@@ -497,8 +581,8 @@ mod tests {
                 "Size": "0B",
                 "State": "running",
                 "Status": "Up 3 hours (healthy)",
-            }),
-            json!({
+            }), "web", "nginx"),
+            list_line(json!({
                 "Command": "\"docker-entrypoint.sh postgres\"",
                 "CreatedAt": "2026-10-01 18:02:10 +0000 UTC",
                 "ID": ID_DB,
@@ -513,7 +597,7 @@ mod tests {
                 "Size": "0B",
                 "State": "exited",
                 "Status": "Exited (137) 4 days ago",
-            }),
+            }), "", ""),
         ]
         .iter()
         .map(|line| line.to_string())
@@ -550,6 +634,10 @@ mod tests {
                     duration: Some("il y a 4 jours".into()),
                     oom_killed: false,
                     memory_limit: None,
+                    project: None,
+                    service: None,
+                    oneoff: false,
+                    compose_paths: ComposePaths::default(),
                 },
                 Container {
                     id: ID_WEB.into(),
@@ -562,9 +650,60 @@ mod tests {
                     duration: Some("depuis 3 heures".into()),
                     oom_killed: false,
                     memory_limit: None,
+                    project: Some("web".into()),
+                    service: Some("nginx".into()),
+                    oneoff: false,
+                    compose_paths: ComposePaths {
+                        working_dir: "/srv/web".into(),
+                        config_files: "/srv/web/compose.yaml,/srv/web/compose.prod.yaml".into(),
+                        env_files: String::new(),
+                    },
                 },
             ]
         );
+    }
+
+    /// Le gabarit, une fois ses expressions remplacées par ce que Docker
+    /// produit (`json` encode chaque valeur), donne un objet JSON lisible.
+    #[test]
+    fn list_format_produces_one_json_object() {
+        let format = LIST_COMMAND
+            .strip_prefix("docker ps -a --no-trunc --format '")
+            .and_then(|rest| rest.strip_suffix('\''))
+            .unwrap();
+        assert!(!format.contains('\''));
+        let filled = format
+            .replace(
+                "{{json .}}",
+                r#"{"ID":"ab","Names":"x","Image":"i","State":"running","Status":"Up"}"#,
+            )
+            .replace(
+                r#"{{json (.Label "com.docker.compose.project.config_files")}}"#,
+                r#""/srv/a/compose.yaml,/srv/a/b.yaml""#,
+            );
+        let filled = fill_labels(&filled);
+        let list = parse_ps_output(&filled);
+        assert_eq!(list.skipped, 0);
+        let container = &list.containers[0];
+        assert_eq!(container.project.as_deref(), Some("label"));
+        assert_eq!(
+            container.compose_paths.config_files,
+            "/srv/a/compose.yaml,/srv/a/b.yaml"
+        );
+    }
+
+    /// Remplace les `{{json (.Label "…")}}` restants par `"label"`.
+    fn fill_labels(text: &str) -> String {
+        let mut out = String::new();
+        let mut rest = text;
+        while let Some(start) = rest.find("{{json (.Label") {
+            out.push_str(&rest[..start]);
+            let end = rest[start..].find(")}}").unwrap() + start + 3;
+            out.push_str("\"label\"");
+            rest = &rest[end..];
+        }
+        out.push_str(rest);
+        out
     }
 
     #[test]
@@ -572,6 +711,7 @@ mod tests {
         let empty = ContainerList {
             containers: vec![],
             skipped: 0,
+            projects: vec![],
         };
         assert_eq!(parse_ps_output(""), empty);
         assert_eq!(parse_ps_output("\n\n"), empty);
@@ -584,12 +724,18 @@ mod tests {
             "State": "running", "Status": "Up 3 hours",
         });
         let missing_field = json!({ "ID": ID_WEB, "Names": "web" });
+        let old_format = json!({
+            "ID": ID_WEB, "Names": "web", "Image": "nginx",
+            "State": "running", "Status": "Up 3 hours",
+        });
         let output = format!(
-            "pas du json\n{}{wrong_id}\n{missing_field}\n{{\"ID\":",
-            ps_output()
+            "pas du json\n{}{}\n{}\n{old_format}\n{{\"ps\":",
+            ps_output(),
+            list_line(wrong_id, "", ""),
+            list_line(missing_field, "", ""),
         );
         let list = parse_ps_output(&output);
-        assert_eq!(list.skipped, 4);
+        assert_eq!(list.skipped, 5);
         let names: Vec<_> = list.containers.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["db", "web-nginx-1"]);
     }
@@ -597,7 +743,10 @@ mod tests {
     #[test]
     fn container_list_serializes_in_camel_case() {
         let value = serde_json::to_value(parse_ps_output("pas du json")).unwrap();
-        assert_eq!(value, json!({ "containers": [], "skipped": 1 }));
+        assert_eq!(
+            value,
+            json!({ "containers": [], "skipped": 1, "projects": [] })
+        );
     }
 
     #[test]
@@ -616,6 +765,9 @@ mod tests {
                 "duration": "il y a 4 jours",
                 "oomKilled": false,
                 "memoryLimit": null,
+                "project": null,
+                "service": null,
+                "oneoff": false,
             })
         );
     }
@@ -638,6 +790,10 @@ mod tests {
             duration: None,
             oom_killed: false,
             memory_limit: None,
+            project: None,
+            service: None,
+            oneoff: false,
+            compose_paths: ComposePaths::default(),
         }
     }
 

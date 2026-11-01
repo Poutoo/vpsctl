@@ -201,6 +201,64 @@ docker_remove(id: string): void
 - `docker_remove` n'utilise jamais `-f` ni `-v` : un conteneur en marche n'est pas supprimé (`Remote`), ses volumes et son image sont conservés.
 - Erreurs : comme `docker_list` (`DockerNotInstalled`, `DockerPermissionDenied`, sinon `Remote`).
 
+## Docker compose
+
+```ts
+compose_forget(project: string): void   // projet descendu uniquement ; rien n'est touché sur le serveur
+```
+
+### Projets
+
+Un projet compose n'existe sur le serveur que par les étiquettes de ses conteneurs. `docker_list` les lit **dans le même appel** que la liste : un objet JSON par conteneur, qui reprend la ligne de `{{json .}}` et lit à part chaque étiquette avec `.Label`, encodée par la fonction `json` du gabarit (`templates.go` du CLI docker) :
+
+```sh
+docker ps -a --no-trunc --format '{"ps":{{json .}},"project":{{json (.Label "com.docker.compose.project")}},"workingDir":{{json (.Label "com.docker.compose.project.working_dir")}},"configFiles":{{json (.Label "com.docker.compose.project.config_files")}},"envFiles":{{json (.Label "com.docker.compose.project.environment_file")}},"service":{{json (.Label "com.docker.compose.service")}},"oneoff":{{json (.Label "com.docker.compose.oneoff")}}}'
+```
+
+Le champ `Labels` de `{{json .}}` ne convient pas : les étiquettes y sont séparées par des virgules, et celle des fichiers de configuration en contient elle-même. Une étiquette absente vaut `""`.
+
+| Étiquette | Usage |
+|---|---|
+| `com.docker.compose.project` | nom du groupe, `-p` |
+| `com.docker.compose.project.working_dir` | dossier, `--project-directory` |
+| `com.docker.compose.project.config_files` | fichiers de configuration, `-f` dans l'ordre de l'étiquette |
+| `com.docker.compose.project.environment_file` | fichiers d'environnement, `--env-file` ; posée seulement avec `--env-file` (ou `COMPOSE_ENV_FILES`), jamais pour le `.env` par défaut du dossier, que compose relit de lui-même |
+| `com.docker.compose.service` | nom court du service |
+| `com.docker.compose.oneoff` | `True` pour un conteneur de `docker compose run` |
+
+Code source de compose (v5, `internal/projectloader/loader.go`) : `ConfigFilesLabel` et `EnvironmentFileLabel` valent `strings.Join(…, ",")`, chemins absolus.
+
+Validation (fonctions pures, `compose/labels.rs`). Les valeurs sont des données externes : validées ici, puis échappées avant d'entrer dans une commande.
+
+- Nom : `^[a-z0-9][a-z0-9_-]*$` (règle de compose), 255 octets au plus. Sinon `invalidName` : le groupe est affiché, aucune commande possible.
+- Dossier et chaque fichier : chemin absolu, sans composant vide, `.` ou `..`, sans caractère de contrôle, 4 096 octets au plus. Sinon `invalidPath`.
+- Listes séparées par des virgules : un fragment qui n'est pas absolu (ou vide) révèle une virgule dans un chemin, la liste est refusée (`ambiguousPath`). Limite : `/a,/b.yml`, où `/a` et `/b.yml` sont deux fichiers existants, ne se distingue pas d'un chemin `/a,/b.yml`.
+- Étiquette du dossier ou des fichiers absente : `incomplete`. Conteneurs du même projet aux étiquettes différentes : `divergent`.
+- Les étiquettes de référence sont celles des conteneurs de service ; un projet qui n'a que des conteneurs `compose run` prend les leurs.
+- Un projet aux étiquettes inutilisables est affiché, avec la raison, mais jamais mémorisé.
+
+### État agrégé
+
+Calculé par le backend sur les conteneurs du projet, conteneurs `compose run` exclus (affichés dans le groupe sans être comptés). `running` compte les conteneurs `running`, `total` les autres.
+
+| État | Règle, par priorité |
+|---|---|
+| `failed` (En échec) | au moins un conteneur en échec (code de sortie autre que 0, 137 ou 143, `dead`, tué par manque de mémoire même sorti en 137), ou `restarting` avec un dernier code non nul ou illisible (boucle de redémarrage) |
+| `transition` (En transition) | au moins un conteneur `removing`, ou `restarting` avec le code 0 |
+| `nominal` | tous en marche |
+| `stopped` (Arrêté · 0/N) | aucun en marche, tous arrêtés proprement |
+| `partial` (Partiel · n/N) | les autres cas : au moins un en marche et au moins un arrêté proprement |
+| `down` (Descendu · 0/N) | aucun conteneur ; projet connu par la mémoire du profil, N mémorisé |
+
+### Mémorisation
+
+- Fichier `compose-projects.json` du dossier de configuration, par identifiant de profil : `{ "version": 1, "profiles": { "<id>": [ { "name", "workingDir", "configFiles", "envFiles", "containers" } ] } }`. Rien n'est écrit sur le serveur.
+- À chaque `docker_list`, les projets aux étiquettes valides et avec au moins un conteneur sont ajoutés ou mis à jour (`containers` : leur nombre). Écriture atomique, uniquement si quelque chose change ; un échec d'écriture n'empêche pas l'affichage.
+- Un projet mémorisé sans aucun conteneur est renvoyé « Descendu », avec ses fichiers mémorisés.
+- Lecture tolérante au démarrage : fichier absent ou invalide → mémoire vide ; entrée invalide (mêmes règles que les étiquettes) ignorée sans toucher aux autres.
+- `compose_forget` : la liste est relue ; un projet qui a encore des conteneurs est refusé (`InvalidInput`, il réapparaîtrait aussitôt), un projet inconnu aussi. L'interface demande un GO / NO GO simple.
+- Supprimer un profil oublie ses projets.
+
 ## Systemd
 
 ```ts
@@ -481,6 +539,7 @@ type RunState = "nominal" | "stopped" | "failed" | "transition"
 interface ContainerList {
   containers: Container[]   // triés par nom
   skipped: number           // lignes de docker ps illisibles (JSON invalide, ID non hexadécimal), exclues
+  projects: ComposeProject[] // triés par nom, descendus compris (voir « Docker compose »)
 }
 
 interface Container {
@@ -494,7 +553,34 @@ interface Container {
   duration: string | null   // "depuis 3 heures", "il y a 4 jours" ; null si non applicable
   oomKilled: boolean        // sorti en 137, tué par manque de mémoire (docker inspect) : state = "failed"
   memoryLimit: number | null  // limite mémoire en octets (HostConfig.Memory), lue avec oomKilled ; null : sans limite ou non lue
+  project: string | null    // étiquette com.docker.compose.project, brute ; null si absente
+  service: string | null    // étiquette com.docker.compose.service, brute
+  oneoff: boolean           // conteneur de docker compose run
 }
+
+interface ComposeProject {
+  name: string
+  files: ProjectFiles | null       // null si les étiquettes sont inutilisables
+  problem: ProjectProblem | null
+  state: ProjectState
+  running: number                  // conteneurs en marche, compose run exclus
+  total: number                    // conteneurs, compose run exclus ; projet descendu : nombre mémorisé
+}
+
+interface ProjectFiles {
+  workingDir: string
+  configFiles: string[]            // ordre de l'étiquette
+  envFiles: string[]               // vide sans --env-file
+}
+
+type ProjectProblem =
+  | { kind: "invalidName" }
+  | { kind: "incomplete" }
+  | { kind: "invalidPath"; path: string }       // tronqué à 256 caractères
+  | { kind: "ambiguousPath"; label: string }    // config_files ou environment_file
+  | { kind: "divergent" }
+
+type ProjectState = "nominal" | "partial" | "failed" | "transition" | "stopped" | "down"
 
 interface Service {
   unit: string

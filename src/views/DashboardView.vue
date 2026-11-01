@@ -8,12 +8,16 @@ import PageHeader from "../components/layout/PageHeader.vue";
 import AppButton from "../components/ui/AppButton.vue";
 import AppIcon from "../components/ui/AppIcon.vue";
 import FilterField from "../components/ui/FilterField.vue";
+import NoticeBox from "../components/ui/NoticeBox.vue";
+import type { ComposeProject } from "../bindings/ComposeProject";
+import { useConfirm } from "../composables/useConfirm";
 import { formatElapsed, useElapsed } from "../composables/useElapsed";
 import { useDockedStream } from "../composables/useDockedStream";
 import { useServiceActions } from "../composables/useServiceActions";
 import { useVisiblePolling } from "../composables/useVisiblePolling";
 import { timeLabel } from "../linkText";
 import { useConnectionStore } from "../stores/connection";
+import { useProfilesStore } from "../stores/profiles";
 import { useServicesStore } from "../stores/services";
 import { containerLogTarget, serviceLogTarget } from "../stores/telemetry";
 
@@ -24,6 +28,8 @@ const store = useServicesStore();
 const connection = useConnectionStore();
 const telemetry = useDockedStream();
 const { onContainer, onService } = useServiceActions();
+const profiles = useProfilesStore();
+const { confirm } = useConfirm();
 const { trigger } = useVisiblePolling(
   () => store.refresh(),
   REFRESH_INTERVAL_MS,
@@ -81,6 +87,36 @@ function focusTables() {
   content.value?.querySelector<HTMLElement>("table")?.focus();
 }
 
+/** « 2 projets compose · 1 hors compose ». */
+const dockerSummary = computed(() => {
+  const projects = store.containers.projects.length;
+  const loose = store.containers.items.filter((c) => c.project === null).length;
+  return `${projects} ${projects > 1 ? "projets" : "projet"} compose · ${loose} hors compose`;
+});
+
+/** Plugin compose absent : projets affichés sans leurs actions. */
+const composeAbsent = computed(
+  () => connection.serverInfo?.compose.status === "absent",
+);
+const serverName = computed(
+  () => profiles.byId(connection.profileId)?.name ?? "ce serveur",
+);
+
+async function forgetProject(project: ComposeProject) {
+  const confirmed = await confirm({
+    title: "Oublier ce projet ?",
+    subject: project.files
+      ? `${project.name} · ${project.files.workingDir}`
+      : project.name,
+    consequences: [
+      "Le projet disparaît de la liste de ce profil.",
+      "Rien n'est touché sur le serveur : dossier, fichiers, volumes et images restent en place.",
+    ],
+    confirmLabel: "Oublier",
+  });
+  if (confirmed) await store.forgetProject(project.name);
+}
+
 const refreshedLabel = computed(() => {
   const at = store.refreshedAt;
   if (at === null) return "Actualisation…";
@@ -133,21 +169,32 @@ const refreshedLabel = computed(() => {
         title="Conteneurs Docker"
         command="docker ps -a"
         :section="store.containers"
-        :shown="store.shownContainers.length"
+        :shown="store.containerGroups.shown"
+        :summary="dockerSummary"
         :frozen-at="store.frozenAt"
         empty-kicker="0 conteneur"
         empty-detail="docker ps -a"
         empty-title="Aucun conteneur"
         empty-text="Aucun conteneur, même arrêté, sur ce serveur."
       >
+        <NoticeBox
+          v-if="composeAbsent && store.containers.projects.length > 0"
+          class="compose-absent"
+          :title="`Le plugin docker compose n'est pas installé sur ${serverName}.`"
+        >
+          Les projets restent affichés d'après les étiquettes des conteneurs ;
+          leurs actions sont masquées. Les conteneurs gardent les leurs.
+          <span class="verbatim">docker compose version</span>
+        </NoticeBox>
         <ContainerTable
-          :containers="store.shownContainers"
+          :groups="store.containerGroups.groups"
           :total="store.containers.items.length"
           :query="store.filter"
           :loading="loading"
           @clear-filter="store.filter = ''"
           @logs="(c) => telemetry.showLogs(containerLogTarget(c.id, c.name))"
           @operate="onContainer"
+          @forget="forgetProject"
         />
       </DashboardSection>
 
@@ -240,6 +287,15 @@ const refreshedLabel = computed(() => {
 
 .refresh.frozen {
   border-style: dashed;
+}
+
+.compose-absent {
+  margin: var(--sp-2);
+}
+
+.verbatim {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
 }
 
 .frozen .refreshed {

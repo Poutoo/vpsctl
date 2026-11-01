@@ -4,10 +4,11 @@
  * parent. Décoratifs (`aria-hidden`) : le parent porte le libellé accessible.
  *
  * Formes des états de service (docs/06-design.md) : `disc` nominal, `circle`
- * arrêté, `triangle` en échec, `half` en transition (statique).
+ * arrêté, `triangle` en échec, `half` en transition (statique) ; `target`
+ * projet compose partiel (une partie de ses conteneurs arrêtés).
  */
 defineProps<{
-  name: "check" | "cross" | "circle" | "disc" | "triangle" | "half";
+  name: "check" | "cross" | "circle" | "disc" | "triangle" | "half" | "target";
 }>();
 </script>
 
@@ -39,6 +40,10 @@ defineProps<{
     <template v-else-if="name === 'half'">
       <circle cx="8" cy="8" r="4.5" />
       <path d="M8 3.5a4.5 4.5 0 0 0 0 9z" fill="currentColor" stroke="none" />
+    </template>
+    <template v-else-if="name === 'target'">
+      <circle cx="8" cy="8" r="4.5" />
+      <circle cx="8" cy="8" r="1.75" fill="currentColor" stroke="none" />
     </template>
     <circle v-else cx="8" cy="8" r="4.5" />
   </svg>

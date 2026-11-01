@@ -1,15 +1,18 @@
 import { computed, ref, type Ref } from "vue";
 import { defineStore } from "pinia";
+import * as compose from "../api/compose";
 import * as docker from "../api/docker";
 import { errorMessage } from "../api/errors";
 import * as systemd from "../api/systemd";
 import type { Action } from "../bindings/Action";
 import type { AppError } from "../bindings/AppError";
+import type { ComposeProject } from "../bindings/ComposeProject";
 import type { Container } from "../bindings/Container";
 import type { RunState } from "../bindings/RunState";
 import type { Service } from "../bindings/Service";
 import type { ServiceDef } from "../bindings/ServiceDef";
 import { useNotify } from "../composables/useNotify";
+import { groupContainers } from "../composeView";
 import { filterItems } from "../listFilter";
 import { useConnectionStore } from "./connection";
 import {
@@ -23,6 +26,8 @@ export interface Section<T> {
   items: T[];
   /** Éléments illisibles dans la réponse du serveur, exclus de `items`. */
   skipped: number;
+  /** Projets compose (section Docker seulement). */
+  projects: ComposeProject[];
   error: AppError | null;
   /** Au moins un chargement terminé (réussi ou non). */
   loaded: boolean;
@@ -68,17 +73,29 @@ const VERIFY_DELAY_MS = 2_500;
 const ARRIVAL_MS = 1_000;
 
 function emptySection<T>(): Section<T> {
-  return { items: [], skipped: 0, error: null, loaded: false, loadedAt: null };
+  return {
+    items: [],
+    skipped: 0,
+    projects: [],
+    error: null,
+    loaded: false,
+    loadedAt: null,
+  };
 }
 
 interface Fetched<T> {
   items: T[];
   skipped: number;
+  projects?: ComposeProject[];
 }
 
 async function fetchContainers(): Promise<Fetched<Container>> {
   const list = await docker.listContainers();
-  return { items: list.containers, skipped: list.skipped };
+  return {
+    items: list.containers,
+    skipped: list.skipped,
+    projects: list.projects,
+  };
 }
 
 async function fetchServices(): Promise<Fetched<Service>> {
@@ -153,9 +170,16 @@ export const useServicesStore = defineStore("services", () => {
    * d'écran et pendant un LOS ; vidé à la fin de la session.
    */
   const filter = ref("");
-  const shownContainers = computed(() =>
-    filterItems(containers.value.items, filter.value, (c) => [c.name, c.image]),
+  /** Conteneurs groupés par projet compose, après le filtre. */
+  const containerGroups = computed(() =>
+    groupContainers(
+      containers.value.items,
+      containers.value.projects,
+      filter.value,
+    ),
   );
+  /** Projets repliés, par nom ; gardés jusqu'à la fin de la session. */
+  const collapsed = ref<Record<string, true>>({});
   const shownServices = computed(() =>
     filterItems(services.value.items, filter.value, (s) => [
       s.unit,
@@ -220,6 +244,7 @@ export const useServicesStore = defineStore("services", () => {
     let next: Section<T>;
     try {
       next = {
+        projects: [],
         ...(await fetch()),
         error: null,
         loaded: true,
@@ -229,6 +254,7 @@ export const useServicesStore = defineStore("services", () => {
       next = {
         items: [],
         skipped: 0,
+        projects: [],
         error: error as AppError,
         loaded: true,
         loadedAt: section.value.loadedAt,
@@ -249,6 +275,39 @@ export const useServicesStore = defineStore("services", () => {
     arrivals.value = {};
     startupPending.value = {};
     filter.value = "";
+    collapsed.value = {};
+  }
+
+  /** Replie ou déplie le groupe d'un projet. */
+  function toggleProject(name: string) {
+    if (collapsed.value[name]) delete collapsed.value[name];
+    else collapsed.value[name] = true;
+  }
+
+  /**
+   * Oublie un projet descendu (le GO / NO GO est fait avant) : il disparaît
+   * de la liste de ce profil, rien n'est touché sur le serveur.
+   */
+  async function forgetProject(name: string) {
+    const current = generation;
+    try {
+      await compose.forgetProject(name);
+    } catch (raw) {
+      if (current !== generation || (raw as AppError).kind === "LinkLost") {
+        return;
+      }
+      notify({
+        tone: "error",
+        title: "Projet non oublié",
+        detail: name,
+        message: errorMessage(raw as AppError),
+      });
+      return;
+    }
+    if (current !== generation) return;
+    delete collapsed.value[name];
+    await refreshFresh();
+    notify({ tone: "success", title: "Projet oublié", detail: name });
   }
 
   /** État réel d'une ligne dans la dernière liste, ou `null` si elle a disparu. */
@@ -537,9 +596,13 @@ export const useServicesStore = defineStore("services", () => {
     arrivals,
     startupPending,
     filter,
-    shownContainers,
+    containerGroups,
+    collapsed,
     shownServices,
     refresh,
+    refreshFresh,
+    toggleProject,
+    forgetProject,
     perform,
     create,
     setStartup,

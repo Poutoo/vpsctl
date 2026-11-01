@@ -15,6 +15,8 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 ### Ajouté
 
 - Barre d'état : version du plugin docker compose du serveur, ou « Compose absent ».
+- Tableau de bord : les conteneurs Docker sont groupés par projet docker compose (dossier, fichiers de configuration, état d'ensemble Nominal, Partiel, Arrêté, En échec ou En transition, avec le nombre de conteneurs en marche), puis « Hors compose » pour les autres. Un conteneur tué par manque de mémoire ou en boucle de redémarrage met son projet en échec. Les groupes se replient.
+- Projets compose mémorisés par profil : un projet qui n'a plus aucun conteneur reste affiché « Descendu », jusqu'à « Oublier ce projet » (sans rien toucher sur le serveur). Si le plugin compose est absent, les projets restent affichés et un avis le signale.
 
 ## [1.2.0] - 2026-10-30
 

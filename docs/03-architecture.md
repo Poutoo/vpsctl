@@ -38,6 +38,10 @@ src-tauri/src/
 │   └── transfer.rs   envoi et téléchargement par blocs, temporaires, annulation
 ├── stream.rs         flux de lignes : LogEvent, découpage, lots, boucle de lecture, arrêt
 ├── docker.rs
+├── compose/
+│   ├── mod.rs        détection du plugin, liste des projets, oubli
+│   ├── labels.rs     fonctions pures : validation des étiquettes, regroupement, état agrégé
+│   └── memory.rs     projets mémorisés par profil (compose-projects.json), lecture tolérante
 ├── systemd/
 │   ├── mod.rs        liste, filtrage, états, actions, logs
 │   ├── unit.rs       fonctions pures : validation de ServiceDef et texte du fichier d'unité
@@ -53,6 +57,7 @@ src-tauri/src/
 │   └── socket.rs     tube nommé (Windows) ou socket Unix (Linux, Flatpak, Snap)
 ├── secrets.rs
 └── commands/
+    ├── compose.rs
     ├── connection.rs
     ├── files.rs
     ├── docker.rs
@@ -78,7 +83,7 @@ src-tauri/src/
 - Le parcours (`walk.rs`) lit toute l'arborescence avant de supprimer quoi que ce soit, n'entre jamais dans un lien symbolique (les attributs de `readdir` sont ceux de `lstat`), et limite les requêtes en parallèle à 16.
 - Les transferts (`transfer.rs`) copient par blocs entre un `AsyncRead` et un `AsyncWrite` (le `File` de russh-sftp envoie déjà plusieurs requêtes à la fois), avec un temporaire renommé à la fin. Chaque transfert est enregistré dans `state.rs` avec son signal d'annulation, comme un flux.
 
-**docker** : exécute `docker ps -a --no-trunc --format '{{json .}}'` et désérialise chaque ligne avec `serde`. Gère start, stop, restart, rm et le flux `docker logs -f`.
+**docker** : exécute `docker ps -a --no-trunc` avec un gabarit qui produit un objet JSON par conteneur (ligne de `{{json .}}` et étiquettes compose lues par `.Label`, voir `docs/04-contrat-commandes.md`, « Docker compose ») et désérialise chaque ligne avec `serde`. Gère start, stop, restart, rm et le flux `docker logs -f`.
 
 - `--no-trunc` donne l'ID complet (64 caractères hexadécimaux), utilisé pour les actions. Il a deux effets de bord, corrigés par des fonctions pures : `Names` contient aussi les anciens alias `--link` (`autre/alias`, séparés par des virgules) et on garde le premier nom sans `/` ; `Image` peut contenir un digest (`nginx@sha256:…`), retiré, ou être un identifiant d'image sans nom (`sha256:<64 hex>`), raccourci à 12 caractères.
 - Une ligne illisible (JSON invalide, ID non hexadécimal) est exclue sans invalider les autres ; leur nombre est renvoyé (`skipped`) et affiché en avertissement dans la section Docker.
@@ -109,6 +114,8 @@ docker inspect --type container --format '{{.Id}} {{.State.OOMKilled}} {{.HostCo
 - `OOMKilled` vrai : « En échec » avec la mention MÉMOIRE, la limite (`HostConfig.Memory`, 0 sans limite) dans l'infobulle. Faux : « Arrêté · code 137 », l'infobulle dit qu'il s'agit d'un SIGKILL sans manque de mémoire.
 - Limite : un conteneur en `restarting` (redémarré par sa politique après un manque de mémoire) n'est pas inspecté.
 - Pendant un LOS, les données figées gardent le dernier verdict affiché ; la liste suivante, après le rétablissement, relit l'état.
+
+**compose** : projets docker compose. Détection du plugin pour `server_info`. `compose::list` complète la liste de `docker` : regroupement par projet et état agrégé (fonctions pures de `labels.rs`, testées sur des conteneurs construits en dur), projets descendus tirés de la mémoire du profil, mémorisation des projets vus. La mémoire (`memory.rs`, `ProjectMemory`, gérée par `AppState`) suit le modèle des préférences : lecture tolérante, écriture atomique avant la mise à jour en mémoire, rien d'écrit si rien ne change. Règles : `docs/04-contrat-commandes.md`, « Docker compose ».
 
 **systemd** : `systemctl --user` en sortie JSON, actions sur les services, flux `journalctl --user -f`. Génère et supprime les fichiers d'unité dans `~/.config/systemd/user/`, suivis de `systemctl --user daemon-reload`.
 
@@ -359,6 +366,7 @@ src/
   - Le compteur passe à « 2 sur 4 ». Liste vide : état vide habituel ; filtre sans résultat : une seule ligne sous les en-têtes, avec « Effacer le filtre ».
   - Ctrl+F (`findShortcut.ts`, écouteur en phase de capture, en développement comme en production) est toujours intercepté, pour que la barre de recherche de WebView2 ne s'ouvre jamais ; il place le curseur dans le filtre de l'écran affiché et sélectionne son texte, sauf si une fenêtre modale est ouverte ou pendant une saisie de nom dans l'explorateur. Échap dans le champ le vide, puis, une seconde fois, rend le focus à la liste.
   - Texte conservé dans les stores : celui du tableau de bord survit au changement d'écran ; celui de l'explorateur est vidé au changement de dossier. Les deux restent pendant un LOS (filtre utilisable sur les données figées) et sont vidés à la fin de la session. Une création vide le filtre, comme un renommage dont le nouveau nom n'y correspond plus : l'élément reste visible.
+- **Projets compose** (maquettes `docs/design/docker-compose/`) : la section Docker groupe les conteneurs par projet (`src/composeView.ts`, fonctions pures). L'en-tête d'un projet, repliable, porte son nom, son dossier, son état agrégé (`ProjectStateLabel` : forme, libellé, `n/N`), ses fichiers dans la colonne Détail (chemins complets en infobulle) et ses actions ; ses conteneurs gardent les leurs, reliés à l'en-tête par un trait. Les conteneurs sans étiquette de projet forment le dernier groupe, « Hors compose », jamais replié. Filtre : un projet dont le nom ou le dossier correspond montre tout son groupe, sinon seulement les conteneurs qui correspondent. Projet descendu : « Descendu · 0/N », une ligne d'explication et « Oublier ce projet » (GO / NO GO simple). Plugin absent (`serverInfo.compose`) : avis au-dessus du tableau, actions de projet masquées. En fenêtre étroite, la colonne Détail passe sous l'état (« État · Détail »). Les groupes repliés sont gardés dans le store `services` jusqu'à la fin de la session.
 - **Rafraîchissement des services** : toutes les 5 secondes uniquement quand le tableau de bord est affiché et la fenêtre visible : document visible (`document.visibilityState`) et fenêtre non réduite (`isMinimized` de Tauri, relu à chaque redimensionnement et changement de focus, car WebView2 ne masque pas le document quand la fenêtre est réduite), plus un bouton d'actualisation manuelle. Le rafraîchissement suivant est programmé 5 secondes après la fin du précédent, et un rafraîchissement manuel pendant qu'un autre est en cours réutilise celui-ci : deux rafraîchissements ne se chevauchent jamais. Docker et systemd sont appelés indépendamment : l'échec de l'un n'empêche pas l'affichage de l'autre.
 - **Sortie d'erreur ≠ erreur** : beaucoup de programmes écrivent tous leurs logs sur la sortie d'erreur (Caddy, le module `logging` de Python par défaut). Une ligne `stderr` est donc marquée de façon neutre (étiquette discrète, sans fond rouge). Le style d'erreur rouge est réservé aux messages systemd de priorité ≤ 3.
 - **Console** : un seul composant console, utilisé à l'identique dans l'écran Télémétrie (logs et sortie des scripts) et le panneau ancré du tableau de bord (défilement automatique, indicateur de nouvelles lignes, bannière LOS). Le panneau ancré réduit la zone du tableau au-dessus de lui, il ne la recouvre pas.
