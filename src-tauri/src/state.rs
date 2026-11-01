@@ -444,6 +444,14 @@ impl AppState {
             .await
     }
 
+    /// Vérifie le dossier et les fichiers des projets compose (SFTP).
+    pub async fn compose_check(&self) -> Result<Vec<compose::ProjectCheck>, AppError> {
+        let profile = self.connected_profile().await?;
+        let memory = self.compose_memory.clone();
+        self.remote(|connection| async move { compose::check(connection, &memory, &profile).await })
+            .await
+    }
+
     /// Oublie un projet compose descendu du profil connecté.
     pub async fn compose_forget(&self, project: &str) -> Result<(), AppError> {
         let profile = self.connected_profile().await?;

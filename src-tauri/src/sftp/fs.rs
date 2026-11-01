@@ -336,7 +336,7 @@ pub mod mem {
     /// Pannes simulées.
     #[derive(Default)]
     pub struct Faults {
-        /// Lecture refusée (`PermissionDenied`) de ces dossiers.
+        /// Lecture refusée (`PermissionDenied`) de ces dossiers ou fichiers.
         pub unreadable: HashSet<String>,
         /// Suppression refusée de ces éléments.
         pub undeletable: HashSet<String>,
@@ -665,6 +665,9 @@ pub mod mem {
 
         async fn open_read(&self, file: &str) -> Result<MemReader, AppError> {
             self.check_online()?;
+            if self.faults.lock().unwrap().unreadable.contains(file) {
+                return Err(AppError::permission_denied(file, FileSide::Remote));
+            }
             let resolved = self
                 .resolve(file)
                 .ok_or_else(|| AppError::not_found(file, FileSide::Remote))?;

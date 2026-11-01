@@ -4,6 +4,7 @@
  */
 import type { ComposeProject } from "./bindings/ComposeProject";
 import type { Container } from "./bindings/Container";
+import type { FilesStatus } from "./bindings/FilesStatus";
 import type { ProjectProblem } from "./bindings/ProjectProblem";
 import type { ProjectState } from "./bindings/ProjectState";
 import { matchesFilter } from "./listFilter";
@@ -76,6 +77,62 @@ export function projectDetailHelp(project: ComposeProject): string {
   const lines = files.configFiles.map((file) => `-f ${file}`);
   for (const env of files.envFiles) lines.push(`--env-file ${env}`);
   return lines.join("\n");
+}
+
+/** Dossier ou fichier qui empêche Démarrer et Récupérer les images. */
+export interface FilesProblem {
+  /** Colonne Détail : « dossier introuvable ». */
+  short: string;
+  /** Ligne d'explication, phrase en gras. */
+  text: string;
+  /** Le dossier lui-même manque : son chemin est barré. */
+  dirMissing: boolean;
+}
+
+/**
+ * Problème révélé par la vérification des fichiers, ou `null` (vérifiés,
+ * pas encore vérifiés, ou vérification impossible : l'action vérifie de
+ * nouveau avant de partir).
+ */
+export function filesProblem(
+  status: FilesStatus | null | undefined,
+  workingDir: string,
+): FilesProblem | null {
+  if (!status) return null;
+  const problem = (short: string, text: string, dirMissing = false) => ({
+    short,
+    text,
+    dirMissing,
+  });
+  switch (status.kind) {
+    case "ok":
+    case "unchecked":
+      return null;
+    case "dirMissing":
+      return problem(
+        "dossier introuvable",
+        `${workingDir} n'existe plus sur le serveur.`,
+        true,
+      );
+    case "notDir":
+      return problem(
+        "dossier invalide",
+        `${workingDir} n'est pas un dossier.`,
+        true,
+      );
+    case "missing":
+      return problem("fichier introuvable", `${status.path} est introuvable.`);
+    case "notFile":
+      return problem(
+        "fichier invalide",
+        `${status.path} n'est pas un fichier.`,
+      );
+    case "unreadable":
+      return problem(
+        "fichier illisible",
+        `${status.path} est illisible pour le compte connecté.`,
+      );
+  }
 }
 
 /**

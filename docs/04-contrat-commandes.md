@@ -204,6 +204,7 @@ docker_remove(id: string): void
 ## Docker compose
 
 ```ts
+compose_check(): ProjectCheck[]         // dossier et fichiers de chaque projet, par SFTP
 compose_forget(project: string): void   // projet descendu uniquement ; rien n'est touché sur le serveur
 ```
 
@@ -249,6 +250,19 @@ Calculé par le backend sur les conteneurs du projet, conteneurs `compose run` e
 | `stopped` (Arrêté · 0/N) | aucun en marche, tous arrêtés proprement |
 | `partial` (Partiel · n/N) | les autres cas : au moins un en marche et au moins un arrêté proprement |
 | `down` (Descendu · 0/N) | aucun conteneur ; projet connu par la mémoire du profil, N mémorisé |
+
+### Vérification du dossier et des fichiers
+
+`compose_check` relit la liste (mêmes commandes que `docker_list`, délai de 30 s) puis vérifie, **par SFTP** et sans aucune commande shell, chaque projet dont le dossier et les fichiers sont connus (étiquettes valides ou mémoire), un projet après l'autre :
+
+1. le dossier : `stat` (liens suivis) ; absent → `dirMissing`, autre chose qu'un dossier → `notDir` ;
+2. chaque fichier de configuration puis d'environnement, dans l'ordre : `stat` (absent → `missing`, autre chose qu'un fichier ordinaire → `notFile`), puis ouverture en lecture, refermée aussitôt sans rien lire (refusée → `unreadable`). Un dossier s'ouvre en lecture sur Linux : le `stat` le rattrape avant.
+
+Le premier problème trouvé est renvoyé. Accès refusé au `stat` (dossier parent non traversable) → `unreadable`. Une autre erreur du serveur → `unchecked` (ne bloque rien) ; une erreur de transport fait échouer la commande.
+
+- Fréquence : toutes les 30 s (une liste sur six) tant que le tableau de bord est affiché et la fenêtre visible, à l'apparition d'un projet non encore vérifié, sur « Actualiser », et après chaque commande compose. Jamais à chaque rafraîchissement de la liste. Pendant un LOS, aucune vérification ; la dernière reste affichée.
+- Démarrer et Récupérer les images refont la vérification avant de partir et sont refusés si elle échoue (voir « Commandes »).
+- Affichage : en-tête teinté, « dossier introuvable », « fichier introuvable », « fichier illisible »… dans la colonne Détail, chemin du dossier barré s'il manque, et une ligne d'explication sous l'en-tête.
 
 ### Mémorisation
 
@@ -566,6 +580,20 @@ interface ComposeProject {
   running: number                  // conteneurs en marche, compose run exclus
   total: number                    // conteneurs, compose run exclus ; projet descendu : nombre mémorisé
 }
+
+interface ProjectCheck {
+  project: string
+  status: FilesStatus
+}
+
+type FilesStatus =
+  | { kind: "ok" }
+  | { kind: "dirMissing" }
+  | { kind: "notDir" }
+  | { kind: "missing"; path: string }
+  | { kind: "notFile"; path: string }
+  | { kind: "unreadable"; path: string }     // illisible pour le compte connecté
+  | { kind: "unchecked"; message: string }   // erreur du serveur sans cause précise
 
 interface ProjectFiles {
   workingDir: string

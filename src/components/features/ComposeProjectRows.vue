@@ -2,11 +2,14 @@
 /**
  * En-tête d'un projet compose dans le tableau des conteneurs : bouton de
  * repli, nom, dossier, état agrégé, détail et actions du projet ; puis, au
- * besoin, une ligne d'explication (projet descendu).
+ * besoin, une ligne d'explication (dossier ou fichier en défaut, projet
+ * descendu).
  */
 import { computed } from "vue";
 import type { ComposeProject } from "../../bindings/ComposeProject";
+import type { FilesStatus } from "../../bindings/FilesStatus";
 import {
+  filesProblem,
   projectCount,
   projectDetail,
   projectDetailHelp,
@@ -24,6 +27,8 @@ const props = defineProps<{
   shown: number;
   expanded: boolean;
   query: string;
+  /** Dernière vérification du dossier et des fichiers, si faite. */
+  check: FilesStatus | null;
 }>();
 
 const emit = defineEmits<{ toggle: []; forget: [] }>();
@@ -32,6 +37,15 @@ const connection = useConnectionStore();
 
 const down = computed(() => props.project.state === "down");
 const workingDir = computed(() => props.project.files?.workingDir ?? null);
+const problem = computed(() =>
+  filesProblem(props.check, workingDir.value ?? ""),
+);
+const failed = computed(
+  () => props.project.state === "failed" || problem.value !== null,
+);
+const detail = computed(() =>
+  problem.value ? problem.value.short : projectDetail(props.project),
+);
 const containerCount = computed(() => {
   const count = props.project.state === "down" ? 0 : props.shown;
   return `${count} ${count > 1 ? "conteneurs" : "conteneur"}`;
@@ -39,7 +53,7 @@ const containerCount = computed(() => {
 </script>
 
 <template>
-  <tr class="project-row" :class="{ failed: project.state === 'failed' }">
+  <tr class="project-row" :class="{ failed }">
     <td>
       <div class="name-cell">
         <button
@@ -57,10 +71,19 @@ const containerCount = computed(() => {
         <span class="caps meta">{{ containerCount }}</span>
       </div>
     </td>
-    <td class="truncate dir-cell" :title="workingDir ?? undefined">
+    <td
+      class="truncate dir-cell"
+      :class="{ missing: problem?.dirMissing }"
+      :title="workingDir ?? undefined"
+    >
       <template v-if="workingDir">
-        <AppIcon class="folder" name="folder" />
-        <HighlightText :text="workingDir" :query="query" />
+        <AppIcon
+          class="folder"
+          :name="problem?.dirMissing ? 'folder-missing' : 'folder'"
+        />
+        <span class="dir-path"
+          ><HighlightText :text="workingDir" :query="query"
+        /></span>
       </template>
       <template v-else>—</template>
     </td>
@@ -71,17 +94,20 @@ const containerCount = computed(() => {
       />
       <span
         class="stacked-detail"
-        :class="{ problem: project.problem }"
+        :class="{ problem: project.problem || problem }"
         :title="projectDetailHelp(project)"
-        >{{ projectDetail(project) }}</span
       >
+        <StatusIcon v-if="problem" class="problem-shape" name="triangle" />
+        {{ detail }}
+      </span>
     </td>
     <td
       class="truncate detail-cell"
-      :class="{ problem: project.problem }"
+      :class="{ problem: project.problem || problem }"
       :title="projectDetailHelp(project)"
     >
-      {{ projectDetail(project) }}
+      <StatusIcon v-if="problem" class="problem-shape" name="triangle" />
+      {{ detail }}
     </td>
     <td>
       <div class="row-actions">
@@ -95,6 +121,19 @@ const containerCount = computed(() => {
           />
         </template>
       </div>
+    </td>
+  </tr>
+  <tr v-if="problem" class="note-row">
+    <td colspan="5">
+      <p class="note">
+        <StatusIcon class="note-shape danger" name="triangle" />
+        <span>
+          <strong>{{ problem.text }}</strong>
+          <template v-if="project.running > 0">
+            Les conteneurs tournent toujours.</template
+          >
+        </span>
+      </p>
     </td>
   </tr>
   <tr v-if="down" class="note-row">
@@ -152,6 +191,19 @@ const containerCount = computed(() => {
 
 .dir-cell {
   color: var(--color-text-muted);
+}
+
+/* Dossier introuvable : chemin barré, contour pointillé, texte d'erreur. */
+.dir-cell.missing {
+  color: var(--color-danger-text);
+}
+
+.missing .dir-path {
+  text-decoration: line-through;
+}
+
+.problem-shape {
+  color: var(--color-danger);
 }
 
 .folder {
@@ -222,5 +274,9 @@ const containerCount = computed(() => {
   flex-shrink: 0;
   margin-top: var(--sp-1);
   color: var(--color-text-muted);
+}
+
+.note-shape.danger {
+  color: var(--color-danger);
 }
 </style>

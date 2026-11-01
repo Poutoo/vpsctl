@@ -9,6 +9,7 @@ import { computed } from "vue";
 import type { ComposeProject } from "../../bindings/ComposeProject";
 import type { Container } from "../../bindings/Container";
 import { type ContainerGroup } from "../../composeView";
+import { useComposeStore } from "../../stores/compose";
 import { useServicesStore, type Operation } from "../../stores/services";
 import DataTable from "../ui/DataTable.vue";
 import FilterNoMatch from "../ui/FilterNoMatch.vue";
@@ -37,6 +38,7 @@ const emit = defineEmits<{
 }>();
 
 const store = useServicesStore();
+const compose = useComposeStore();
 
 /** Lignes vides tracées pendant le premier chargement. */
 const PLACEHOLDER_ROWS = 3;
@@ -106,6 +108,7 @@ const looseCount = computed(() => {
             :shown="group.containers.length"
             :expanded="expanded(group)"
             :query="query"
+            :check="compose.checks[group.project.name] ?? null"
             @toggle="store.toggleProject(group.project.name)"
             @forget="emit('forget', group.project)"
           />

@@ -1,17 +1,22 @@
 //! Projets docker compose : détection du plugin, projets lus dans les
 //! étiquettes des conteneurs et mémorisés par profil.
 
+pub mod check;
 pub mod labels;
 pub mod memory;
 
 use serde::Serialize;
 use ts_rs::TS;
 
+pub use check::{FilesStatus, ProjectCheck};
 pub use labels::{ComposeProject, ProjectFiles, ProjectProblem, ProjectState};
 pub use memory::ProjectMemory;
 
+use std::sync::Arc;
+
 use crate::docker::{self, ContainerList};
 use crate::error::AppError;
+use crate::sftp::fs::SftpFs;
 use crate::ssh::{Connection, ExecOutput};
 
 /// Conteneurs et projets compose du profil connecté. Les projets vus sont
@@ -27,6 +32,28 @@ pub async fn list(
     let _ = memory.remember(profile, &grouping.seen);
     list.projects = grouping.projects;
     Ok(list)
+}
+
+/// Vérifie par SFTP le dossier et les fichiers de chaque projet dont les
+/// étiquettes (ou la mémoire) sont utilisables, un projet après l'autre.
+pub async fn check(
+    connection: Arc<Connection>,
+    memory: &ProjectMemory,
+    profile: &str,
+) -> Result<Vec<ProjectCheck>, AppError> {
+    let list = docker::list(&connection).await?;
+    let grouping = labels::group(&list.containers, &memory.projects(profile));
+    let fs = SftpFs::shared(connection);
+    let mut checks = Vec::new();
+    for project in grouping.projects {
+        if let Some(files) = &project.files {
+            checks.push(ProjectCheck {
+                status: check::check_files(&*fs, files).await?,
+                project: project.name,
+            });
+        }
+    }
+    Ok(checks)
 }
 
 /// Oublie un projet descendu, sans rien toucher sur le serveur. Refusé si le

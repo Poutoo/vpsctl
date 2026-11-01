@@ -16,6 +16,7 @@ import { useDockedStream } from "../composables/useDockedStream";
 import { useServiceActions } from "../composables/useServiceActions";
 import { useVisiblePolling } from "../composables/useVisiblePolling";
 import { timeLabel } from "../linkText";
+import { useComposeStore } from "../stores/compose";
 import { useConnectionStore } from "../stores/connection";
 import { useProfilesStore } from "../stores/profiles";
 import { useServicesStore } from "../stores/services";
@@ -23,6 +24,8 @@ import { containerLogTarget, serviceLogTarget } from "../stores/telemetry";
 
 /** Rafraîchissement automatique, uniquement sur cet écran et fenêtre visible. */
 const REFRESH_INTERVAL_MS = 5_000;
+/** Vérification des dossiers et fichiers compose : une liste sur six. */
+const CHECK_INTERVAL_MS = 30_000;
 
 const store = useServicesStore();
 const connection = useConnectionStore();
@@ -33,6 +36,23 @@ const { confirm } = useConfirm();
 const { trigger } = useVisiblePolling(
   () => store.refresh(),
   REFRESH_INTERVAL_MS,
+);
+const compose = useComposeStore();
+const { trigger: checkNow } = useVisiblePolling(
+  () => compose.check(),
+  CHECK_INTERVAL_MS,
+);
+
+// Un projet apparu depuis la dernière vérification est vérifié sans attendre.
+watch(
+  () =>
+    store.containers.projects
+      .filter((p) => p.files !== null && !(p.name in compose.checks))
+      .map((p) => p.name)
+      .join(","),
+  (unchecked) => {
+    if (unchecked !== "") void compose.check();
+  },
 );
 
 // Horloge de l'indication « il y a N s ».
@@ -78,6 +98,7 @@ const probing = computed(() => {
 function refreshNow() {
   manual.value = true;
   void trigger();
+  void checkNow();
 }
 
 const content = ref<HTMLElement | null>(null);

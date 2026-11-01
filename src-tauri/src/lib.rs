@@ -88,6 +88,7 @@ pub fn run() {
             commands::docker::docker_list,
             commands::docker::docker_action,
             commands::docker::docker_remove,
+            commands::compose::compose_check,
             commands::compose::compose_forget,
             commands::systemd::services_list,
             commands::systemd::service_action,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ComposeProject } from "./bindings/ComposeProject";
 import type { Container } from "./bindings/Container";
 import {
+  filesProblem,
   groupContainers,
   projectDetail,
   projectDetailHelp,
@@ -110,5 +111,39 @@ describe("détail d'un projet", () => {
         project("x", { files: null, problem: { kind: "divergent" } }),
       ),
     ).toBe("étiquettes différentes d'un conteneur à l'autre");
+  });
+});
+
+describe("vérification des fichiers", () => {
+  it("ne bloque rien quand tout est en place ou pas encore vérifié", () => {
+    expect(filesProblem(null, "/srv/app")).toBeNull();
+    expect(filesProblem({ kind: "ok" }, "/srv/app")).toBeNull();
+    expect(
+      filesProblem({ kind: "unchecked", message: "Failure" }, "/srv/app"),
+    ).toBeNull();
+  });
+
+  it("explique le dossier ou le fichier en défaut", () => {
+    expect(filesProblem({ kind: "dirMissing" }, "/srv/app")).toEqual({
+      short: "dossier introuvable",
+      text: "/srv/app n'existe plus sur le serveur.",
+      dirMissing: true,
+    });
+    expect(
+      filesProblem(
+        { kind: "unreadable", path: "/srv/app/.env.prod" },
+        "/srv/app",
+      ),
+    ).toEqual({
+      short: "fichier illisible",
+      text: "/srv/app/.env.prod est illisible pour le compte connecté.",
+      dirMissing: false,
+    });
+    expect(
+      filesProblem(
+        { kind: "missing", path: "/srv/app/compose.yaml" },
+        "/srv/app",
+      )?.short,
+    ).toBe("fichier introuvable");
   });
 });
