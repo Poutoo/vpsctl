@@ -322,18 +322,28 @@ const counts = computed(() => {
             v-for="row in rows"
             :key="stream.lines[row.index].id"
             class="line"
+            data-testid="console-line"
             :class="lineClass(stream.lines[row.index])"
             :style="{ transform: `translateY(${row.start}px)` }"
           >
             <span class="time">{{
               clock(stream.lines[row.index].timestamp)
             }}</span>
-            <span class="origin">{{ tag(stream.lines[row.index]) }}</span>
-            <span class="text">{{ stream.lines[row.index].text }}</span>
+            <span class="origin" data-testid="console-origin">{{
+              tag(stream.lines[row.index])
+            }}</span>
+            <span class="text" data-testid="console-text">{{
+              stream.lines[row.index].text
+            }}</span>
           </div>
         </div>
         <Transition name="los" appear>
-          <p v-if="los" class="los" :class="{ failed: los.failed }">
+          <p
+            v-if="los"
+            class="los"
+            :class="{ failed: los.failed }"
+            data-testid="console-los"
+          >
             <span class="rule" aria-hidden="true" />
             <span class="caps los-text">
               <AppIcon name="signal-lost" />

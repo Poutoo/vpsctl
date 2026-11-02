@@ -1,0 +1,15 @@
+Port 22
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+AllowUsers atlas
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM yes
+
+Subsystem sftp internal-sftp
+
+# Assez de canaux pour les flux, transferts et commandes en parallèle.
+MaxSessions 32
+ClientAliveInterval 0

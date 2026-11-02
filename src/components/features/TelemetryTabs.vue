@@ -23,6 +23,7 @@ const emit = defineEmits<{ close: [tab: TelemetryTab] }>();
       v-for="tab in tabs"
       :key="tab.id"
       class="tab"
+      data-testid="telemetry-tab"
       :class="{ active: tab.id === activeId }"
     >
       <RouterLink
@@ -35,8 +36,14 @@ const emit = defineEmits<{ close: [tab: TelemetryTab] }>();
           :class="streamState(tab).tone"
           :name="streamState(tab).shape"
         />
-        <span class="name" :title="streamName(tab)">{{ streamName(tab) }}</span>
-        <span v-if="tab.session.status === 'lost'" class="caps badge">
+        <span class="name" data-testid="tab-name" :title="streamName(tab)">{{
+          streamName(tab)
+        }}</span>
+        <span
+          v-if="tab.session.status === 'lost'"
+          class="caps badge"
+          data-testid="tab-badge"
+        >
           {{ tab.kind === "logs" ? "Interrompu" : "Issue inconnue" }}
         </span>
         <span class="visually-hidden">, {{ streamState(tab).label }}</span>

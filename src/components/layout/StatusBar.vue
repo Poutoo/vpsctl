@@ -25,7 +25,7 @@ const summary = computed(() => {
 
 <template>
   <footer class="status-bar">
-    <span class="summary">
+    <span class="summary" data-testid="status-summary">
       <template v-if="connection.isConnected">{{ summary ?? "" }}</template>
       <template v-else>
         Empreintes mémorisées dans les profils · connexion par clé uniquement

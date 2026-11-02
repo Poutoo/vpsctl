@@ -92,7 +92,11 @@ function busySince(action: ComposeAction): number | null {
 </script>
 
 <template>
-  <tr class="project-row" :class="{ failed }">
+  <tr
+    class="project-row"
+    :class="{ failed }"
+    :data-testid="`project-${project.name}`"
+  >
     <td>
       <div class="name-cell">
         <button
@@ -112,6 +116,7 @@ function busySince(action: ComposeAction): number | null {
     </td>
     <td
       class="truncate dir-cell"
+      data-testid="project-dir"
       :class="{ missing: problem?.dirMissing }"
       :title="workingDir ?? undefined"
     >
@@ -126,7 +131,7 @@ function busySince(action: ComposeAction): number | null {
       </template>
       <template v-else>—</template>
     </td>
-    <td class="state-cell">
+    <td class="state-cell" data-testid="project-state">
       <ProjectStateLabel
         :state="project.state"
         :count="projectCount(project)"
@@ -156,6 +161,7 @@ function busySince(action: ComposeAction): number | null {
     </td>
     <td
       class="truncate detail-cell"
+      data-testid="project-detail"
       :class="{
         problem: !running && (outcome || project.problem || problem),
         busy: running,
@@ -222,7 +228,11 @@ function busySince(action: ComposeAction): number | null {
       </div>
     </td>
   </tr>
-  <tr v-if="problem" class="note-row">
+  <tr
+    v-if="problem"
+    class="note-row"
+    :data-testid="`project-problem-${project.name}`"
+  >
     <td colspan="5">
       <p class="note">
         <StatusIcon class="note-shape danger" name="triangle" />
@@ -240,7 +250,11 @@ function busySince(action: ComposeAction): number | null {
       </p>
     </td>
   </tr>
-  <tr v-if="down" class="note-row">
+  <tr
+    v-if="down"
+    class="note-row"
+    :data-testid="`project-down-${project.name}`"
+  >
     <td colspan="5">
       <p class="note">
         <StatusIcon class="note-shape" name="circle" />

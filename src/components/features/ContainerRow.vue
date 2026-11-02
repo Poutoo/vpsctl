@@ -96,6 +96,7 @@ function busySince(operation: Operation): number | null {
       member: branch !== null,
       'compose-busy': progress !== null,
     }"
+    :data-testid="`container-${container.name}`"
   >
     <td class="truncate name-cell" :title="container.name">
       <span v-if="branch" class="branch" :class="branch" aria-hidden="true" />
@@ -110,7 +111,7 @@ function busySince(operation: Operation): number | null {
     <td class="truncate muted" :title="container.image">
       <HighlightText :text="container.image" :query="query" />
     </td>
-    <td class="state-cell">
+    <td class="state-cell" data-testid="container-state">
       <RunStateLabel
         :state="state"
         :detail="containerStateDetail(container)"
@@ -124,7 +125,11 @@ function busySince(operation: Operation): number | null {
         {{ detail }}
       </span>
     </td>
-    <td class="truncate detail-cell" :title="container.status">
+    <td
+      class="truncate detail-cell"
+      data-testid="container-detail"
+      :title="container.status"
+    >
       {{ detail }}
     </td>
     <td>

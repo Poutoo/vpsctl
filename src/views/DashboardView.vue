@@ -205,6 +205,7 @@ const refreshedLabel = computed(() => {
         <NoticeBox
           v-if="composeAbsent && store.containers.projects.length > 0"
           class="compose-absent"
+          data-testid="compose-absent"
           :title="`Le plugin docker compose n'est pas installé sur ${serverName}.`"
         >
           Les projets restent affichés d'après les étiquettes des conteneurs ;

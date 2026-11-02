@@ -27,3 +27,6 @@ dist-ssr
 src/local/
 
 motion/
+
+# Tests E2E : clé SSH de test, msedgedriver téléchargé
+e2e/.cache/

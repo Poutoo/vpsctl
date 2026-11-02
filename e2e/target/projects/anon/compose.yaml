@@ -1,0 +1,12 @@
+services:
+  db:
+    image: busybox:1.37
+    command: sleep 1d
+    stop_grace_period: 1s
+    volumes:
+      - named:/var/data
+      - /cache
+      - ./uploads:/uploads
+
+volumes:
+  named:

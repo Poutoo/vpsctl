@@ -142,17 +142,27 @@ const requestReplay = computed(() => {
     :link-down="connection.lost"
   >
     <template #title>
-      <span v-if="stream.session.status === 'lost'" class="caps lost">{{
-        stream.kind === "logs"
-          ? "Interrompu"
-          : "Liaison perdue · issue inconnue"
-      }}</span>
+      <span
+        v-if="stream.session.status === 'lost'"
+        class="caps lost"
+        data-testid="console-lost"
+        >{{
+          stream.kind === "logs"
+            ? "Interrompu"
+            : "Liaison perdue · issue inconnue"
+        }}</span
+      >
       <span class="caps kind">{{ ident.kind }}</span>
       <span class="name" :title="ident.name">{{ ident.name }}</span>
-      <span class="command" :title="ident.fullCommand">{{
-        ident.command
+      <span
+        class="command"
+        data-testid="console-command"
+        :title="ident.fullCommand"
+        >{{ ident.command }}</span
+      >
+      <span v-if="ident.where" class="where" data-testid="console-where">{{
+        ident.where
       }}</span>
-      <span v-if="ident.where" class="where">{{ ident.where }}</span>
       <IconButton icon="copy" label="Copier la commande" @click="copyCommand" />
     </template>
     <template v-if="$slots.actions" #actions>

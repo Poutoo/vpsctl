@@ -1,0 +1,9 @@
+services:
+  web:
+    image: busybox:1.37
+    command: sleep 1d
+    stop_grace_period: 1s
+  crash:
+    image: busybox:1.37
+    command: sh -c "sleep 2; exit 1"
+    restart: always

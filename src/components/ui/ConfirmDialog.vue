@@ -61,19 +61,34 @@ function focusNoGo(event: Event) {
             <StatusIcon name="triangle" />
             Confirmation requise
           </span>
-          <span v-if="state.aside" class="caps aside">{{ state.aside }}</span>
-          <span v-else-if="state.danger" class="caps aside">Irréversible</span>
+          <span
+            v-if="state.aside"
+            class="caps aside"
+            data-testid="confirm-aside"
+            >{{ state.aside }}</span
+          >
+          <span
+            v-else-if="state.danger"
+            class="caps aside"
+            data-testid="confirm-aside"
+            >Irréversible</span
+          >
         </header>
 
         <div class="body">
           <AlertDialogTitle class="title">{{ state.title }}</AlertDialogTitle>
-          <p v-if="state.subject" class="subject">{{ state.subject }}</p>
-          <p v-if="state.command" class="command">{{ state.command }}</p>
+          <p v-if="state.subject" class="subject" data-testid="confirm-subject">
+            {{ state.subject }}
+          </p>
+          <p v-if="state.command" class="command" data-testid="confirm-command">
+            {{ state.command }}
+          </p>
           <AlertDialogDescription as="ul" class="consequences">
             <li
               v-for="removal in state.removals"
               :key="removal.label"
               class="check"
+              data-testid="confirm-removal"
             >
               <StatusIcon class="removal-shape" name="bang" />
               <span>
@@ -83,7 +98,12 @@ function focusNoGo(event: Event) {
                 }}</span>
               </span>
             </li>
-            <li v-for="check in state.checks" :key="check.label" class="check">
+            <li
+              v-for="check in state.checks"
+              :key="check.label"
+              class="check"
+              data-testid="confirm-check"
+            >
               <StatusIcon class="check-shape" name="check" />
               <span>
                 <strong>{{ check.label }}</strong>
@@ -95,6 +115,7 @@ function focusNoGo(event: Event) {
             <li
               v-for="item in state.consequences"
               :key="typeof item === 'string' ? item : item.label"
+              data-testid="confirm-consequence"
             >
               <span class="dash" aria-hidden="true">—</span>
               <span v-if="typeof item === 'string'">{{ item }}</span>
@@ -104,7 +125,12 @@ function focusNoGo(event: Event) {
               </span>
             </li>
           </AlertDialogDescription>
-          <p v-if="state.warning" class="warning" role="alert">
+          <p
+            v-if="state.warning"
+            class="warning"
+            role="alert"
+            data-testid="confirm-warning"
+          >
             <StatusIcon class="warning-shape" name="triangle" />
             <strong>{{ state.warning }}</strong>
           </p>

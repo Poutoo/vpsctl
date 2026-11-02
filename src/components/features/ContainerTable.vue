@@ -120,7 +120,7 @@ const looseCount = computed(() => {
             @run="(action) => emit('run', group.project, action)"
             @show-tab="(id) => emit('showTab', id)"
           />
-          <tr v-else class="loose-row">
+          <tr v-else class="loose-row" data-testid="loose-group">
             <td colspan="5">
               <span class="loose-title">Hors compose</span>
               <span class="caps loose-meta">

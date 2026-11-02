@@ -77,7 +77,7 @@ const skippedWarning = computed(() => {
   <section class="section" :aria-label="title" :aria-busy="loading">
     <header class="header">
       <h2 class="title">{{ title }}</h2>
-      <span class="command">
+      <span class="command" data-testid="section-command">
         {{ command
         }}<template v-if="section.loaded && !section.error">
           · {{ countLabel }}</template

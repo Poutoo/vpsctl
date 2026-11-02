@@ -1,0 +1,5 @@
+services:
+  web:
+    image: busybox:1.37
+    command: sleep 1d
+    stop_grace_period: 1s

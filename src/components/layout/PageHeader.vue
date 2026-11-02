@@ -25,7 +25,9 @@ const surtitle = computed(() => {
 <template>
   <header class="page-header">
     <div class="heading">
-      <p v-if="surtitle" class="caps surtitle">{{ surtitle }}</p>
+      <p v-if="surtitle" class="caps surtitle" data-testid="page-surtitle">
+        {{ surtitle }}
+      </p>
       <h1 :id="titleId">{{ title }}</h1>
     </div>
     <div v-if="$slots.default" class="actions"><slot /></div>

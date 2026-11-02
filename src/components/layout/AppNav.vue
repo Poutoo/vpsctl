@@ -96,6 +96,7 @@ async function disconnect() {
             <span
               v-if="section.route === 'dashboard' && composeCount > 0"
               class="compose-badge"
+              data-testid="nav-compose-badge"
               :title="composeLabel"
             >
               <StatusIcon name="half" />

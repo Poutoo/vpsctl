@@ -51,6 +51,7 @@ defineProps<{
 <template>
   <svg
     class="icon"
+    :data-testid="`icon-${name}`"
     viewBox="0 0 16 16"
     fill="none"
     stroke="currentColor"

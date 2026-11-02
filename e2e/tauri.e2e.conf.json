@@ -1,0 +1,5 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "dev.poutoo.atlas.e2e",
+  "productName": "Atlas E2E"
+}

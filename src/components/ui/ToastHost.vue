@@ -22,6 +22,7 @@ function runAction(item: Notification) {
         v-for="item in items"
         :key="item.id"
         class="toast"
+        data-testid="toast"
         :class="item.tone"
         :role="item.tone === 'error' ? 'alert' : 'status'"
       >
