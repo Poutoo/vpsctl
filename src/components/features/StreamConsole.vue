@@ -21,7 +21,12 @@ import { useComposeStore } from "../../stores/compose";
 import { useConnectionStore } from "../../stores/connection";
 import { useScriptsStore } from "../../stores/scripts";
 import { useServicesStore } from "../../stores/services";
-import { streamName, type TelemetryStream } from "../../stores/telemetry";
+import {
+  composeRunningSince,
+  streamName,
+  type TelemetryStream,
+} from "../../stores/telemetry";
+import ElapsedChrono from "../ui/ElapsedChrono.vue";
 import IconButton from "../ui/IconButton.vue";
 import LogConsole from "../ui/LogConsole.vue";
 
@@ -164,6 +169,14 @@ const requestReplay = computed(() => {
         ident.where
       }}</span>
       <IconButton icon="copy" label="Copier la commande" @click="copyCommand" />
+      <span
+        v-if="composeRunningSince(stream) !== null"
+        class="caps running"
+        data-testid="console-running"
+      >
+        En cours ·
+        <ElapsedChrono :since="composeRunningSince(stream)!" />
+      </span>
     </template>
     <template v-if="$slots.actions" #actions>
       <slot name="actions" />
@@ -180,6 +193,14 @@ const requestReplay = computed(() => {
 .lost {
   flex-shrink: 0;
   color: var(--color-danger-text);
+}
+
+/* Commande compose en cours : à droite de l'identification, comme la maquette. */
+.running {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--color-warning);
+  font-size: var(--fs-xs);
 }
 
 /* Le nom ne se coupe qu'en dernier recours ; la commande, d'abord. */

@@ -162,9 +162,11 @@ fn files_of(name: &str, members: &[&Container]) -> Result<ProjectFiles, ProjectP
 }
 
 /// Boucle de redémarrage : un conteneur `restarting` dont le dernier code de
-/// sortie est non nul (ou illisible).
+/// sortie est non nul (ou illisible), ou en marche entre deux sorties
+/// (redémarré par sa politique il y a moins de 10 s, vu par `docker inspect`).
 fn restart_loop(container: &Container) -> bool {
-    container.docker_state == "restarting" && container.exit_code != Some(0)
+    (container.docker_state == "restarting" && container.exit_code != Some(0))
+        || container.restart_loop
 }
 
 /// État agrégé des conteneurs d'un projet (`compose run` exclus), par
@@ -296,6 +298,7 @@ mod tests {
             service: Some(name.into()),
             oneoff: false,
             compose_paths: paths("/srv/app", "/srv/app/compose.yaml", ""),
+            restart_loop: false,
         }
     }
 
@@ -461,6 +464,20 @@ mod tests {
         assert_eq!(state_of(&[up.clone(), looping]).0, ProjectState::Failed);
         assert_eq!(state_of(&[up.clone(), unreadable]).0, ProjectState::Failed);
         assert_eq!(state_of(&[up, clean]).0, ProjectState::Transition);
+    }
+
+    /// Entre deux sorties, le conteneur en boucle est `running` : le projet
+    /// reste en échec au lieu de repasser « Nominal ».
+    #[test]
+    fn restart_loop_between_two_exits_is_still_a_failure() {
+        let up = container("a", Some("p"), "running", None);
+        let mut between = container("l", Some("p"), "running", None);
+        assert_eq!(
+            state_of(&[up.clone(), between.clone()]),
+            (ProjectState::Nominal, 2, 2)
+        );
+        between.restart_loop = true;
+        assert_eq!(state_of(&[up, between]), (ProjectState::Failed, 2, 2));
     }
 
     // --- Regroupement ---------------------------------------------------

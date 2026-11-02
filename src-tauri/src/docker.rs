@@ -3,7 +3,9 @@
 //! `docker logs -f`.
 //! Les conteneurs sortis avec le code 137 sont inspectés (`docker inspect`, un
 //! seul appel pour tous) pour distinguer un manque de mémoire (`OOMKilled`)
-//! d'un simple SIGKILL.
+//! d'un simple SIGKILL ; ceux en marche depuis moins de 10 s le sont aussi,
+//! pour reconnaître une boucle de redémarrage entre deux sorties
+//! (`RestartCount`).
 //! Les conteneurs sont manipulés par ID (hexadécimal validé), jamais par nom.
 
 use std::collections::HashMap;
@@ -83,6 +85,12 @@ pub struct Container {
     #[serde(skip)]
     #[ts(skip)]
     pub compose_paths: ComposePaths,
+    /// En marche depuis moins de `LOOP_UPTIME_SECS` après un redémarrage par
+    /// sa politique : boucle de redémarrage entre deux sorties. Lu par
+    /// `compose` pour l'état du projet, non envoyé à l'interface.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub restart_loop: bool,
 }
 
 /// Étiquettes compose de dossier et de fichiers d'un conteneur, brutes
@@ -141,16 +149,16 @@ struct PsLine {
 }
 
 /// Liste tous les conteneurs, y compris arrêtés, triés par nom. Les
-/// conteneurs sortis avec le code 137 sont inspectés en un seul appel, dans
-/// le même délai ; aucun appel s'il n'y en a pas. Pas de cache : chaque
+/// conteneurs à inspecter (`inspect_ids`) le sont en un seul appel, dans le
+/// même délai ; aucun appel s'il n'y en a pas. Pas de cache : chaque
 /// rafraîchissement relit leur état.
 pub async fn list(connection: &Connection) -> Result<ContainerList, AppError> {
     let deadline = Deadline::after(LIST_TIMEOUT);
     let output = connection.exec_until(LIST_COMMAND, deadline).await?;
     let mut list = interpret_list(&output)?;
-    if let Some(command) = inspect_command(&killed_ids(&list.containers)) {
+    if let Some(command) = inspect_command(&inspect_ids(&list.containers)) {
         let inspected = connection.exec_until(&command, deadline).await?;
-        apply_oom(
+        apply_inspect(
             &mut list.containers,
             &parse_inspect_output(&inspected.stdout_text()),
         );
@@ -158,23 +166,53 @@ pub async fn list(connection: &Connection) -> Result<ContainerList, AppError> {
     Ok(list)
 }
 
-/// Résultat de `docker inspect` pour un conteneur sorti avec le code 137.
+/// En marche depuis moins de ce délai après un redémarrage par sa politique :
+/// boucle de redémarrage. C'est le seuil de Docker lui-même : au-delà, il
+/// considère le conteneur stable et remet son délai de redémarrage à zéro.
+pub const LOOP_UPTIME_SECS: u64 = 10;
+
+/// Résultat de `docker inspect` pour un conteneur.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OomInfo {
+pub struct InspectInfo {
     pub oom_killed: bool,
     /// `HostConfig.Memory` : 0 sans limite.
     pub memory: u64,
+    /// Redémarrages faits par la politique (`restart: always`…), pas ceux
+    /// demandés à la main.
+    pub restart_count: u32,
 }
 
-/// Une ligne par conteneur : ID complet, `OOMKilled`, limite mémoire.
-const INSPECT_FORMAT: &str = "{{.Id}} {{.State.OOMKilled}} {{.HostConfig.Memory}}";
+/// Une ligne par conteneur : ID complet, `OOMKilled`, limite mémoire,
+/// nombre de redémarrages par la politique.
+const INSPECT_FORMAT: &str =
+    "{{.Id}} {{.State.OOMKilled}} {{.HostConfig.Memory}} {{.RestartCount}}";
 
-/// Conteneurs sortis avec le code 137 (SIGKILL : arrêt forcé ou manque de
-/// mémoire), seuls à inspecter.
-pub fn killed_ids(containers: &[Container]) -> Vec<&str> {
+/// Secondes depuis le démarrage, lues dans `Status` (`Up 3 seconds`,
+/// `Up Less than a second (health: starting)`). `None` au-delà d'une minute
+/// (« About a minute », « N minutes »…) ou pour un conteneur qui ne tourne pas.
+pub fn uptime_seconds(status: &str) -> Option<u64> {
+    let rest = status.strip_prefix("Up ")?;
+    let text = rest.split_once(" (").map_or(rest, |(text, _)| text);
+    match text {
+        "Less than a second" => Some(0),
+        "1 second" => Some(1),
+        _ => text.strip_suffix(" seconds")?.parse().ok(),
+    }
+}
+
+/// Démarré depuis moins de `LOOP_UPTIME_SECS` : peut-être entre deux sorties
+/// d'une boucle de redémarrage.
+fn recently_started(container: &Container) -> bool {
+    container.docker_state == "running"
+        && uptime_seconds(&container.status).is_some_and(|s| s < LOOP_UPTIME_SECS)
+}
+
+/// Conteneurs à inspecter : sortis avec le code 137 (SIGKILL : arrêt forcé
+/// ou manque de mémoire), ou démarrés depuis moins de `LOOP_UPTIME_SECS`.
+pub fn inspect_ids(containers: &[Container]) -> Vec<&str> {
     containers
         .iter()
-        .filter(|c| c.docker_state == "exited" && c.exit_code == Some(137))
+        .filter(|c| (c.docker_state == "exited" && c.exit_code == Some(137)) || recently_started(c))
         .map(|c| c.id.as_str())
         .filter(|id| is_full_container_id(id))
         .collect()
@@ -202,7 +240,7 @@ pub fn inspect_command(ids: &[&str]) -> Option<String> {
 /// un conteneur supprimé entre `docker ps` et `docker inspect` fait échouer
 /// la commande, qui répond quand même pour les autres. Une ligne illisible
 /// est ignorée : son conteneur garde l'état déduit du code de sortie.
-pub fn parse_inspect_output(output: &str) -> HashMap<String, OomInfo> {
+pub fn parse_inspect_output(output: &str) -> HashMap<String, InspectInfo> {
     output
         .lines()
         .filter_map(|line| {
@@ -214,21 +252,33 @@ pub fn parse_inspect_output(output: &str) -> HashMap<String, OomInfo> {
                 _ => return None,
             };
             let memory = fields.next()?.parse().ok()?;
+            let restart_count = fields.next()?.parse().ok()?;
             if fields.next().is_some() || !is_full_container_id(id) {
                 return None;
             }
-            Some((id.to_owned(), OomInfo { oom_killed, memory }))
+            let info = InspectInfo {
+                oom_killed,
+                memory,
+                restart_count,
+            };
+            Some((id.to_owned(), info))
         })
         .collect()
 }
 
-/// Reporte le résultat de `docker inspect` : un conteneur tué par manque de
-/// mémoire passe en échec ; un 137 sans `OOMKilled` reste arrêté.
-pub fn apply_oom(containers: &mut [Container], inspected: &HashMap<String, OomInfo>) {
+/// Reporte le résultat de `docker inspect`. Sorti : un conteneur tué par
+/// manque de mémoire passe en échec, un 137 sans `OOMKilled` reste arrêté.
+/// Démarré depuis peu après un redémarrage par sa politique : boucle de
+/// redémarrage (son propre état reste « en marche »).
+pub fn apply_inspect(containers: &mut [Container], inspected: &HashMap<String, InspectInfo>) {
     for container in containers {
         let Some(info) = inspected.get(&container.id) else {
             continue;
         };
+        if recently_started(container) {
+            container.restart_loop = info.restart_count > 0;
+            continue;
+        }
         container.oom_killed = info.oom_killed;
         container.memory_limit = (info.memory > 0).then_some(info.memory);
         if info.oom_killed {
@@ -364,6 +414,7 @@ fn parse_ps_line(line: &str) -> Option<Container> {
         status: raw.status,
         oom_killed: false,
         memory_limit: None,
+        restart_loop: false,
     })
 }
 
@@ -484,7 +535,7 @@ pub fn parse_exit_code(status: &str) -> Option<i32> {
 
 /// Correspondance des états Docker vers l'interface
 /// (tableau de `docs/03-architecture.md`). Un 137 tué par manque de mémoire
-/// passe ensuite en échec (`apply_oom`).
+/// passe ensuite en échec (`apply_inspect`).
 pub fn run_state(docker_state: &str, exit_code: Option<i32>) -> RunState {
     match docker_state {
         "running" => RunState::Nominal,
@@ -647,6 +698,7 @@ mod tests {
                     service: None,
                     oneoff: false,
                     compose_paths: ComposePaths::default(),
+                    restart_loop: false,
                 },
                 Container {
                     id: ID_WEB.into(),
@@ -667,6 +719,7 @@ mod tests {
                         config_files: "/srv/web/compose.yaml,/srv/web/compose.prod.yaml".into(),
                         env_files: String::new(),
                     },
+                    restart_loop: false,
                 },
             ]
         );
@@ -803,38 +856,68 @@ mod tests {
             service: None,
             oneoff: false,
             compose_paths: ComposePaths::default(),
+            restart_loop: false,
+        }
+    }
+
+    fn running(id: &str, status: &str) -> Container {
+        Container {
+            state: RunState::Nominal,
+            docker_state: "running".into(),
+            exit_code: None,
+            status: status.into(),
+            ..exited(id, None)
         }
     }
 
     #[test]
-    fn only_containers_exited_with_137_are_inspected() {
+    fn exited_with_137_or_recently_started_containers_are_inspected() {
         let mut restarting = exited(ID_WEB, Some(137));
         restarting.docker_state = "restarting".into();
         let sigterm = "c".repeat(64);
         let clean = "d".repeat(64);
+        let young = "e".repeat(64);
+        let settled = "f".repeat(64);
         let containers = vec![
             exited(ID_PLAIN, Some(137)),
             exited(ID_KILLED, Some(137)),
             exited(&sigterm, Some(143)),
             exited(&clean, Some(0)),
             restarting,
+            running(&young, "Up 9 seconds"),
+            running(&settled, "Up 10 seconds"),
         ];
-        assert_eq!(killed_ids(&containers), [ID_PLAIN, ID_KILLED]);
+        assert_eq!(
+            inspect_ids(&containers),
+            [ID_PLAIN, ID_KILLED, young.as_str()]
+        );
     }
 
     #[test]
-    fn no_inspect_without_killed_container() {
+    fn uptime_is_read_from_status_below_a_minute() {
+        assert_eq!(uptime_seconds("Up Less than a second"), Some(0));
+        assert_eq!(uptime_seconds("Up 1 second"), Some(1));
+        assert_eq!(uptime_seconds("Up 7 seconds (health: starting)"), Some(7));
+        assert_eq!(uptime_seconds("Up 59 seconds"), Some(59));
+        assert_eq!(uptime_seconds("Up About a minute"), None);
+        assert_eq!(uptime_seconds("Up 3 hours (healthy)"), None);
+        assert_eq!(uptime_seconds("Restarting (1) 2 seconds ago"), None);
+        assert_eq!(uptime_seconds("Exited (0) 5 seconds ago"), None);
+    }
+
+    #[test]
+    fn no_inspect_without_container_to_inspect() {
         assert_eq!(inspect_command(&[]), None);
         assert_eq!(inspect_command(&["web; rm -rf ~"]), None);
     }
 
     #[test]
-    fn one_inspect_for_all_killed_containers() {
+    fn one_inspect_for_all_containers() {
         assert_eq!(
             inspect_command(&[ID_PLAIN, ID_KILLED]).unwrap(),
             format!(
                 "docker inspect --type container --format \
-                 '{{{{.Id}}}} {{{{.State.OOMKilled}}}} {{{{.HostConfig.Memory}}}}' \
+                 '{{{{.Id}}}} {{{{.State.OOMKilled}}}} {{{{.HostConfig.Memory}}}} {{{{.RestartCount}}}}' \
                  -- '{ID_PLAIN}' '{ID_KILLED}'"
             )
         );
@@ -843,25 +926,44 @@ mod tests {
     #[test]
     fn inspect_output_is_parsed() {
         let output = format!(
-            "{ID_PLAIN} false 0\n{ID_KILLED} true 536870912\n\
-             illisible\n{ID_WEB} peut-être 0\n{ID_WEB} true 12 en trop\n"
+            "{ID_PLAIN} false 0 0\n{ID_KILLED} true 536870912 3\n\
+             illisible\n{ID_WEB} peut-être 0 0\n{ID_WEB} true 12 0 en trop\n\
+             {ID_WEB} false 0 jamais\n{ID_WEB} false 0\n"
         );
         let parsed = parse_inspect_output(&output);
         assert_eq!(parsed.len(), 2);
         assert_eq!(
             parsed[ID_PLAIN],
-            OomInfo {
+            InspectInfo {
                 oom_killed: false,
-                memory: 0
+                memory: 0,
+                restart_count: 0,
             }
         );
         assert_eq!(
             parsed[ID_KILLED],
-            OomInfo {
+            InspectInfo {
                 oom_killed: true,
-                memory: 536_870_912
+                memory: 536_870_912,
+                restart_count: 3,
             }
         );
+    }
+
+    #[test]
+    fn recently_restarted_by_its_policy_is_a_restart_loop() {
+        let looping = "e".repeat(64);
+        let started_by_hand = "f".repeat(64);
+        let mut containers = vec![
+            running(&looping, "Up 1 second"),
+            running(&started_by_hand, "Up 2 seconds"),
+        ];
+        let output = format!("{looping} false 0 4\n{started_by_hand} false 0 0\n");
+        apply_inspect(&mut containers, &parse_inspect_output(&output));
+
+        assert!(containers[0].restart_loop);
+        assert_eq!(containers[0].state, RunState::Nominal);
+        assert!(!containers[1].restart_loop);
     }
 
     #[test]
@@ -871,8 +973,8 @@ mod tests {
             exited(ID_KILLED, Some(137)),
             exited(ID_WEB, Some(137)),
         ];
-        let output = format!("{ID_PLAIN} false 0\n{ID_KILLED} true 536870912\n");
-        apply_oom(&mut containers, &parse_inspect_output(&output));
+        let output = format!("{ID_PLAIN} false 0 0\n{ID_KILLED} true 536870912 0\n");
+        apply_inspect(&mut containers, &parse_inspect_output(&output));
 
         assert_eq!(containers[0].state, RunState::Stopped);
         assert!(!containers[0].oom_killed);

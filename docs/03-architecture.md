@@ -107,11 +107,13 @@ Correspondance des états Docker vers les états de l'interface (calculée dans 
 | `dead` | En échec |
 | tout autre état | En échec (état brut en infobulle) |
 
-Manque de mémoire : le code 137 seul signifie SIGKILL (`docker stop` qui dépasse son délai, `kill -9`, ou le noyau à court de mémoire). Après `docker ps`, les conteneurs `exited` avec le code 137 sont inspectés en **un seul appel**, dans le délai de `docker_list` ; aucun appel s'il n'y en a pas, et pas de cache : chaque rafraîchissement relit leur état (fonctions pures `killed_ids`, `inspect_command`, `parse_inspect_output`, `apply_oom`).
+Manque de mémoire : le code 137 seul signifie SIGKILL (`docker stop` qui dépasse son délai, `kill -9`, ou le noyau à court de mémoire). Après `docker ps`, les conteneurs `exited` avec le code 137, et ceux `running` depuis moins de 10 s (durée lue dans `Status`), sont inspectés en **un seul appel**, dans le délai de `docker_list` ; aucun appel s'il n'y en a pas, et pas de cache : chaque rafraîchissement relit leur état (fonctions pures `inspect_ids`, `uptime_seconds`, `inspect_command`, `parse_inspect_output`, `apply_inspect`).
 
 ```sh
-docker inspect --type container --format '{{.Id}} {{.State.OOMKilled}} {{.HostConfig.Memory}}' -- '<id>' '<id>'…
+docker inspect --type container --format '{{.Id}} {{.State.OOMKilled}} {{.HostConfig.Memory}} {{.RestartCount}}' -- '<id>' '<id>'…
 ```
+
+Boucle de redémarrage entre deux sorties : un conteneur `running` depuis moins de 10 s avec `RestartCount` non nul (redémarré par sa politique, pas à la main) est marqué `restart_loop`, champ interne lu par `compose` pour l'état agrégé ; son propre état reste « Nominal ». 10 s est le seuil de Docker, qui considère au-delà le conteneur stable et remet son délai de redémarrage à zéro. Conséquence : un conteneur qui a planté une fois puis repart normalement compte encore en échec pendant ses 10 premières secondes de marche.
 
 - Le code de retour n'est pas consulté : un conteneur supprimé entre `docker ps` et `docker inspect` fait échouer la commande, qui répond quand même pour les autres. Une ligne absente ou illisible laisse le conteneur dans l'état déduit de son code (« Arrêté »).
 - `OOMKilled` vrai : « En échec » avec la mention MÉMOIRE, la limite (`HostConfig.Memory`, 0 sans limite) dans l'infobulle. Faux : « Arrêté · code 137 », l'infobulle dit qu'il s'agit d'un SIGKILL sans manque de mémoire.

@@ -132,6 +132,13 @@ export function streamName(stream: TelemetryStream): string {
   }
 }
 
+/** Début (`Date.now()`) d'une commande compose en cours, pour son chrono T+ ; sinon `null`. */
+export function composeRunningSince(stream: TelemetryStream): number | null {
+  return stream.kind === "compose" && stream.session.active
+    ? stream.session.startedAt
+    : null;
+}
+
 /** Section de la navigation dont vient un flux, surlignée sur l'écran Télémétrie. */
 export function streamOrigin(stream: TelemetryStream): "dashboard" | "scripts" {
   return stream.kind === "script" ? "scripts" : "dashboard";

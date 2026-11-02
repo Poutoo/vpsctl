@@ -3,9 +3,14 @@
  * Onglets de l'écran Télémétrie : un par flux ouvert, avec sa forme d'état
  * et un bouton de fermeture. L'onglet actif est celui de l'URL.
  */
-import { streamName, type TelemetryTab } from "../../stores/telemetry";
+import {
+  composeRunningSince,
+  streamName,
+  type TelemetryTab,
+} from "../../stores/telemetry";
 import AppIcon from "../ui/AppIcon.vue";
 import AppTooltip from "../ui/AppTooltip.vue";
+import ElapsedChrono from "../ui/ElapsedChrono.vue";
 import StatusIcon from "../ui/StatusIcon.vue";
 import { streamState } from "./streamState";
 
@@ -39,6 +44,11 @@ const emit = defineEmits<{ close: [tab: TelemetryTab] }>();
         <span class="name" data-testid="tab-name" :title="streamName(tab)">{{
           streamName(tab)
         }}</span>
+        <ElapsedChrono
+          v-if="composeRunningSince(tab) !== null"
+          class="chrono"
+          :since="composeRunningSince(tab)!"
+        />
         <span
           v-if="tab.session.status === 'lost'"
           class="caps badge"
@@ -136,7 +146,8 @@ const emit = defineEmits<{ close: [tab: TelemetryTab] }>();
   color: var(--color-success);
 }
 
-.tab:not(.active) .warning {
+.tab:not(.active) .warning,
+.tab:not(.active) .chrono {
   color: var(--color-warning);
 }
 

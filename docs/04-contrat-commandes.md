@@ -247,7 +247,7 @@ Calculé par le backend sur les conteneurs du projet, conteneurs `compose run` e
 
 | État | Règle, par priorité |
 |---|---|
-| `failed` (En échec) | au moins un conteneur en échec (code de sortie autre que 0, 137 ou 143, `dead`, tué par manque de mémoire même sorti en 137), ou `restarting` avec un dernier code non nul ou illisible (boucle de redémarrage) |
+| `failed` (En échec) | au moins un conteneur en échec (code de sortie autre que 0, 137 ou 143, `dead`, tué par manque de mémoire même sorti en 137), ou en boucle de redémarrage : `restarting` avec un dernier code non nul ou illisible, ou `running` depuis moins de 10 s après un redémarrage par sa politique (`RestartCount` non nul, lu par `docker inspect`) |
 | `transition` (En transition) | au moins un conteneur `removing`, ou `restarting` avec le code 0 |
 | `nominal` | tous en marche |
 | `stopped` (Arrêté · 0/N) | aucun en marche, tous arrêtés proprement |

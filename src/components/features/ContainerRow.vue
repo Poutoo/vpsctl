@@ -98,15 +98,20 @@ function busySince(operation: Operation): number | null {
     }"
     :data-testid="`container-${container.name}`"
   >
-    <td class="truncate name-cell" :title="container.name">
+    <td class="name-cell" :title="container.name">
       <span v-if="branch" class="branch" :class="branch" aria-hidden="true" />
-      <HighlightText :text="container.name" :query="query" />
-      <span
-        v-if="container.oneoff"
-        class="caps run-tag"
-        title="Lancé par docker compose run : non compté dans l'état du projet"
-        >run</span
-      >
+      <!-- Seul le nom se coupe : la mention RUN reste toujours visible. -->
+      <span class="name-line">
+        <span class="truncate">
+          <HighlightText :text="container.name" :query="query" />
+        </span>
+        <span
+          v-if="container.oneoff"
+          class="caps run-tag"
+          title="Lancé par docker compose run : non compté dans l'état du projet"
+          >run</span
+        >
+      </span>
     </td>
     <td class="truncate muted" :title="container.image">
       <HighlightText :text="container.image" :query="query" />
@@ -192,7 +197,18 @@ function busySince(operation: Operation): number | null {
   content: "";
 }
 
+.name-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.name-line .truncate {
+  min-width: 0;
+}
+
 .run-tag {
+  flex-shrink: 0;
   margin-left: var(--sp-2);
   padding: 0 var(--sp-1);
   border: var(--border-width) solid var(--color-border-strong);
