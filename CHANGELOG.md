@@ -26,6 +26,7 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 - Fichiers refusés par l'éditeur, avec la raison : plus de 1 Mo, contenu binaire (position du premier octet nul), UTF-8 invalide (position de la première erreur) et lien symbolique ; le téléchargement reste proposé, sauf pour une clé privée, jamais affichée ni téléchargée depuis l'éditeur, où qu'elle se trouve.
 - Lecture seule, avec sa raison : fichier non inscriptible, appartenant à un autre compte, dans un dossier non inscriptible, ou aux fins de ligne mélangées. Le contenu reste lisible, copiable et téléchargeable.
 - Fermer l'éditeur, changer d'écran, couper la liaison ou fermer Atlas avec des modifications non enregistrées demande confirmation. Pendant une perte de liaison, le texte est conservé et l'enregistrement attend le rétablissement, puis vérifie que le fichier n'a pas changé.
+- Vue Différence depuis la fenêtre de conflit, en lecture seule : version du serveur et la vôtre ligne à ligne, chaque changement attribué au serveur (ambre) ou à vous, avec une action par bloc (Prendre la version du serveur, Reprendre, Retirer). Là où vos changements et ceux du serveur se mêlent, l'action annonce les lignes à vous qu'elle efface ; Ctrl+Z l'annule dans l'édition. « Enregistrer… » écrase en disant ce qui serait encore perdu.
 
 ## [1.2.0] - 2026-10-30
 

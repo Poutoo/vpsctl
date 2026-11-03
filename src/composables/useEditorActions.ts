@@ -26,7 +26,7 @@ export function editCounts(added: number, removed: number): string {
 }
 
 /**
- * Enregistrement, conflit et sorties de l'éditeur, avec leurs
+ * Enregistrement, conflit, différence et sorties de l'éditeur, avec leurs
  * GO / NO GO (maquettes `docs/design/editeur/`).
  */
 export function useEditorActions() {
@@ -168,7 +168,7 @@ export function useEditorActions() {
     );
   }
 
-  /** Fenêtre de conflit (Annuler, Recharger, Écraser). */
+  /** Fenêtre de conflit (Annuler, Recharger, Écraser, différence). */
   async function resolveConflict(): Promise<void> {
     const conflict = editor.conflict;
     const doc = editor.document;
@@ -216,6 +216,11 @@ export function useEditorActions() {
                 : "Recharger abandonne votre ligne modifiée",
             detail: loss.reload.detail || undefined,
           },
+          {
+            tone: "neutral",
+            label:
+              "Pour garder les deux, ouvrez la différence et reprenez les lignes du serveur",
+          },
         ]
       : [
           {
@@ -229,11 +234,38 @@ export function useEditorActions() {
       title: "Le fichier a changé sur le serveur depuis son ouverture",
       command: changed,
       items,
+      link: loss ? "Voir la différence ligne à ligne →" : undefined,
       alternative: "Recharger la version du serveur",
       confirmLabel: "Écraser",
     });
     if (choice === "go") await overwrite();
     else if (choice === "alternative") await reload();
+    else if (choice === "link") editor.view = "diff";
+  }
+
+  /** « Enregistrer… » de la vue Différence : écrase en disant ce qui reste perdu. */
+  async function saveFromDiff(): Promise<void> {
+    const doc = editor.document;
+    const loss = losses();
+    if (!doc || !loss || connection.lost) return;
+    const item: ConfirmItem =
+      loss.overwrite.lines === 0
+        ? { tone: "ok", label: "Tous les changements du serveur sont repris" }
+        : {
+            tone: "warn",
+            label: `Écraser efface ${plural(loss.overwrite.lines, "ligne changée", "lignes changées")} sur le serveur`,
+            detail: loss.overwrite.detail || undefined,
+          };
+    const go = await confirm({
+      kicker: "Conflit · Confirmation requise",
+      title: "Remplacer la version du serveur ?",
+      subject: doc.file.path,
+      items: [item],
+      consequences: [],
+      confirmLabel: "Enregistrer",
+      danger: loss.overwrite.lines > 0,
+    });
+    if (go) await overwrite();
   }
 
   return {
@@ -242,6 +274,7 @@ export function useEditorActions() {
     reload,
     overwrite,
     resolveConflict,
+    saveFromDiff,
   };
 }
 

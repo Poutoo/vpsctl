@@ -2,8 +2,9 @@
 /**
  * Éditeur de fichier texte (maquettes `docs/design/editeur/`), à la place de
  * la liste dans l'écran Fichiers ; l'itinéraire garde le chemin. Ouverture,
- * refus, lecture seule, édition, enregistrement (Ctrl+S) et conflit. Toute
- * sortie avec des modifications non enregistrées passe par un GO / NO GO.
+ * refus, lecture seule, édition, enregistrement (Ctrl+S), conflit et vue
+ * Différence. Toute sortie avec des modifications non enregistrées passe
+ * par un GO / NO GO.
  */
 import {
   computed,
@@ -22,6 +23,7 @@ import {
 import { useElapsed } from "../../composables/useElapsed";
 import { useNotify } from "../../composables/useNotify";
 import { useTransferActions } from "../../composables/useTransferActions";
+import type { BlockAction } from "../../editorDiff";
 import { readOnlyFacts, readOnlyText, refusalTag } from "../../editorFacts";
 import { lineTotal, savedSize } from "../../editorText";
 import { formatBytes } from "../../format";
@@ -40,6 +42,7 @@ import AppButton from "../ui/AppButton.vue";
 import StateMessage from "../ui/StateMessage.vue";
 import StatusIcon from "../ui/StatusIcon.vue";
 import CodeArea from "./CodeArea.vue";
+import EditorDiff from "./EditorDiff.vue";
 import EditorRefusal from "./EditorRefusal.vue";
 import FileItinerary from "./FileItinerary.vue";
 
@@ -242,6 +245,22 @@ const statusRight = computed(() => {
 
 const tag = computed(() => (editor.refused ? "Refusé" : "Édition"));
 
+const conflictServer = computed(() => editor.conflict?.server ?? null);
+/** Version du serveur affichée dans la vue Différence (texte lisible). */
+const diffServer = computed(() =>
+  editor.view === "diff" ? (conflictServer.value?.text ?? null) : null,
+);
+
+/** Action d'un bloc : vos lignes remplacées, annulable par Ctrl+Z. */
+function applyBlock(action: BlockAction) {
+  code.value?.replace(action.yours[0], action.yours[1], action.replacement);
+}
+
+function backToEdit() {
+  editor.view = "edit";
+  void nextTick(() => code.value?.focus());
+}
+
 function download() {
   const file = editor.refused?.file ?? doc.value?.file;
   if (file) void transferActions.download({ name: file.name, path: file.path });
@@ -384,6 +403,18 @@ watch(
             @update:model-value="editor.setText"
             @cursor="(c) => (cursor = c)"
             @escape="(armed) => (escapeArmed = armed)"
+          />
+          <EditorDiff
+            v-if="diffServer !== null"
+            class="diff-layer"
+            :base="editor.base"
+            :server="diffServer"
+            :yours="editor.text"
+            :server-modified="conflictServer?.snapshot?.modified ?? null"
+            :save-disabled="connection.lost || editor.savingSince !== null"
+            @back="backToEdit"
+            @save="actions.saveFromDiff()"
+            @apply="applyBlock"
           />
         </div>
 
@@ -552,6 +583,13 @@ watch(
   display: flex;
   flex: 1;
   min-height: 0;
+}
+
+/* Vue Différence par-dessus la zone d'édition, qui reste montée : son
+   historique d'annulation est conservé. */
+.diff-layer {
+  position: absolute;
+  inset: 0;
 }
 
 .status {

@@ -14,6 +14,13 @@ import AppIcon from "../ui/AppIcon.vue";
 const props = defineProps<{ refused: RefusedFile }>();
 const emit = defineEmits<{ download: []; back: [] }>();
 
+const MEBIBYTE = 1_048_576;
+
+/** « 1 Mo » plutôt que « 1,0 Mo » pour une limite ronde. */
+function limitLabel(limit: number): string {
+  return limit % MEBIBYTE === 0 ? `${limit / MEBIBYTE} Mo` : formatBytes(limit);
+}
+
 interface Fact {
   label: string;
   value: string;
@@ -38,7 +45,7 @@ const content = computed(() => {
         text: `${file.name} pèse ${formatBytes(refusal.size)} ; l'éditeur ouvre les fichiers texte jusqu'à 1 Mo. Téléchargez-le pour le lire sur ce poste, ou suivez-le en direct avec tail -f dans un script.`,
         facts: [
           { label: "Taille", value: formatBytes(refusal.size), alert: true },
-          { label: "Limite", value: formatBytes(refusal.limit) },
+          { label: "Limite", value: limitLabel(refusal.limit) },
           ...common,
         ],
       };

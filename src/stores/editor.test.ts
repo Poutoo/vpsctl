@@ -146,6 +146,48 @@ describe("éditeur", () => {
     expect(editor.dirty).toBe(false);
   });
 
+  it("conflit : le lien ouvre la différence, Enregistrer… écrase", async () => {
+    linked();
+    const editor = useEditorStore();
+    const actions = useEditorActions();
+    await editor.open("/home/deploy/app/.env");
+    editor.setText("A=2\n");
+    vi.mocked(api.fileSave).mockResolvedValueOnce({
+      outcome: "conflict",
+      server: {
+        snapshot: snapshot("server"),
+        text: "A=1\nB=1\n",
+        refusal: null,
+      },
+    });
+    const viewing = actions.save();
+    await answer("link");
+    await viewing;
+    expect(editor.view).toBe("diff");
+
+    // Vous reprenez la ligne du serveur : écraser ne perd plus rien.
+    editor.setText("A=2\nB=1\n");
+    vi.mocked(api.fileSave).mockResolvedValueOnce({
+      outcome: "saved",
+      snapshot: snapshot("mine"),
+      verified: true,
+      savedAt: 9_000,
+    });
+    const saving = actions.saveFromDiff();
+    await flushPromises();
+    const { state } = useConfirm();
+    expect(state.items?.[0].label).toBe(
+      "Tous les changements du serveur sont repris",
+    );
+    await answer("go");
+    await saving;
+    expect(vi.mocked(api.fileSave).mock.calls[1][0]).toMatchObject({
+      text: "A=2\nB=1\n",
+      expected: { sha256: "server" },
+    });
+    expect(editor.view).toBe("edit");
+  });
+
   it("conflit : Recharger relit le fichier", async () => {
     linked();
     const editor = useEditorStore();
