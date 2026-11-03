@@ -158,6 +158,16 @@ defineExpose({
   focus() {
     area.value?.focus();
   },
+  /** Curseur au début du texte (ouverture d'un fichier). */
+  focusStart() {
+    const element = area.value;
+    if (!element) return;
+    element.focus();
+    element.setSelectionRange(0, 0);
+    element.scrollTop = 0;
+    element.scrollLeft = 0;
+    reportCursor();
+  },
   /**
    * Remplace les lignes `[start, end)` par `lines`, en une seule opération
    * annulable par Ctrl+Z.

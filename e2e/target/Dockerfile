@@ -29,6 +29,10 @@ RUN rm -f /etc/ssh/ssh_host_* \
 RUN useradd -m -s /bin/bash -G docker atlas \
  && usermod -p '*' atlas
 
+# Second compte, sans connexion possible : propriétaire d'un fichier que
+# l'éditeur ouvre en lecture seule (jalon 12).
+RUN useradd -M -s /usr/sbin/nologin autre
+
 COPY sshd_config /etc/ssh/sshd_config
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh

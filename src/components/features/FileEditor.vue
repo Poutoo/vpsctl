@@ -96,10 +96,10 @@ const name = computed(() => {
 });
 const doc = computed(() => editor.document);
 
-// Fichier ouvert : le curseur est placé dans le texte.
+// Fichier ouvert : le curseur est placé au début du texte.
 watch(doc, (current, previous) => {
   if (current && current !== previous) {
-    void nextTick(() => code.value?.focus());
+    void nextTick(() => code.value?.focusStart());
   }
 });
 

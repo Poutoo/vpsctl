@@ -457,6 +457,7 @@ Définie dans `tauri.conf.json` (`app.security.csp`) : tout vient de l'applicati
 
 - **Backend** : `cargo test`, sans réseau ni VPS (fonctions pures, `MemFs`, exécutions simulées). `tests/ssh_integration.rs` vise un vrai serveur et reste ignoré par défaut.
 - **Frontend** : Vitest (`npm test`), environnement `happy-dom`, fichiers `src/**/*.test.ts`. Les modules de `src/api/` sont remplacés par des simulations (`vi.mock`) : aucun `invoke` réel. Ciblent la logique : stores, `logSession`, validations, formats. `@vue/test-utils` sert uniquement aux composables liés au cycle de vie d'un composant (`useDockedStream`). Pas de tests d'instantané.
+- **E2E** : WebdriverIO pilote l'application réelle (`tauri-driver`) contre une cible Docker locale (`e2e/`, voir `e2e/README.md`), jamais le VPS ; une spec par section de `docs/tests-jalon-N.md`, les cas non automatisables y étant marqués manuels. Build et dossier de configuration séparés (`dev.poutoo.atlas.e2e`), trousseau compris.
 
 ### Cas partagés Rust / TypeScript
 
