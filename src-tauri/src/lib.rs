@@ -37,7 +37,7 @@ pub fn run() {
             let on_link_lost: state::LinkLostSink = Arc::new(move |event| {
                 let _ = handle.emit(state::LINK_LOST_EVENT, event);
             });
-            let state = state::AppState::new(&config_dir, on_link_lost);
+            let state = state::AppState::new(&config_dir, &app.config().identifier, on_link_lost);
             let preferences = preferences::PreferenceStore::load(&config_dir);
 
             // Présence Discord : uniquement dans l'application installée

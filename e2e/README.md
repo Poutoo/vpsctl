@@ -37,8 +37,10 @@ ses données. `E2E_SSH_PORT` change le port local (2222 par défaut).
   recréés à chaque fichier de spec.
 - Le lanceur refuse un binaire sans cet identifiant, et tout profil dont
   l'hôte n'est pas la boucle locale.
-- Clé SSH de test sans passphrase (`e2e/.cache/ssh/`) : rien n'est écrit dans
-  le trousseau.
+- Trousseau : le service est l'identifiant de l'application, donc
+  `dev.poutoo.atlas.e2e` ; les passphrases d'Atlas ne sont jamais lues. La clé
+  SSH de test n'a d'ailleurs pas de passphrase (`e2e/.cache/ssh/`) : rien n'est
+  écrit dans le trousseau.
 
 ## Écarts avec le test manuel
 

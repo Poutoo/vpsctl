@@ -255,6 +255,7 @@ impl Bench {
         let (events, lost) = mpsc::unbounded_channel();
         let state = AppState::new(
             &dir,
+            "dev.poutoo.atlas.test",
             Arc::new(move |event| {
                 let _ = events.send(event);
             }),

@@ -31,7 +31,7 @@ use crate::docker::ContainerList;
 use crate::error::AppError;
 use crate::presence::{LinkPhase, PhaseState};
 use crate::scripts::{self, LastRunRecorder, Script, ScriptParser, ScriptStore};
-use crate::secrets;
+use crate::secrets::Keyring;
 use crate::sftp::fs::SftpFs;
 use crate::sftp::transfer::{self, CancelSignal, Progress, ProgressSink};
 use crate::ssh::link::{now_millis, LinkTiming, LossCause, LossSignal};
@@ -143,6 +143,8 @@ type StreamRegistry = Arc<Mutex<HashMap<String, StreamEntry>>>;
 
 pub struct AppState {
     profiles: ProfileStore,
+    /// Passphrases des profils, sous le service propre à ce build.
+    keyring: Keyring,
     /// Sérialise les lectures-modifications du fichier des profils.
     profiles_lock: Mutex<()>,
     /// Partagé avec les tâches d'exécution, qui enregistrent `lastRun`.
@@ -168,9 +170,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(config_dir: &Path, on_link_lost: LinkLostSink) -> Self {
+    /// `keyring_service` : identifiant de l'application, différent pour le
+    /// build des tests E2E.
+    pub fn new(config_dir: &Path, keyring_service: &str, on_link_lost: LinkLostSink) -> Self {
         Self {
             profiles: ProfileStore::new(config_dir),
+            keyring: Keyring::new(keyring_service),
             profiles_lock: Mutex::new(()),
             scripts: Arc::new(ScriptStore::new(config_dir)),
             compose_memory: Arc::new(ProjectMemory::load(config_dir)),
@@ -237,7 +242,8 @@ impl AppState {
             presented.remove(id);
         }
         let id = id.to_owned();
-        blocking(move || secrets::delete_passphrase(&id)).await
+        let keyring = self.keyring.clone();
+        blocking(move || keyring.delete_passphrase(&id)).await
     }
 
     /// Vérifie localement la passphrase puis la mémorise dans le trousseau.
@@ -249,9 +255,10 @@ impl AppState {
         let profile = self.with_profiles(|store| store.get(profile_id))?;
         let key_path = key_path(&profile);
         let id = profile.id.clone();
+        let keyring = self.keyring.clone();
         blocking(move || {
             ssh::verify_passphrase(&key_path, &passphrase)?;
-            secrets::set_passphrase(&id, &passphrase)
+            keyring.set_passphrase(&id, &passphrase)
         })
         .await
     }
@@ -314,8 +321,9 @@ impl AppState {
             Some(passphrase) => Some(passphrase),
             None => {
                 let id = profile.id.clone();
+                let keyring = self.keyring.clone();
                 // Trousseau indisponible : on se comporte comme sans passphrase.
-                blocking(move || secrets::get_passphrase(&id))
+                blocking(move || keyring.get_passphrase(&id))
                     .await
                     .unwrap_or(None)
             }
@@ -964,7 +972,10 @@ mod tests {
 
     fn state() -> (AppState, PathBuf) {
         let dir = std::env::temp_dir().join(format!("vpsctl-state-{}", uuid::Uuid::new_v4()));
-        (AppState::new(&dir, Arc::new(|_| {})), dir)
+        (
+            AppState::new(&dir, "dev.poutoo.atlas.test", Arc::new(|_| {})),
+            dir,
+        )
     }
 
     use std::path::PathBuf;

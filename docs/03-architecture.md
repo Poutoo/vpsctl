@@ -195,7 +195,7 @@ Création et suppression (`manage.rs`) : séquences décrites dans `docs/04-cont
 
 **presence** : présence Discord (Rich Presence), implémentation maison du protocole IPC local plutôt qu'une crate : aucune dépendance ajoutée (tokio fournit le tube nommé et le socket Unix), tâche tokio arrêtée proprement, relances silencieuses et limite de fréquence maîtrisées. Écartées : `discord-rich-presence` 1.1.0 (E/S bloquantes, dépend d'`uuid` 0.8 en doublon) et `discord-presence` 3.2.0 (treize dépendances, son propre fil et ses propres relances). Une tâche unique (`Presence`, gérée à part d'`AppState`) suit l'interrupteur et la phase de la liaison publiée par `AppState` (`watch`), et publie son statut par une fonction de rappel que `lib.rs` relie à l'événement `presence-status`. La lecture des trames se fait dans une tâche séparée, pour qu'aucune trame lue à moitié ne soit perdue quand une autre branche de `select!` l'emporte. Testée avec un faux Discord (`tokio::io::duplex`) en temps virtuel (`tokio` `test-util`, dépendance de test) : poignée de main, phases, limite de fréquence, effacement, absence, relances, fermeture. Contrat : `docs/04-contrat-commandes.md`, « Présence Discord ».
 
-**secrets** : surcouche de la crate `keyring` pour la passphrase de la clé SSH (Credential Manager sous Windows, Secret Service sous Linux).
+**secrets** : surcouche de la crate `keyring` pour la passphrase de la clé SSH (Credential Manager sous Windows, Secret Service sous Linux). Le service du trousseau est l'identifiant de l'application, lu au démarrage : le build des tests E2E (`dev.poutoo.atlas.e2e`) a le sien.
 
 **commands** : fonctions `#[tauri::command]` sans logique propre. Streaming via `tauri::ipc::Channel`.
 
@@ -466,7 +466,7 @@ Installateurs produits par `npm run tauri build` (`bundle.targets`) : NSIS sous 
 | Nom affiché | « Atlas » (fenêtre, menu Démarrer, menu des applications) | `productName`, `Name=` du modèle `src-tauri/linux/atlas-vps.desktop` |
 | Exécutable | `atlas-vps` (`atlas-vps.exe`) | `mainBinaryName` |
 | Paquet .deb, fichiers .deb et AppImage, `.desktop`, icônes `hicolor` | `atlas-vps` | `src-tauri/tauri.linux.conf.json` (`productName`, fusionné sous Linux) |
-| Identifiant, dossier de configuration, service du trousseau | `dev.poutoo.atlas` | `identifier`, `secrets::SERVICE` (test qui les compare) |
+| Identifiant, dossier de configuration, service du trousseau | `dev.poutoo.atlas` | `identifier`, lu au démarrage et passé à `secrets::Keyring` (un test vérifie qu'il reste `dev.poutoo.atlas`, sous lequel sont les passphrases déjà enregistrées) |
 
 - Le bundler de Tauri dérive le nom du paquet .deb, des fichiers produits et du `.desktop` de `productName`, sans option dédiée : d'où la surcharge de `productName` sous Linux, et le modèle `.desktop` qui garde « Atlas » comme nom affiché. Le reste de l'application n'utilise pas `productName` (titre de fenêtre fixé dans `app.windows`, dossiers et trousseau tirés de l'identifiant).
 - Sous Linux, la fenêtre est rattachée à son entrée de menu par le nom de l'exécutable (GTK sans identifiant d'application, `StartupWMClass=atlas-vps`).
