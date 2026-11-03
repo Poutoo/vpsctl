@@ -289,6 +289,53 @@ describe("éditeur", () => {
     expect(editor.dirty).toBe(false);
   });
 
+  it("authorized_keys : GO / NO GO avant chaque enregistrement", async () => {
+    linked();
+    vi.mocked(api.fileOpen).mockResolvedValueOnce(
+      document("ssh-ed25519 AAAA a\n", { sshFile: "authorizedKeys" }),
+    );
+    vi.mocked(api.authorizedKeysCheck).mockResolvedValue({
+      linkKey: { algorithm: "ED25519", comment: "a", tail: "…AAAA" },
+      before: { line: 1, options: [] },
+      after: null,
+      keys: 0,
+      certificates: 0,
+      authorities: 0,
+      unrecognized: [],
+      added: [],
+      removed: ["a"],
+      mode: "600",
+      tooOpen: false,
+    });
+    const editor = useEditorStore();
+    const actions = useEditorActions();
+    await editor.open("/home/deploy/.ssh/authorized_keys");
+    editor.setText("");
+    const refused = actions.save();
+    await flushPromises();
+    const { state } = useConfirm();
+    expect(state.title).toBe("Enregistrer sans la clé de cette liaison ?");
+    expect(api.authorizedKeysCheck).toHaveBeenCalledWith(
+      "/home/deploy/app/.env", // chemin du document simulé
+      "ssh-ed25519 AAAA a\n",
+      "",
+    );
+    await answer("nogo");
+    await refused;
+    expect(api.fileSave).not.toHaveBeenCalled();
+
+    vi.mocked(api.fileSave).mockResolvedValueOnce({
+      outcome: "saved",
+      snapshot: snapshot("after"),
+      verified: true,
+      savedAt: 9_000,
+    });
+    const accepted = actions.save();
+    await answer("go");
+    await accepted;
+    expect(api.fileSave).toHaveBeenCalledOnce();
+  });
+
   it("se vide à la fin de la session", async () => {
     const connection = linked();
     const editor = useEditorStore();

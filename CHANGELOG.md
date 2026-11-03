@@ -27,6 +27,7 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 - Lecture seule, avec sa raison : fichier non inscriptible, appartenant à un autre compte, dans un dossier non inscriptible, ou aux fins de ligne mélangées. Le contenu reste lisible, copiable et téléchargeable.
 - Fermer l'éditeur, changer d'écran, couper la liaison ou fermer Atlas avec des modifications non enregistrées demande confirmation. Pendant une perte de liaison, le texte est conservé et l'enregistrement attend le rétablissement, puis vérifie que le fichier n'a pas changé.
 - Vue Différence depuis la fenêtre de conflit, en lecture seule : version du serveur et la vôtre ligne à ligne, chaque changement attribué au serveur (ambre) ou à vous, avec une action par bloc (Prendre la version du serveur, Reprendre, Retirer). Là où vos changements et ceux du serveur se mêlent, l'action annonce les lignes à vous qu'elle efface ; Ctrl+Z l'annule dans l'édition. « Enregistrer… » écrase en disant ce qui serait encore perdu.
+- Fichiers de `~/.ssh` dans l'éditeur : bandeau permanent. Pour `authorized_keys`, chaque enregistrement passe par un GO / NO GO qui vérifie que la clé de la liaison en cours reste autorisée (avertissement fort si elle est retirée, constat neutre si elle était déjà absente), compte les clés reconnues (options et certificats compris ; une ligne illisible est signalée « non reconnue par Atlas »), liste les clés ajoutées et retirées et rappelle que les droits sont conservés. La case « autre moyen d'accès » est requise et se décoche à chaque enregistrement.
 
 ## [1.2.0] - 2026-10-30
 

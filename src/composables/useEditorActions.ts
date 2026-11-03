@@ -1,3 +1,4 @@
+import * as api from "../api/editor";
 import { errorMessage, toAppError } from "../api/errors";
 import {
   buildDiff,
@@ -7,6 +8,7 @@ import {
 } from "../editorDiff";
 import { formatBytes } from "../format";
 import { timeLabel } from "../linkText";
+import { sshConfirmation } from "../sshConfirmation";
 import { useConnectionStore } from "../stores/connection";
 import { useEditorStore } from "../stores/editor";
 import { useProfilesStore } from "../stores/profiles";
@@ -142,6 +144,12 @@ export function useEditorActions() {
     const doc = editor.document;
     if (!doc || !editor.canSave) return;
     const content = editor.text;
+    if (
+      doc.sshFile === "authorizedKeys" &&
+      !(await confirmSshSave(editor.base, content))
+    ) {
+      return;
+    }
     await write(content);
   }
 
@@ -155,6 +163,13 @@ export function useEditorActions() {
     const doc = editor.document;
     if (!conflict || !doc || connection.lost) return;
     const content = editor.text;
+    // authorized_keys : vérifié par rapport à la version du serveur remplacée.
+    if (
+      doc.sshFile === "authorizedKeys" &&
+      !(await confirmSshSave(conflict.server.text ?? "", content))
+    ) {
+      return;
+    }
     await write(content, conflict.server.snapshot);
   }
 
@@ -266,6 +281,22 @@ export function useEditorActions() {
       danger: loss.overwrite.lines > 0,
     });
     if (go) await overwrite();
+  }
+
+  /** GO / NO GO de `~/.ssh/authorized_keys`, d'après les vérifications du backend. */
+  async function confirmSshSave(
+    before: string,
+    after: string,
+  ): Promise<boolean> {
+    const doc = editor.document;
+    if (!doc) return false;
+    try {
+      const check = await api.authorizedKeysCheck(doc.file.path, before, after);
+      return await confirm(sshConfirmation(check, doc.file.account));
+    } catch (raw) {
+      notifyFailure(raw);
+      return false;
+    }
   }
 
   return {

@@ -70,6 +70,19 @@ watch(
 
 onBeforeUnmount(() => editor.clear());
 
+// Liaison rétablie avec des modifications : l'enregistrement revérifiera
+// le fichier (maquette 16).
+const stopRestored = connection.on("restored", () => {
+  if (editor.dirty) {
+    notify({
+      tone: "success",
+      title: "Liaison rétablie",
+      detail: `AOS · ${props.server} · fichier à revérifier`,
+    });
+  }
+});
+onBeforeUnmount(stopRestored);
+
 // Toute sortie de l'éditeur (autre écran, autre chemin, Fermer, étape de
 // l'itinéraire) : GO / NO GO s'il reste des modifications.
 onBeforeRouteLeave(() => actions.confirmExit("close"));
@@ -243,6 +256,21 @@ const statusRight = computed(() => {
   return parts;
 });
 
+/** Bandeau permanent des fichiers de ~/.ssh. */
+const sshBanner = computed(() => {
+  const ssh = doc.value?.sshFile ?? editor.refused?.sshFile ?? null;
+  if (ssh === null) return null;
+  return ssh === "authorizedKeys"
+    ? {
+        label: "Fichier d'accès SSH",
+        text: `Une erreur ici peut vous empêcher de vous reconnecter à ${props.server}, Atlas compris. Chaque enregistrement passe par un GO / NO GO.`,
+      }
+    : {
+        label: "Fichier SSH",
+        text: "Ce fichier règle les connexions SSH de ce compte (~/.ssh). Vérifiez chaque modification avant d'enregistrer.",
+      };
+});
+
 const tag = computed(() => (editor.refused ? "Refusé" : "Édition"));
 
 const conflictServer = computed(() => editor.conflict?.server ?? null);
@@ -317,6 +345,19 @@ watch(
       :file-refused="editor.refused !== null"
       @navigate="(p) => emit('navigate', p)"
     />
+
+    <p
+      v-if="sshBanner"
+      class="ssh-banner"
+      role="note"
+      data-testid="editor-ssh-banner"
+    >
+      <StatusIcon class="ssh-shape" name="triangle" />
+      <span
+        ><span class="caps ssh-label">{{ sshBanner.label }} ·</span>
+        {{ sshBanner.text }}</span
+      >
+    </p>
 
     <section
       class="frame"
@@ -467,6 +508,27 @@ watch(
   border-radius: var(--r-1);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
+}
+
+.ssh-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--color-danger-tint);
+  border: var(--border-width) solid var(--color-danger);
+  font-size: var(--fs-md);
+}
+
+.ssh-shape {
+  flex-shrink: 0;
+  margin-top: var(--sp-1);
+  color: var(--color-danger);
+}
+
+.ssh-label {
+  color: var(--color-danger-text);
 }
 
 .frame {
