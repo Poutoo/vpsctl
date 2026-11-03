@@ -28,7 +28,10 @@ const surtitle = computed(() => {
       <p v-if="surtitle" class="caps surtitle" data-testid="page-surtitle">
         {{ surtitle }}
       </p>
-      <h1 :id="titleId">{{ title }}</h1>
+      <div class="title-row">
+        <h1 :id="titleId">{{ title }}</h1>
+        <slot name="status" />
+      </div>
     </div>
     <div v-if="$slots.default" class="actions"><slot /></div>
   </header>
@@ -48,6 +51,19 @@ const surtitle = computed(() => {
   flex-direction: column;
   gap: var(--sp-1);
   min-width: 0;
+}
+
+.title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.title-row h1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .surtitle {

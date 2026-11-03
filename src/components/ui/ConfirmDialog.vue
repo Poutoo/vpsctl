@@ -2,7 +2,8 @@
 /**
  * Fenêtre GO / NO GO. Le focus s'ouvre sur NO GO, Échap vaut NO GO, GO est à
  * droite et n'est jamais l'action par défaut. Avec `acknowledge`, GO reste
- * désactivé tant que la case n'est pas cochée.
+ * désactivé tant que la case n'est pas cochée ; elle est décochée à chaque
+ * ouverture. Un second choix (`alternative`) se place entre NO GO et GO.
  */
 import {
   AlertDialogContent,
@@ -37,8 +38,15 @@ const goDisabled = computed(
 // AlertDialogAction / AlertDialogCancel : leur fermeture interne s'exécute
 // avant notre @click et résolvait la confirmation à `false`.
 function onOpenChange(open: boolean) {
-  if (!open && state.resolve) settle(false);
+  if (!open && state.resolve) settle("nogo");
 }
+
+const itemShapes = {
+  ok: "check",
+  warn: "bang",
+  danger: "triangle",
+  neutral: "dash",
+} as const;
 
 /** Focus initial sur NO GO, même quand une case à cocher la précède. */
 function focusNoGo(event: Event) {
@@ -53,13 +61,17 @@ function focusNoGo(event: Event) {
       <AlertDialogOverlay class="overlay" />
       <AlertDialogContent
         class="dialog"
-        :class="{ danger: state.danger }"
+        :class="{
+          danger: state.danger,
+          wide: state.items?.length || state.acknowledgeHint || state.alert,
+          widest: state.alternative,
+        }"
         @open-auto-focus="focusNoGo"
       >
         <header class="banner">
           <span class="caps kicker">
             <StatusIcon name="triangle" />
-            Confirmation requise
+            {{ state.kicker ?? "Confirmation requise" }}
           </span>
           <span
             v-if="state.aside"
@@ -82,6 +94,10 @@ function focusNoGo(event: Event) {
           </p>
           <p v-if="state.command" class="command" data-testid="confirm-command">
             {{ state.command }}
+          </p>
+          <p v-if="state.alert" class="alert" data-testid="confirm-alert">
+            <span class="caps alert-label">{{ state.alert.label }} ·</span>
+            {{ state.alert.text }}
           </p>
           <AlertDialogDescription as="ul" class="consequences">
             <li
@@ -113,6 +129,21 @@ function focusNoGo(event: Event) {
               </span>
             </li>
             <li
+              v-for="item in state.items"
+              :key="item.label"
+              class="item"
+              :class="item.tone"
+              :data-testid="`confirm-item-${item.tone}`"
+            >
+              <StatusIcon class="item-shape" :name="itemShapes[item.tone]" />
+              <span class="item-text">
+                <strong>{{ item.label }}</strong>
+                <span v-if="item.detail" class="item-detail">{{
+                  item.detail
+                }}</span>
+              </span>
+            </li>
+            <li
               v-for="item in state.consequences"
               :key="typeof item === 'string' ? item : item.label"
               data-testid="confirm-consequence"
@@ -134,21 +165,62 @@ function focusNoGo(event: Event) {
             <StatusIcon class="warning-shape" name="triangle" />
             <strong>{{ state.warning }}</strong>
           </p>
-          <label v-if="state.acknowledge" class="acknowledge">
-            <input v-model="acknowledged" type="checkbox" />
-            {{ state.acknowledge }}
+          <button
+            v-if="state.link"
+            type="button"
+            class="link"
+            data-testid="confirm-link"
+            @click="settle('link')"
+          >
+            {{ state.link }}
+          </button>
+          <label
+            v-if="state.acknowledge"
+            class="acknowledge"
+            :class="{
+              boxed: state.acknowledgeHint,
+              danger: state.acknowledgeDanger,
+            }"
+          >
+            <input
+              v-model="acknowledged"
+              type="checkbox"
+              data-testid="confirm-acknowledge"
+            />
+            <span class="acknowledge-text">
+              <strong v-if="state.acknowledgeHint">{{
+                state.acknowledge
+              }}</strong>
+              <template v-else>{{ state.acknowledge }}</template>
+              <span v-if="state.acknowledgeHint" class="acknowledge-hint">{{
+                state.acknowledgeHint
+              }}</span>
+            </span>
           </label>
         </div>
 
         <footer class="footer">
           <span class="caps hint">Échap = NO GO</span>
-          <AppButton ref="noGo" @click="settle(false)">
-            <span class="caps code">NO GO</span> Annuler
+          <AppButton
+            ref="noGo"
+            data-testid="confirm-nogo"
+            @click="settle('nogo')"
+          >
+            <span class="caps code">NO GO</span>
+            {{ state.cancelLabel ?? "Annuler" }}
+          </AppButton>
+          <AppButton
+            v-if="state.alternative"
+            data-testid="confirm-alternative"
+            @click="settle('alternative')"
+          >
+            {{ state.alternative }}
           </AppButton>
           <AppButton
             :variant="state.danger ? 'danger' : 'primary'"
             :disabled="goDisabled"
-            @click="settle(true)"
+            data-testid="confirm-go"
+            @click="settle('go')"
           >
             <span class="caps code">GO</span> {{ state.confirmLabel }}
           </AppButton>
@@ -179,6 +251,20 @@ function focusNoGo(event: Event) {
   border-radius: var(--r-2);
   box-shadow: var(--shadow-overlay);
   animation: fade-in var(--dur-slow) var(--ease-out);
+}
+
+/* Constats, encadré ou case détaillée : fenêtre plus large ; trois boutons
+   encore plus, le rappel « Échap = NO GO » sur sa propre ligne. */
+.dialog.wide {
+  width: min(calc(100vw - 2 * var(--sp-4)), calc(9 * var(--sp-8)));
+}
+
+.dialog.widest {
+  width: min(calc(100vw - 2 * var(--sp-4)), calc(10 * var(--sp-8)));
+}
+
+.dialog.widest .hint {
+  flex-basis: 100%;
 }
 
 @keyframes fade-in {
@@ -334,8 +420,95 @@ function focusNoGo(event: Event) {
   cursor: pointer;
 }
 
+/* Case détaillée : encadrée, rouge quand l'accès est menacé. */
+.acknowledge.boxed {
+  padding: var(--sp-3);
+  border: var(--border-width) solid var(--color-border-strong);
+}
+
+.acknowledge.danger {
+  border-color: var(--color-danger);
+}
+
+.acknowledge-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.acknowledge-hint {
+  color: var(--color-text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* Encadré d'alerte avant la liste : trait et fond rouges, texte lisible. */
+.alert {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--color-danger-tint);
+  border: var(--border-width) solid var(--color-danger);
+  font-size: var(--fs-md);
+}
+
+.alert-label {
+  color: var(--color-danger-text);
+}
+
+/* Constat : forme selon le ton, libellé, détail en dessous. */
+.item-shape {
+  flex-shrink: 0;
+  margin-top: var(--sp-1);
+}
+
+.item.ok .item-shape {
+  color: var(--color-success);
+}
+
+.item.warn .item-shape {
+  color: var(--color-warning);
+}
+
+.item.danger .item-shape {
+  color: var(--color-danger);
+}
+
+.item.neutral .item-shape {
+  color: var(--color-text-muted);
+}
+
+.item-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.item-detail {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  white-space: pre-line;
+}
+
+.link {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--color-action);
+  font: inherit;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--color-action-hover);
+}
+
 .footer {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-4);

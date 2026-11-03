@@ -19,6 +19,15 @@ export function filesRoute(path: string): RouteLocationRaw {
   return { name: "files", params: { path: pathSegments(path) } };
 }
 
+/** Éditeur d'un fichier : même écran, chemin du fichier et `?edition`. */
+export function editorRoute(path: string): RouteLocationRaw {
+  return {
+    name: "files",
+    params: { path: pathSegments(path) },
+    query: { edition: null },
+  };
+}
+
 /**
  * Explorateur : dossier affiché, son contenu, le tri et la sélection. Le
  * dossier personnel est lu une fois par liaison ; le dernier dossier visité

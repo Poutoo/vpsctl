@@ -3,12 +3,15 @@
  * Explorateur de fichiers du VPS (SFTP). Le chemin affiché est porté par la
  * route (`/files/home/deploy` ; `/files` = racine) ; la première visite part
  * du dossier personnel. Création et renommage se saisissent dans la liste.
+ * Avec `?edition`, le chemin est celui d'un fichier ouvert dans l'éditeur,
+ * qui remplace la liste.
  */
 import { ContextMenuRoot, ContextMenuTrigger } from "reka-ui";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { errorMessage, toAppError } from "../api/errors";
 import type { FileEntry } from "../bindings/FileEntry";
+import FileEditor from "../components/features/FileEditor.vue";
 import FileItinerary from "../components/features/FileItinerary.vue";
 import type { FileAction } from "../components/features/FileMenu.vue";
 import FileTable, { type Draft } from "../components/features/FileTable.vue";
@@ -33,7 +36,7 @@ import { useTransferActions } from "../composables/useTransferActions";
 import { matchesFilter } from "../listFilter";
 import { isDirLike, parentPath, pathFromSegments } from "../remoteFiles";
 import { useConnectionStore } from "../stores/connection";
-import { filesRoute, useFilesStore } from "../stores/files";
+import { editorRoute, filesRoute, useFilesStore } from "../stores/files";
 import { useProfilesStore } from "../stores/profiles";
 import { useTransfersStore } from "../stores/transfers";
 
@@ -57,6 +60,9 @@ const routePath = computed(() => {
   return pathFromSegments(segments);
 });
 
+/** Fichier ouvert dans l'éditeur, à la place de la liste. */
+const editing = computed(() => route.query.edition !== undefined);
+
 // Dossier personnel connu même après un rechargement sur une route directe :
 // il sert au refus immédiat de supprimer ou renommer le dossier personnel.
 void files.ensureHome().catch(() => undefined);
@@ -68,7 +74,7 @@ watch(
   [routePath, () => route.query.depart],
   async ([path, depart]) => {
     // LOS : la liste reste figée sur le dernier dossier lu.
-    if (connection.lost) return;
+    if (connection.lost || editing.value) return;
     if (depart === "personnel") {
       try {
         await router.replace(filesRoute(await files.ensureHome()));
@@ -104,6 +110,19 @@ function navigate(path: string) {
 
 function openEntry(entry: FileEntry) {
   navigate(entry.path);
+}
+
+function editEntry(entry: FileEntry) {
+  if (connection.lost) return;
+  void router.push(editorRoute(entry.path));
+}
+
+/** Fermeture de l'éditeur : retour au dossier, le fichier sélectionné. */
+function closeEditor() {
+  const parent = parentPath(routePath.value);
+  if (parent === null) return;
+  selectOnArrival = routePath.value;
+  void router.push(filesRoute(parent));
 }
 
 function goUp() {
@@ -245,6 +264,9 @@ function onAction(entry: FileEntry, action: FileAction) {
     case "open":
       if (isDirLike(entry)) openEntry(entry);
       break;
+    case "edit":
+      editEntry(entry);
+      break;
     case "rename":
       startDraft({ mode: "rename", path: entry.path });
       break;
@@ -285,7 +307,16 @@ const errorTitle = computed(() => {
 </script>
 
 <template>
-  <div class="files">
+  <div v-if="editing" class="files editing">
+    <FileEditor
+      :path="routePath"
+      :server="server"
+      @navigate="(path) => router.push(filesRoute(path))"
+      @close="closeEditor"
+    />
+    <TransferPanel v-if="transfers.items.length > 0" />
+  </div>
+  <div v-else class="files">
     <PageHeader section="files" title="Fichiers">
       <AppButton
         :disabled="!canCreate"
@@ -468,6 +499,17 @@ const errorTitle = computed(() => {
   gap: var(--sp-4);
   height: 100%;
   padding: var(--sp-6);
+}
+
+/* L'éditeur gère ses propres marges. */
+.files.editing {
+  gap: 0;
+  padding: 0;
+}
+
+.files.editing > :first-child {
+  flex: 1;
+  min-height: 0;
 }
 
 .listing {

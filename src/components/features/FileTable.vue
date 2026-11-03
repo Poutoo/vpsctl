@@ -349,6 +349,7 @@ function onKeydown(event: KeyboardEvent) {
       break;
     case "Enter":
       if (entry && isDirLike(entry)) emit("open", entry);
+      else if (entry && isFileLike(entry)) emit("action", entry, "edit");
       break;
     case "Backspace":
       emit("up");
@@ -379,6 +380,7 @@ function onRowClick(entry: FileEntry) {
 
 function onRowDoubleClick(entry: FileEntry) {
   if (isDirLike(entry)) emit("open", entry);
+  else if (isFileLike(entry)) emit("action", entry, "edit");
 }
 
 /** Donne le focus à la grille. */

@@ -130,7 +130,7 @@ export function useTransferActions() {
   }
 
   /** Téléchargement d'un fichier, vers un emplacement choisi. */
-  async function download(entry: FileEntry) {
+  async function download(entry: Pick<FileEntry, "name" | "path">) {
     let localPath: string | null;
     try {
       localPath = await pickDownloadTarget(entry.name);

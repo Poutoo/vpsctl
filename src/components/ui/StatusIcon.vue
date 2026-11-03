@@ -6,7 +6,7 @@
  * Formes des états de service (docs/06-design.md) : `disc` nominal, `circle`
  * arrêté, `triangle` en échec, `half` en transition (statique) ; `target`
  * projet compose partiel (une partie de ses conteneurs arrêtés) ; `bang`
- * élément supprimé par une action (GO / NO GO).
+ * élément supprimé par une action (GO / NO GO) ; `dash` constat neutre.
  */
 defineProps<{
   name:
@@ -17,7 +17,8 @@ defineProps<{
     | "triangle"
     | "half"
     | "target"
-    | "bang";
+    | "bang"
+    | "dash";
 }>();
 </script>
 
@@ -52,6 +53,7 @@ defineProps<{
       <path d="M8 3.5a4.5 4.5 0 0 0 0 9z" fill="currentColor" stroke="none" />
     </template>
     <path v-else-if="name === 'bang'" d="M8 3v6.5M8 12.5v.01" />
+    <path v-else-if="name === 'dash'" d="M4 8h8" />
     <template v-else-if="name === 'target'">
       <circle cx="8" cy="8" r="4.5" />
       <circle cx="8" cy="8" r="1.75" fill="currentColor" stroke="none" />

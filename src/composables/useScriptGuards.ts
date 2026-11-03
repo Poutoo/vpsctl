@@ -5,6 +5,7 @@ import {
   type TelemetryStream,
 } from "../stores/telemetry";
 import { useConfirm } from "./useConfirm";
+import { useEditorActions } from "./useEditorActions";
 
 /** Ce que l'interruption d'un script implique, rappelé dans chaque GO / NO GO. */
 function interruption(): string[] {
@@ -29,6 +30,7 @@ function isRunningProcedure(tab: TelemetryStream): boolean {
 export function useScriptGuards() {
   const telemetry = useTelemetryStore();
   const { confirm } = useConfirm();
+  const editor = useEditorActions();
 
   /** Bouton Interrompre de la console d'un script ou d'une commande compose. */
   async function confirmStop(tab: TelemetryStream): Promise<boolean> {
@@ -75,10 +77,15 @@ export function useScriptGuards() {
     });
   }
 
-  /** Coupure de la liaison ou fermeture de l'application. */
+  /**
+   * Coupure de la liaison ou fermeture de l'application : d'abord le fichier
+   * modifié dans l'éditeur, puis les procédures en cours.
+   */
   async function confirmLeave(
     reason: "disconnect" | "close",
   ): Promise<boolean> {
+    const exit = reason === "close" ? "window" : "disconnect";
+    if (!(await editor.confirmExit(exit))) return false;
     const scripts = telemetry.runningScripts;
     const commands = telemetry.runningCompose;
     if (scripts.length === 0 && commands.length === 0) return true;

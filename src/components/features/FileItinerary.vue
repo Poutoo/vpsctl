@@ -7,7 +7,8 @@
  * Sans barre de défilement : quand le chemin est trop long, la racine et la
  * position restent affichées, avec autant d'étapes qui précèdent la position
  * que la place le permet ; les autres sont regroupées dans « [ … ] », qui
- * ouvre la liste des dossiers masqués. Les largeurs sont mesurées sur une
+ * ouvre la liste des dossiers masqués. Dans l'éditeur (`fileTag`), la
+ * position est le fichier, marqué ÉDITION ou REFUSÉ. Les largeurs sont mesurées sur une
  * rangée invisible (polices et tailles réelles) et la place disponible suivie
  * par un ResizeObserver.
  */
@@ -40,7 +41,14 @@ const props = defineProps<{
   busy?: boolean;
   /** LOS : contenu figé depuis cette heure. */
   frozenAt?: number | null;
+  /** Éditeur : le chemin est celui d'un fichier, marqué de cette mention. */
+  fileTag?: string;
+  /** Mention en rouge (fichier refusé). */
+  fileRefused?: boolean;
 }>();
+
+/** Mention de la position : « Position », ou celle du fichier ouvert. */
+const positionTag = computed(() => props.fileTag ?? "Position");
 
 const emit = defineEmits<{ navigate: [path: string] }>();
 
@@ -206,12 +214,15 @@ watch(stops, () => void nextTick(measure), { flush: "post" });
         <span
           v-if="index === shown.length - 1"
           class="node current"
+          :class="{ refused: fileRefused }"
           aria-current="location"
           :title="stop.path"
+          data-testid="itinerary-position"
         >
-          <StatusIcon class="marker" name="disc" />
+          <AppIcon v-if="fileTag" class="marker" name="file" />
+          <StatusIcon v-else class="marker" name="disc" />
           <span class="label">{{ stop.label }}</span>
-          <span class="caps tag">Position</span>
+          <span class="caps tag">{{ positionTag }}</span>
         </span>
         <button
           v-else
@@ -246,7 +257,7 @@ watch(stops, () => void nextTick(measure), { flush: "post" });
                 ? "Départ · Position"
                 : stop.root
                   ? "Départ"
-                  : "Position"
+                  : positionTag
             }}
           </span>
         </span>
@@ -386,6 +397,10 @@ button.node:disabled {
 .tag {
   flex-shrink: 0;
   color: var(--color-text-muted);
+}
+
+.current.refused .tag {
+  color: var(--color-danger-text);
 }
 
 .current .tag {

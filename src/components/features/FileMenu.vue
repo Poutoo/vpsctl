@@ -2,7 +2,7 @@
 /**
  * Menu d'une entrée de l'explorateur, identique en menu contextuel (clic
  * droit) et en menu déroulant (bouton « ⋯ », touche Menu) : Ouvrir
- * (dossiers), Télécharger (fichiers), Renommer, Copier le chemin, et
+ * (dossiers), Modifier et Télécharger (fichiers), Renommer, Copier le chemin, et
  * Supprimer isolé en bas, en rouge, qui ouvre toujours un GO / NO GO.
  *
  * À placer dans un `ContextMenuRoot` ou un `DropdownMenuRoot` (Reka UI),
@@ -24,7 +24,8 @@ import { computed } from "vue";
 import type { FileEntry } from "../../bindings/FileEntry";
 import { isDirLike, isFileLike } from "../../remoteFiles";
 
-export type FileAction = "open" | "download" | "rename" | "copyPath" | "delete";
+export type FileAction =
+  "open" | "edit" | "download" | "rename" | "copyPath" | "delete";
 
 const props = defineProps<{
   entry: FileEntry;
@@ -86,6 +87,7 @@ const items = computed(() => {
     list.push({ action: "open", label: "Ouvrir", shortcut: "↵" });
   }
   if (isFileLike(props.entry)) {
+    list.push({ action: "edit", label: "Modifier", shortcut: "↵" });
     list.push({ action: "download", label: "Télécharger", shortcut: "Ctrl D" });
   }
   list.push(

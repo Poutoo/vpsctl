@@ -69,6 +69,9 @@
   --color-on-danger: var(--paper);
 
   --color-warning: var(--amber);
+  /* vue Différence de l'éditeur : version du serveur (ambre), la vôtre (vert-de-gris) */
+  --color-diff-server: var(--amber-tint);
+  --color-diff-yours: var(--verdigris-tint);
 
   --color-scrim: rgba(11, 15, 20, 0.75);
   --shadow-overlay: 0 18px 40px rgba(0, 0, 0, 0.45);
@@ -136,6 +139,12 @@
   --orbit-height: 40px;
   /* arc de l'orbite de transfert, dans la file d'attente */
   --transfer-list-height: 200px;
+  --editor-gutter-width: 56px;
+  --editor-line-height: 20px;
+  --editor-tab-size: 4;
+  /* éditeur de fichiers : gouttière des numéros, interligne, largeur d'une tabulation */
+  --editor-text-width: 576px;
+  /* texte d'explication des écrans de refus de l'éditeur */
   /* file d'attente des transferts : au-delà, elle défile */
   --filter-width: 240px;
   --filter-width-compact: 200px;
