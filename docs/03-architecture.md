@@ -30,12 +30,17 @@ src-tauri/src/
 │   ├── host_key.rs   vérification de l'empreinte de la clé hôte
 │   └── link.rs       perte de la liaison : réglages du keepalive, cause, signal unique
 ├── sftp/
-│   ├── mod.rs        session partagée, reprise après erreur de transport, classement des erreurs
+│   ├── mod.rs        session partagée, reprise après erreur de transport, classement des erreurs, remplacement atomique
 │   ├── path.rs       fonctions pures : chemins, noms, droits, temporaires, résidus, accès SSH
 │   ├── fs.rs         trait RemoteFs et son implémentation SFTP
 │   ├── ops.rs        lister, créer, renommer, supprimer
 │   ├── walk.rs       parcours d'une arborescence sans suivre les liens : décompte et suppression
 │   └── transfer.rs   envoi et téléchargement par blocs, temporaires, annulation
+├── editor/
+│   ├── mod.rs        ouverture et enregistrement d'un fichier texte (RemoteFs), conflit, vérification après écriture
+│   ├── text.rs       fonctions pures : refus, BOM, fins de ligne, encodage, empreinte SHA-256
+│   ├── access.rs     fonctions pures : compte connecté (/etc/passwd), noms des propriétaires, lecture seule
+│   └── authorized_keys.rs  fonctions pures : lecture d'authorized_keys et vérifications avant enregistrement
 ├── stream.rs         flux de lignes : LogEvent, découpage, lots, boucle de lecture, arrêt
 ├── docker.rs
 ├── compose/
@@ -62,6 +67,7 @@ src-tauri/src/
 └── commands/
     ├── compose.rs
     ├── connection.rs
+    ├── editor.rs
     ├── files.rs
     ├── docker.rs
     ├── systemd.rs
@@ -85,6 +91,9 @@ src-tauri/src/
 - Les fonctions pures de `path.rs` (validation des chemins et des noms, jointure, chaîne de droits `drwxr-xr-x`, noms des temporaires, reconnaissance des résidus, chemins critiques pour l'accès SSH) sont couvertes par des tests unitaires.
 - Le parcours (`walk.rs`) lit toute l'arborescence avant de supprimer quoi que ce soit, n'entre jamais dans un lien symbolique (les attributs de `readdir` sont ceux de `lstat`), et limite les requêtes en parallèle à 16.
 - Les transferts (`transfer.rs`) copient par blocs entre un `AsyncRead` et un `AsyncWrite` (le `File` de russh-sftp envoie déjà plusieurs requêtes à la fois), avec un temporaire renommé à la fin. Chaque transfert est enregistré dans `state.rs` avec son signal d'annulation, comme un flux.
+- Remplacement atomique (`RemoteFs::replace`, utilisé par l'éditeur) : `posix-rename@openssh.com`, que russh-sftp n'expose pas sur `SftpSession`. Seule exception à la session unique : une session SFTP brute (`Connection::raw_sftp`) est ouverte sur un canal le temps de cette requête, puis abandonnée. Serveur sans l'extension : refus.
+
+**editor** : édition de fichiers texte, entièrement par SFTP (aucune commande shell). `open` et `save` sont génériques sur `RemoteFs` et testés sur `MemFs` (refus, lecture seule, CRLF et BOM conservés, droits, conflit, recréation, échecs du temporaire et du remplacement, serveur sans `posix-rename`). Les fonctions pures de `text.rs` (refus, fins de ligne, encodage, empreinte), `access.rs` (compte et droits) et `authorized_keys.rs` (lecture du fichier comme sshd, présence de la clé de la liaison, clés ajoutées et retirées) ont leurs tests unitaires. L'empreinte est une SHA-256 (crate `sha2`, déjà présente par russh) des octets bruts ; l'interface ne fait que renvoyer l'instantané de l'ouverture. Le compte connecté et la clé publique de la liaison sont gardés dans `Connection` à la connexion. Contrat, séquence d'enregistrement et limites : `docs/04-contrat-commandes.md`, « Édition de fichiers ».
 
 **docker** : exécute `docker ps -a --no-trunc` avec un gabarit qui produit un objet JSON par conteneur (ligne de `{{json .}}` et étiquettes compose lues par `.Label`, voir `docs/04-contrat-commandes.md`, « Docker compose ») et désérialise chaque ligne avec `serde`. Gère start, stop, restart, rm et le flux `docker logs -f`.
 

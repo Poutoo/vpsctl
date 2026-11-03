@@ -180,6 +180,74 @@ Toutes les opérations passent par la session SFTP partagée : aucune commande s
 - Les transferts en cours sont annulés à la déconnexion, au rechargement de l'interface et à la fermeture de l'application.
 - La file d'attente est gérée par l'interface (un seul transfert actif à la fois) ; les chemins locaux sont choisis côté Vue avec `tauri-plugin-dialog`.
 
+## Édition de fichiers
+
+```ts
+file_open(path: string): OpenedFile
+file_save(request: SaveRequest): SaveOutcome
+authorized_keys_check(path: string, before: string, after: string): AuthorizedKeysCheck
+```
+
+Tout passe par SFTP, comme l'explorateur : aucune commande shell. Les chemins suivent les règles de « Chemins et noms ».
+
+### Ouverture
+
+`file_open` lit l'élément avec `lstat` (un lien n'est jamais suivi), puis le fichier entier. Refus (`OpenedFile.kind = "refused"`), dans cet ordre ; le contenu d'un fichier refusé n'est jamais envoyé à l'interface :
+
+| `OpenRefusal.reason` | Cas | Téléchargement proposé |
+|---|---|---|
+| `symlink` | lien symbolique (cible lue par `readlink`, affichée) | non |
+| `notAFile` | dossier, socket, périphérique… | non |
+| `tooLarge` | plus de 1 Mio (1 048 576 octets), d'après `lstat` puis la lecture | oui |
+| `privateKey` | une ligne `-----BEGIN <MOTS EN MAJUSCULES> PRIVATE KEY-----` (espaces de bord et BOM ignorés), n'importe où dans le fichier et quel que soit son dossier | **non** : une clé privée ne doit pas transiter par l'application |
+| `binary` | octet nul parmi les 8 192 premiers ; sa position (`offset`) est donnée, le format n'est pas identifié | oui |
+| `invalidUtf8` | UTF-8 validé sur tout le fichier : position et ligne de la première séquence invalide | oui |
+
+Texte (`kind = "text"`) :
+
+- `text` : fins de ligne converties en LF (une zone de texte HTML le ferait de toute façon). `bom` : le fichier commence par `EF BB BF` (retiré du texte, remis à l'enregistrement). `lineEnding` : `lf` (aucun CR, fichier sans fin de ligne compris), `crlf` (uniquement des CRLF), `mixed` (CRLF et LF, ou un CR seul).
+- `snapshot` : SHA-256 des octets bruts (BOM et CR compris), taille, date de modification. L'interface le renvoie tel quel à l'enregistrement ; elle ne calcule jamais d'empreinte.
+- `readOnly` : raisons de la lecture seule, dans l'ordre d'affichage. Vide : le fichier est éditable.
+
+| `ReadOnlyReason` | Cas |
+|---|---|
+| `permissions` | le compte possède le fichier mais n'a pas le droit d'écriture |
+| `owner` | le fichier appartient à un autre compte (ou son propriétaire est inconnu) : le remplacer par renommage créerait un fichier au nom du compte connecté, et Atlas ne change jamais le propriétaire d'un fichier |
+| `directory` | le dossier n'est pas inscriptible : le temporaire ne pourrait pas y être créé |
+| `mixedLineEndings` | fins de ligne mélangées, impossibles à conserver fidèlement |
+
+- Compte connecté, sans shell : entrée de `/etc/passwd` (lu par SFTP) au nom d'utilisateur du profil, qui donne l'uid et le groupe principal ; à défaut (annuaire LDAP…), propriétaire du dossier personnel. Les noms affichés (`root:root`) viennent de `/etc/passwd` et `/etc/group`, sinon les identifiants numériques.
+- Dossier : son propriétaire n'est jugé que sur ses propres droits (règle POSIX). Pour un autre propriétaire, le dossier est inscriptible si les autres ont `wx`, ou si le groupe a `wx` : l'appartenance aux groupes secondaires est invisible sans shell, un dossier inscriptible par un groupe est donc laissé éditable. **Limite** : si le compte n'est pas dans ce groupe, l'enregistrement échoue à la création du temporaire (`PermissionDenied` sur le dossier), sans rien toucher.
+- `sshFile` (chemin résolu : dossier `realpath` suivi du nom) : `authorizedKeys` pour `~/.ssh/authorized_keys` (même fichier que `FileEntry.sshAccess`), `other` pour tout autre élément sous `~/.ssh/`.
+
+### Enregistrement
+
+`file_save` reçoit le texte (LF), l'instantané de l'ouverture (`expected`), `bom`, `lineEnding` et les droits de l'ouverture (`mode`, utilisés seulement pour recréer un fichier supprimé). Séquence :
+
+1. Encodage : LF → CRLF si `lineEnding = crlf`, BOM remis. Refusé (`InvalidInput`) : style `mixed`, texte avec un CR ou un caractère nul, plus de 1 Mio.
+2. `lstat` de la cible. Devenue un lien symbolique ou autre chose qu'un fichier : `InvalidInput`, rien n'est écrit.
+3. Relecture complète et SHA-256. Différente de `expected` (ou fichier supprimé alors qu'`expected` existe) : `SaveOutcome.outcome = "conflict"` avec la version du serveur (instantané, texte s'il est lisible, sinon la raison) ; **rien n'est écrit**. `expected = null` exige un fichier absent (recréation confirmée après une suppression sur le serveur).
+4. Propriétaire et droits relus : si le fichier appartient désormais à un autre compte ou n'est plus inscriptible (changements que l'empreinte ne voit pas), `InvalidInput`, rien n'est écrit.
+5. Temporaire `.<nom>.atlas-<8 hex>.part` dans le même dossier (nom des temporaires de transfert : un temporaire abandonné est signalé comme résidu dans l'explorateur), créé exclusivement, droits 0600 pendant l'écriture, écrit en entier, synchronisé sur disque (`fsync@openssh.com`, si le serveur le propose), fermé.
+6. Droits du fichier remplacé appliqués au temporaire (douze bits bas). Le propriétaire n'a pas à être recopié : les autres cas sont en lecture seule.
+7. Remplacement atomique par `posix-rename@openssh.com` (`rename(2)` : la cible désigne toujours l'ancien ou le nouveau contenu complet, jamais un fichier à moitié écrit ni absent). russh-sftp n'exposant pas cette extension sur la session partagée, une session SFTP brute est ouverte sur un canal le temps de la requête. **Serveur sans cette extension : l'enregistrement est refusé.**
+8. Relecture : `verified` vaut `true` si le fichier relu est exactement celui écrit (« identique au serveur »).
+
+En cas d'échec aux étapes 5 à 7, le temporaire est supprimé et la cible reste intacte. Liaison perdue pendant ce temps : le temporaire peut rester, signalé comme résidu.
+
+**Limite, inévitable sans verrou** : une écriture faite sur le serveur entre la relecture (3) et le remplacement (7) est perdue. Le remplacement crée aussi un nouveau fichier : un processus qui garde l'ancien ouvert continue d'écrire dans celui-ci, un lien physique vers l'ancien est rompu, les ACL et attributs étendus ne sont pas recopiés.
+
+Écraser après un conflit : l'interface renvoie le texte avec `expected` = l'instantané du serveur vu dans la fenêtre de conflit. Si le serveur a encore changé entre-temps, nouveau conflit.
+
+### authorized_keys
+
+`authorized_keys_check(path, before, after)` : `before` est le texte à l'ouverture, `after` celui à enregistrer ; refusé (`InvalidInput`) pour tout autre fichier que `~/.ssh/authorized_keys`. Appelé avant chaque enregistrement de ce fichier.
+
+- Clé de la liaison : clé publique de la clé privée du profil, gardée à la connexion (jamais la partie privée). Elle est cherchée par ses données (ni le commentaire ni les options ne comptent), seulement parmi les clés de connexion (pas une autorité `cert-authority`).
+- Lecture des lignes comme sshd (`auth2-pubkeyfile.c`) : lignes vides et `#` ignorées ; `type base64 [commentaire]`, sinon options (séparées par des virgules hors guillemets, valeurs entre guillemets avec `\"`) puis la clé. Clé validée par `ssh-key` (type annoncé conforme au contenu) ; certificats `*-cert-v01@openssh.com` reconnus. Une option inconnue, un type non pris en charge ou une clé illisible : ligne « non reconnue par Atlas » (jamais « ignorée par sshd »).
+- `added` / `removed` : lignes reconnues comparées par type et base64 (doublons comptés), désignées par leur commentaire ou la fin de leur base64.
+- `mode` : droits du fichier, conservés par l'enregistrement ; `tooOpen` si le groupe ou les autres peuvent écrire (sshd refuse alors le fichier, `StrictModes`).
+
 ## Docker
 
 ```ts
@@ -799,6 +867,91 @@ type Progress =
   | { type: "done" }
   | { type: "cancelled" }
   | { type: "error"; error: AppError }
+
+// Édition de fichiers
+type OpenedFile = ({ kind: "text" } & TextDocument) | ({ kind: "refused" } & RefusedFile)
+
+interface TextDocument {
+  file: FileFacts
+  text: string                   // fins de ligne LF
+  bom: boolean
+  lineEnding: "lf" | "crlf" | "mixed"
+  snapshot: Snapshot
+  readOnly: ReadOnlyReason[]     // vide : éditable
+  sshFile: "authorizedKeys" | "other" | null
+  openedAt: number
+}
+
+interface RefusedFile {
+  file: FileFacts
+  refusal: OpenRefusal
+  downloadable: boolean
+  sshFile: "authorizedKeys" | "other" | null
+}
+
+interface FileFacts {
+  path: string
+  name: string
+  size: number
+  modified: number | null        // millisecondes depuis l'epoch Unix
+  permissions: string            // "-rw-------"
+  mode: string | null            // "600"
+  owner: Ownership
+  dir: string
+  dirPermissions: string
+  dirOwner: Ownership
+  account: string                // compte de la liaison
+}
+
+interface Ownership { uid: number | null; gid: number | null; user: string | null; group: string | null }
+
+interface Snapshot { sha256: string; size: number; modified: number | null }
+
+type ReadOnlyReason = "permissions" | "owner" | "directory" | "mixedLineEndings"
+
+type OpenRefusal =
+  | { reason: "tooLarge"; size: number; limit: number }
+  | { reason: "binary"; offset: number }
+  | { reason: "invalidUtf8"; offset: number; line: number }
+  | { reason: "privateKey"; line: number; header: string }
+  | { reason: "symlink"; target: string | null }
+  | { reason: "notAFile" }
+
+interface SaveRequest {
+  path: string
+  text: string
+  expected: Snapshot | null      // null : le fichier doit être absent (recréation)
+  bom: boolean
+  lineEnding: "lf" | "crlf" | "mixed"
+  mode: number                   // droits de l'ouverture, pour une recréation
+}
+
+type SaveOutcome =
+  | { outcome: "saved"; snapshot: Snapshot; verified: boolean; savedAt: number }
+  | { outcome: "conflict"; server: ServerVersion }   // rien n'a été écrit
+
+interface ServerVersion {
+  snapshot: Snapshot | null      // null : supprimé sur le serveur
+  text: string | null
+  refusal: OpenRefusal | null
+}
+
+interface AuthorizedKeysCheck {
+  linkKey: LinkKey | null        // clé de la liaison en cours
+  before: KeyPresence | null     // à l'ouverture
+  after: KeyPresence | null      // dans la version à enregistrer
+  keys: number                   // lignes reconnues de la version à enregistrer
+  certificates: number
+  authorities: number
+  unrecognized: number[]         // numéros des lignes non reconnues par Atlas
+  added: string[]
+  removed: string[]
+  mode: string | null            // "600", conservé
+  tooOpen: boolean
+}
+
+interface LinkKey { algorithm: string; comment: string | null; tail: string }   // tail : « …V5gT0hPq »
+interface KeyPresence { line: number; options: string[] }
 ```
 
 `sshAccess` est vrai pour `~/.ssh`, pour ses parents jusqu'au dossier personnel exclu, et pour `~/.ssh/authorized_keys`. Le chemin comparé est celui du dossier listé résolu (`realpath`) suivi du nom : un dossier atteint par un lien symbolique est reconnu. L'interface affiche alors un avertissement dans le GO / NO GO et exige une case à cocher.

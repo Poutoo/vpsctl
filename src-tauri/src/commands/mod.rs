@@ -4,6 +4,7 @@
 pub mod compose;
 pub mod connection;
 pub mod docker;
+pub mod editor;
 pub mod files;
 pub mod logs;
 pub mod preferences;

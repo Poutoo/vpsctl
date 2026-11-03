@@ -323,6 +323,8 @@ mod tests {
             size: 12,
             mode: Some(mode),
             modified: Some(1_760_000_000),
+            uid: Some(1000),
+            gid: Some(1000),
         }
     }
 

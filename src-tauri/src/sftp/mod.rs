@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::{FileType, StatusCode};
+use russh_sftp::protocol::{FileType, Packet, Status, StatusCode};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -119,6 +119,54 @@ pub async fn read_link(connection: &Connection, path: &str) -> Result<Option<Str
     }
 }
 
+/// Échec signalé par le serveur (réponse de statut).
+fn classify(path: &str, status: &Status) -> Failure {
+    match status.status_code {
+        StatusCode::NoSuchFile => Failure::NotFound,
+        StatusCode::PermissionDenied => {
+            Failure::App(AppError::permission_denied(path, FileSide::Remote))
+        }
+        _ => Failure::App(AppError::io(format!("{path} : {}", status.error_message))),
+    }
+}
+
+const POSIX_RENAME: &str = "posix-rename@openssh.com";
+
+/// Chaîne SSH : longueur sur 4 octets puis octets.
+fn push_string(data: &mut Vec<u8>, value: &str) {
+    data.extend_from_slice(&u32::try_from(value.len()).unwrap_or(u32::MAX).to_be_bytes());
+    data.extend_from_slice(value.as_bytes());
+}
+
+/// Remplace atomiquement `to` par `from` (`rename(2)` côté serveur). russh-sftp
+/// n'expose pas cette extension sur la session partagée : une session brute
+/// est ouverte pour l'occasion puis refermée. Refusé si le serveur ne
+/// l'annonce pas : le renommage SFTP ordinaire refuse une destination
+/// existante, et le contourner laisserait un instant le fichier absent.
+pub async fn posix_rename(connection: &Connection, from: &str, to: &str) -> Result<(), AppError> {
+    let session = connection.raw_sftp().await?;
+    let transport = |e: SftpError| AppError::network(format!("session SFTP interrompue : {e}"));
+    let version = session.init().await.map_err(transport)?;
+    if version.extensions.get(POSIX_RENAME).map(String::as_str) != Some("1") {
+        return Err(AppError::io(
+            "le serveur SFTP ne propose pas le renommage atomique (posix-rename@openssh.com) : \n             enregistrement refusé, pour que le fichier ne soit jamais absent ni à moitié écrit",
+        ));
+    }
+    let mut data = Vec::new();
+    push_string(&mut data, from);
+    push_string(&mut data, to);
+    match session.extended(POSIX_RENAME, data).await {
+        Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => Ok(()),
+        Ok(Packet::Status(status)) | Err(SftpError::Status(status)) => {
+            Err(classify(to, &status).into_error(to))
+        }
+        Ok(_) => Err(AppError::io(format!(
+            "{to} : réponse inattendue du serveur"
+        ))),
+        Err(error) => Err(transport(error)),
+    }
+}
+
 /// Source de la session partagée. Abstraite pour tester la reprise sans réseau.
 trait SessionSource<S> {
     async fn session(&self) -> Result<Arc<S>, AppError>;
@@ -153,15 +201,7 @@ where
         let session = source.session().await.map_err(Failure::App)?;
         match operation(session.clone()).await {
             Ok(value) => return Ok(value),
-            Err(SftpError::Status(status)) => {
-                return Err(match status.status_code {
-                    StatusCode::NoSuchFile => Failure::NotFound,
-                    StatusCode::PermissionDenied => {
-                        Failure::App(AppError::permission_denied(path, FileSide::Remote))
-                    }
-                    _ => Failure::App(AppError::io(format!("{path} : {}", status.error_message))),
-                })
-            }
+            Err(SftpError::Status(status)) => return Err(classify(path, &status)),
             Err(error) => {
                 source.discard(&session).await;
                 if retried {

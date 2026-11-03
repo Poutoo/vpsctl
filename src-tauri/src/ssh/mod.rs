@@ -361,6 +361,11 @@ pub struct Connection {
     /// seulement après sa fermeture.
     sftp: tokio::sync::Mutex<Option<Arc<SftpSession>>>,
     loss: LossSignal,
+    /// Compte SSH de la liaison.
+    user: String,
+    /// Clé publique de la clé privée qui a ouvert la liaison (jamais la
+    /// partie privée) : vérifications de `authorized_keys`.
+    client_key: Option<russh::keys::PublicKey>,
 }
 
 impl Connection {
@@ -456,6 +461,40 @@ impl Connection {
             .map_err(|_| AppError::network("le serveur n'a pas répondu à la mesure de latence"))?
     }
 
+    pub fn user(&self) -> &str {
+        &self.user
+    }
+
+    pub fn client_key(&self) -> Option<&russh::keys::PublicKey> {
+        self.client_key.as_ref()
+    }
+
+    /// Canal ouvert sur le sous-système SFTP.
+    async fn sftp_channel(&self) -> Result<russh::ChannelStream<client::Msg>, AppError> {
+        let channel = self
+            .handle()?
+            .channel_open_session()
+            .await
+            .map_err(|e| AppError::network(format!("ouverture d'un canal impossible : {e}")))?;
+        channel
+            .request_subsystem(true, "sftp")
+            .await
+            .map_err(|e| AppError::network(format!("sous-système SFTP indisponible : {e}")))?;
+        Ok(channel.into_stream())
+    }
+
+    /// Session SFTP brute, hors de la session partagée : elle donne accès aux
+    /// extensions que `SftpSession` n'expose pas (`posix-rename@openssh.com`).
+    /// À refermer (abandonner) dès l'opération faite.
+    pub async fn raw_sftp(&self) -> Result<russh_sftp::client::RawSftpSession, AppError> {
+        let stream = tokio::time::timeout(EXEC_TIMEOUT, self.sftp_channel())
+            .await
+            .map_err(|_| AppError::network("la session SFTP n'a pas pu être ouverte à temps"))??;
+        let session = russh_sftp::client::RawSftpSession::new(stream);
+        session.set_timeout(SFTP_REQUEST_TIMEOUT_SECS);
+        Ok(session)
+    }
+
     /// Session SFTP de la liaison : la session existante, ou une nouvelle
     /// ouverte sur un canal dédié si aucune n'est ouverte.
     pub async fn sftp(&self) -> Result<Arc<SftpSession>, AppError> {
@@ -463,18 +502,13 @@ impl Connection {
         if let Some(session) = slot.as_ref() {
             return Ok(session.clone());
         }
-        let open =
-            async {
-                let channel = self.handle()?.channel_open_session().await.map_err(|e| {
-                    AppError::network(format!("ouverture d'un canal impossible : {e}"))
-                })?;
-                channel.request_subsystem(true, "sftp").await.map_err(|e| {
-                    AppError::network(format!("sous-système SFTP indisponible : {e}"))
-                })?;
-                SftpSession::new(channel.into_stream()).await.map_err(|e| {
+        let open = async {
+            SftpSession::new(self.sftp_channel().await?)
+                .await
+                .map_err(|e| {
                     AppError::network(format!("ouverture de la session SFTP impossible : {e}"))
                 })
-            };
+        };
         let session = Arc::new(
             tokio::time::timeout(EXEC_TIMEOUT, open)
                 .await
@@ -827,6 +861,8 @@ pub async fn connect(params: ConnectParams, on_step: StepSink) -> Result<Connect
         handle: Some(handle),
         sftp: tokio::sync::Mutex::new(None),
         loss: loss_signal,
+        user: params.user.clone(),
+        client_key: None,
     };
 
     // 4. Authentification par clé
@@ -854,6 +890,7 @@ pub async fn connect(params: ConnectParams, on_step: StepSink) -> Result<Connect
         }
     };
 
+    connection.client_key = Some(key.public_key().clone());
     let auth = async {
         let handle = connection.handle.as_mut().ok_or(AppError::NotConnected)?;
         let hash_alg = if key.algorithm().is_rsa() {

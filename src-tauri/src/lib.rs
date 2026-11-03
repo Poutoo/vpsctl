@@ -5,6 +5,7 @@ pub mod commands;
 pub mod compose;
 pub mod config;
 pub mod docker;
+pub mod editor;
 pub mod error;
 pub mod preferences;
 pub mod presence;
@@ -118,6 +119,9 @@ pub fn run() {
             commands::files::upload,
             commands::files::download,
             commands::files::transfer_cancel,
+            commands::editor::file_open,
+            commands::editor::file_save,
+            commands::editor::authorized_keys_check,
             commands::preferences::preferences_get,
             commands::preferences::preferences_set_dimming,
             commands::preferences::preferences_set_original_colors,

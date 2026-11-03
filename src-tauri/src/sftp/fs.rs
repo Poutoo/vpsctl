@@ -33,6 +33,9 @@ pub struct Meta {
     pub mode: Option<u32>,
     /// Secondes depuis l'epoch Unix.
     pub modified: Option<u64>,
+    /// Propriétaire et groupe (identifiants numériques).
+    pub uid: Option<u32>,
+    pub gid: Option<u32>,
 }
 
 impl From<&FileAttributes> for Meta {
@@ -42,6 +45,8 @@ impl From<&FileAttributes> for Meta {
             size: attributes.size.unwrap_or(0),
             mode: attributes.permissions,
             modified: attributes.mtime.map(u64::from),
+            uid: attributes.uid,
+            gid: attributes.gid,
         }
     }
 }
@@ -85,6 +90,15 @@ pub trait RemoteFs: Send + Sync + 'static {
 
     /// Renomme ; échoue si la destination existe.
     fn rename(&self, from: &str, to: &str) -> impl Future<Output = Result<(), AppError>> + Send;
+
+    /// Remplace atomiquement `to` par `from` (`posix-rename@openssh.com`) :
+    /// `to` désigne toujours l'ancien ou le nouveau contenu complet. Refusé
+    /// si le serveur ne propose pas cette extension.
+    fn replace(&self, from: &str, to: &str) -> impl Future<Output = Result<(), AppError>> + Send;
+
+    /// Force l'écriture sur disque d'un fichier ouvert (`fsync@openssh.com`),
+    /// sans effet si le serveur ne le propose pas.
+    fn sync(&self, writer: &mut Self::Writer) -> impl Future<Output = Result<(), AppError>> + Send;
 
     /// Applique les droits (12 bits bas de `mode`).
     fn set_mode(&self, path: &str, mode: u32) -> impl Future<Output = Result<(), AppError>> + Send;
@@ -302,6 +316,17 @@ impl RemoteFs for SftpFs {
             .await?;
         Ok(info.map(|i| i.blocks_avail.saturating_mul(i.fragment_size)))
     }
+
+    async fn replace(&self, from: &str, to: &str) -> Result<(), AppError> {
+        super::posix_rename(&self.connection, from, to).await
+    }
+
+    async fn sync(&self, writer: &mut File) -> Result<(), AppError> {
+        writer
+            .sync_all()
+            .await
+            .map_err(|e| AppError::io(format!("écriture sur le disque du serveur : {e}")))
+    }
 }
 
 /// Système de fichiers simulé en mémoire, pour les tests du parcours, des
@@ -354,11 +379,21 @@ pub mod mem {
         pub space: Option<u64>,
         /// Liaison perdue : toute opération échoue en `Network`.
         pub offline: bool,
+        /// Le serveur ne propose pas `posix-rename@openssh.com`.
+        pub no_posix_rename: bool,
+        /// Remplacement atomique en échec.
+        pub replace_fails: bool,
+        /// Création de fichier refusée (`PermissionDenied`) dans ces dossiers.
+        pub read_only_dirs: HashSet<String>,
     }
+
+    /// Propriétaire par défaut des éléments simulés.
+    pub const OWNER: (u32, u32) = (1000, 1000);
 
     pub struct MemFs {
         pub home: String,
         nodes: Mutex<BTreeMap<String, Node>>,
+        owners: Mutex<std::collections::HashMap<String, (u32, u32)>>,
         pub faults: Mutex<Faults>,
     }
 
@@ -374,6 +409,7 @@ pub mod mem {
                     "/".to_owned(),
                     Node::Dir { mode: 0o755 },
                 )])),
+                owners: Mutex::new(std::collections::HashMap::new()),
                 faults: Mutex::new(Faults::default()),
             };
             fs.mkdir_all(home);
@@ -429,6 +465,41 @@ pub mod mem {
             }
         }
 
+        pub fn set_dir_mode(&self, dir: &str, mode: u32) {
+            if let Some(Node::Dir { mode: m }) = self.nodes().get_mut(dir) {
+                *m = mode;
+            }
+        }
+
+        /// Propriétaire d'un élément (`OWNER` par défaut).
+        pub fn set_owner(&self, path: &str, uid: u32, gid: u32) {
+            self.owners
+                .lock()
+                .unwrap()
+                .insert(path.to_owned(), (uid, gid));
+        }
+
+        /// Remplace le contenu d'un fichier, comme une écriture faite sur le
+        /// serveur.
+        pub fn write_file(&self, file: &str, content: &[u8]) {
+            if let Some(Node::File { data, .. }) = self.nodes().get(file) {
+                *data.lock().unwrap() = content.to_vec();
+            }
+        }
+
+        fn owned(&self, path: &str, mut meta: Meta) -> Meta {
+            let (uid, gid) = self
+                .owners
+                .lock()
+                .unwrap()
+                .get(path)
+                .copied()
+                .unwrap_or(OWNER);
+            meta.uid = Some(uid);
+            meta.gid = Some(gid);
+            meta
+        }
+
         pub fn exists(&self, path: &str) -> bool {
             self.nodes().contains_key(path)
         }
@@ -466,6 +537,8 @@ pub mod mem {
                 size,
                 mode: Some(mode),
                 modified: Some(1_760_000_000),
+                uid: Some(OWNER.0),
+                gid: Some(OWNER.1),
             }
         }
 
@@ -577,7 +650,8 @@ pub mod mem {
 
         async fn lstat(&self, path: &str) -> Result<Option<Meta>, AppError> {
             self.check_online()?;
-            Ok(self.nodes().get(path).map(Self::meta))
+            let meta = self.nodes().get(path).map(Self::meta);
+            Ok(meta.map(|m| self.owned(path, m)))
         }
 
         async fn stat(&self, path: &str) -> Result<Option<Meta>, AppError> {
@@ -585,7 +659,8 @@ pub mod mem {
             let Some(resolved) = self.resolve(path) else {
                 return Ok(None);
             };
-            Ok(self.nodes().get(&resolved).map(Self::meta))
+            let meta = self.nodes().get(&resolved).map(Self::meta);
+            Ok(meta.map(|m| self.owned(&resolved, m)))
         }
 
         async fn read_dir(&self, dir: &str) -> Result<Vec<(String, Meta)>, AppError> {
@@ -605,7 +680,7 @@ pub mod mem {
                 .into_iter()
                 .map(|child| {
                     let name = path::split(&child).unwrap().1.to_owned();
-                    let meta = Self::meta(&nodes[&child]);
+                    let meta = self.owned(&child, Self::meta(&nodes[&child]));
                     (name, meta)
                 })
                 .collect())
@@ -643,6 +718,10 @@ pub mod mem {
         async fn create_new(&self, file: &str) -> Result<MemWriter, AppError> {
             self.check_online()?;
             self.parent_is_dir(file)?;
+            let parent = path::split(file).map(|(p, _)| p).unwrap_or("/");
+            if self.faults.lock().unwrap().read_only_dirs.contains(parent) {
+                return Err(AppError::permission_denied(file, FileSide::Remote));
+            }
             let mut nodes = self.nodes();
             if nodes.contains_key(file) {
                 return Err(failure());
@@ -762,6 +841,40 @@ pub mod mem {
         async fn available_space(&self, _: &str) -> Result<Option<u64>, AppError> {
             self.check_online()?;
             Ok(self.faults.lock().unwrap().space)
+        }
+
+        async fn replace(&self, from: &str, to: &str) -> Result<(), AppError> {
+            self.check_online()?;
+            {
+                let faults = self.faults.lock().unwrap();
+                if faults.no_posix_rename {
+                    return Err(AppError::io("posix-rename@openssh.com non proposé"));
+                }
+                if faults.replace_fails {
+                    return Err(failure());
+                }
+            }
+            self.parent_is_dir(to)?;
+            let mut nodes = self.nodes();
+            let node = nodes
+                .remove(from)
+                .ok_or_else(|| AppError::not_found(from, FileSide::Remote))?;
+            if matches!(nodes.get(to), Some(Node::Dir { .. })) {
+                nodes.insert(from.to_owned(), node);
+                return Err(failure());
+            }
+            nodes.insert(to.to_owned(), node);
+            drop(nodes);
+            let mut owners = self.owners.lock().unwrap();
+            match owners.remove(from) {
+                Some(owner) => owners.insert(to.to_owned(), owner),
+                None => owners.remove(to),
+            };
+            Ok(())
+        }
+
+        async fn sync(&self, _: &mut MemWriter) -> Result<(), AppError> {
+            self.check_online()
         }
     }
 }
