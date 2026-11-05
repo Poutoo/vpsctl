@@ -22,7 +22,9 @@ export type AppIconName =
   | "copy"
   | "trash"
   | "arrow-down"
+  | "arrow-up"
   | "arrow-right"
+  | "clock"
   | "success"
   | "failure"
   | "folder"
@@ -141,6 +143,14 @@ defineProps<{
     <g v-else-if="name === 'arrow-down'">
       <path d="M8 3v10" />
       <path d="M4 9l4 4 4-4" />
+    </g>
+    <g v-else-if="name === 'arrow-up'">
+      <path d="M8 13V3" />
+      <path d="M4 7l4-4 4 4" />
+    </g>
+    <g v-else-if="name === 'clock'">
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 5v3l2 1.5" />
     </g>
     <g v-else-if="name === 'arrow-right'">
       <path d="M3 8h10" />

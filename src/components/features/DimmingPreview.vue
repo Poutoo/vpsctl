@@ -4,8 +4,10 @@
  * l'interface posée sur l'image de fond, avec l'assombrissement et les
  * couleurs choisis (mêmes variables que le fond réel). Purement décoratif.
  */
-const SECTIONS = ["Tableau de bord", "Fichiers", "Scripts", "Réglages"];
-const NUMERALS = ["I", "II", "III", "IV"];
+import { SECTIONS as APP_SECTIONS } from "../../navigation";
+
+const SECTIONS = APP_SECTIONS.map((section) => section.label);
+const NUMERALS = APP_SECTIONS.map((section) => section.numeral);
 const FILES = [
   { name: "docker-compose.yml", size: "1,2 Ko" },
   { name: "Caddyfile", size: "418 o", selected: true },

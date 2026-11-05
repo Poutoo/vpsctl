@@ -1,5 +1,6 @@
 <script setup lang="ts">
 /** Onglet Préférences des Réglages (planche VI). */
+import { SECTIONS } from "../../navigation";
 import { useConnectionStore } from "../../stores/connection";
 import PageHeader from "../layout/PageHeader.vue";
 import AppButton from "../ui/AppButton.vue";
@@ -8,11 +9,12 @@ import DiscordSettings from "./DiscordSettings.vue";
 import SettingsTabs from "./SettingsTabs.vue";
 
 const connection = useConnectionStore();
+const kicker = `${SECTIONS.find((s) => s.route === "settings")?.numeral} · Préférences`;
 </script>
 
 <template>
   <div class="preferences">
-    <PageHeader kicker="IV · Préférences" title="Réglages">
+    <PageHeader :kicker="kicker" title="Réglages">
       <AppButton v-if="!connection.hasSession" :to="{ name: 'connect' }">
         Retour à la connexion
       </AppButton>

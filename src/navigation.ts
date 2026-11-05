@@ -4,7 +4,7 @@
  * Source unique pour la navigation et les en-têtes de page.
  */
 export interface AppSection {
-  route: "dashboard" | "files" | "scripts" | "settings";
+  route: "dashboard" | "files" | "scripts" | "resources" | "settings";
   numeral: string;
   label: string;
   kicker: string;
@@ -20,8 +20,14 @@ export const SECTIONS: readonly AppSection[] = [
   { route: "files", numeral: "II", label: "Fichiers", kicker: "Itinéraire" },
   { route: "scripts", numeral: "III", label: "Scripts", kicker: "Procédures" },
   {
-    route: "settings",
+    route: "resources",
     numeral: "IV",
+    label: "Ressources",
+    kicker: "Ressources",
+  },
+  {
+    route: "settings",
+    numeral: "V",
     label: "Réglages",
     kicker: "Profils de liaison",
   },

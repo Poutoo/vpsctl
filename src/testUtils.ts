@@ -1,4 +1,6 @@
 import type { LinkLost } from "./bindings/LinkLost";
+import type { ResourceUpdate } from "./bindings/ResourceUpdate";
+import { DEFAULT_THRESHOLDS } from "./resourceRules";
 import { useNotify } from "./composables/useNotify";
 import { useConnectionStore } from "./stores/connection";
 
@@ -60,4 +62,84 @@ function expand(value: unknown): unknown {
 
 export function sharedCases(file: { cases: SharedCase[] }): SharedCase[] {
   return file.cases.map((c) => ({ ...c, input: expand(c.input) }));
+}
+
+const GO = 1024 ** 3;
+
+/** Relevé de ressources d'exemple (planche VII, maquette 02). */
+export function sampleUpdate(
+  overrides: Partial<ResourceUpdate> = {},
+): ResourceUpdate {
+  return {
+    profileId: "p1",
+    at: 1_000,
+    foreground: true,
+    cores: 4,
+    cpu: { status: "ok", value: 23 },
+    memory: {
+      status: "ok",
+      value: {
+        total: 7.8 * GO,
+        used: 6.9 * GO,
+        percent: 88,
+        swap: { total: 2 * GO, used: 1.2 * GO },
+      },
+    },
+    load: {
+      status: "ok",
+      value: { raw: [3.1, 2.7, 2.2], perCore: [0.775, 0.675, 0.55] },
+    },
+    network: {
+      status: "ok",
+      value: { interfaces: ["eth0"], received: 1.8e6, sent: 0.6e6 },
+    },
+    disks: {
+      status: "ok",
+      value: [
+        {
+          mountPoint: "/",
+          device: "/dev/sda1",
+          fsType: "ext4",
+          space: {
+            status: "ok",
+            value: { total: 50 * GO, free: 30 * GO, percent: 41 },
+          },
+        },
+        {
+          mountPoint: "/var/lib/docker",
+          device: "/dev/sdb1",
+          fsType: "ext4",
+          space: {
+            status: "ok",
+            value: { total: 100 * GO, free: 8 * GO, percent: 92 },
+          },
+        },
+      ],
+    },
+    containers: {
+      status: "ok",
+      value: [
+        {
+          id: "a".repeat(64),
+          name: "postgres-main",
+          cpuPercent: 22,
+          memoryUsed: 2.4 * GO,
+          memoryLimit: 3 * GO,
+        },
+      ],
+    },
+    dockerMount: "/var/lib/docker",
+    dockerUsage: null,
+    automaticDockerUsage: true,
+    levels: {
+      disks: [
+        { mountPoint: "/", level: "nominal" },
+        { mountPoint: "/var/lib/docker", level: "critical" },
+      ],
+      memory: "attention",
+      load: "nominal",
+    },
+    thresholds: DEFAULT_THRESHOLDS,
+    ...overrides,
+  };
 }

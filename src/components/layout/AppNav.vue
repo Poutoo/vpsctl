@@ -15,6 +15,7 @@ import { useConnectionStore } from "../../stores/connection";
 import { useFilesStore } from "../../stores/files";
 import { useScriptGuards } from "../../composables/useScriptGuards";
 import { useProfilesStore } from "../../stores/profiles";
+import { useResourcesStore } from "../../stores/resources";
 import { streamOrigin, useTelemetryStore } from "../../stores/telemetry";
 import AppButton from "../ui/AppButton.vue";
 import AppIcon from "../ui/AppIcon.vue";
@@ -27,6 +28,10 @@ const connection = useConnectionStore();
 const profiles = useProfilesStore();
 const files = useFilesStore();
 const telemetry = useTelemetryStore();
+const resources = useResourcesStore();
+// Relevés reçus pendant toute la session : le repère d'alerte des
+// Ressources est visible depuis tous les écrans.
+void resources.ensureListening();
 const { confirmLeave } = useScriptGuards();
 const narrow = useMediaQuery(NARROW_QUERY);
 
@@ -48,6 +53,14 @@ const active = computed(() => {
   }
   return route.meta.section ?? sectionOf(route.name)?.route ?? null;
 });
+
+/** Repère d'alerte des Ressources (disque, mémoire ; charge à l'écran). */
+const resourceLevel = computed(() => resources.level);
+const resourceLabel = computed(() =>
+  resourceLevel.value === "critical"
+    ? "seuil critique franchi"
+    : "seuil d'attention franchi",
+);
 
 const connectedAt = computed(() => connection.info?.connectedAt ?? null);
 const linkedFor = useElapsed(connectedAt, {
@@ -104,6 +117,20 @@ async function disconnect() {
                 composeCount
               }}</span>
               <span class="visually-hidden">, {{ composeLabel }}</span>
+            </span>
+            <span
+              v-if="
+                section.route === 'resources' && resourceLevel !== 'nominal'
+              "
+              class="resource-badge"
+              :class="resourceLevel"
+              :data-testid="`nav-resources-${resourceLevel}`"
+              :title="resourceLabel"
+            >
+              <StatusIcon
+                :name="resourceLevel === 'critical' ? 'alert' : 'triangle'"
+              />
+              <span class="visually-hidden">, {{ resourceLabel }}</span>
             </span>
           </RouterLink>
         </AppTooltip>
@@ -229,6 +256,22 @@ async function disconnect() {
 }
 
 .narrow .compose-badge {
+  margin-left: 0;
+}
+
+/* Seuil franchi sur une ressource : triangle (attention), cercle (critique). */
+.resource-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  color: var(--color-warning);
+}
+
+.resource-badge.critical {
+  color: var(--color-danger-text);
+}
+
+.narrow .resource-badge {
   margin-left: 0;
 }
 

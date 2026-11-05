@@ -3,6 +3,7 @@ import profileFields from "../tests/shared/profile-fields.json";
 import remoteJoin from "../tests/shared/remote-join.json";
 import remoteName from "../tests/shared/remote-name.json";
 import remoteParent from "../tests/shared/remote-parent.json";
+import resourceThresholds from "../tests/shared/resource-thresholds.json";
 import scriptFields from "../tests/shared/script-fields.json";
 import serviceDescription from "../tests/shared/service-description.json";
 import serviceEnv from "../tests/shared/service-env.json";
@@ -15,6 +16,8 @@ import {
   nameProblem as remoteNameProblem,
   parentPath,
 } from "./remoteFiles";
+import type { Thresholds } from "./bindings/Thresholds";
+import { thresholdProblems } from "./resourceRules";
 import { scriptProblems } from "./scriptRules";
 import {
   descriptionProblem,
@@ -99,6 +102,14 @@ describe("cas partagés : scripts et profils", () => {
   describe("profil", () => {
     verdicts<ProfileFields>(profileFields, (p) =>
       noProblem(profileProblems(p)),
+    );
+  });
+});
+
+describe("cas partagés : ressources du serveur", () => {
+  describe("seuils d'alerte", () => {
+    verdicts<Thresholds>(resourceThresholds, (t) =>
+      noProblem(thresholdProblems(t)),
     );
   });
 });

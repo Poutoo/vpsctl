@@ -12,6 +12,13 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 
 ## [Non publié]
 
+### Ajouté
+
+- Écran IV « Ressources » (les Réglages passent en V) : CPU, mémoire et swap, charge moyenne par cœur et réseau, avec leurs courbes des 30 dernières minutes ; espace disque par point de montage ; conteneurs triés par mémoire, avec leur CPU et leur limite. Rien n'est installé ni stocké sur le serveur. Une mesure impossible est marquée « Indisponible », avec sa raison, sans arrêter les autres.
+- Relevés toutes les 5 s quand l'écran Ressources est affiché ; ailleurs, mémoire et disque sont relevés chaque minute. L'historique reste en mémoire pendant la session et disparaît à la déconnexion. Pendant une perte de liaison, les valeurs sont figées avec l'heure du dernier relevé et les courbes marquent la période « sans relevé ».
+- Seuils d'alerte propres à chaque profil (par défaut : disque 80 et 90 %, mémoire 85 et 95 %, charge 1,0 et 2,0 par cœur), modifiables en direct, avec « Valeurs par défaut ». Une alerte ne retombe que 3 points sous son seuil (0,1 par cœur pour la charge) : elle ne clignote pas autour du seuil. Bandeaux d'alerte dans l'écran et repère sur l'entrée Ressources, visible depuis tous les écrans.
+- Disque presque plein sur le point de montage de Docker : répartition de l'espace Docker (images, conteneurs, volumes, cache de build) et analyse des volumes à la demande, que l'on peut annuler. L'alerte mémoire nomme le conteneur qui consomme le plus, et « Voir » fait défiler jusqu'à sa ligne.
+
 ## [1.3.0] - 2026-11-03
 
 Projets docker compose (jalon 11) et édition de fichiers texte (jalon 12).

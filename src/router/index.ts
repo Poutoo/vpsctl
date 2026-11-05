@@ -49,6 +49,12 @@ export const router = createRouter({
       meta: { requiresConnection: true },
     },
     {
+      path: "/resources",
+      name: "resources",
+      component: () => import("../views/ResourcesView.vue"),
+      meta: { requiresConnection: true },
+    },
+    {
       path: "/telemetry/:tab?",
       name: "telemetry",
       component: () => import("../views/TelemetryView.vue"),

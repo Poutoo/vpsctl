@@ -7,6 +7,9 @@
  * arrêté, `triangle` en échec, `half` en transition (statique) ; `target`
  * projet compose partiel (une partie de ses conteneurs arrêtés) ; `bang`
  * élément supprimé par une action (GO / NO GO) ; `dash` constat neutre.
+ * Ressources (planche VII) : `alert` seuil critique (cercle et point
+ * d'exclamation), `reading` lecture en cours (cercle pointillé),
+ * `unavailable` mesure indisponible (cercle barré).
  */
 defineProps<{
   name:
@@ -18,7 +21,10 @@ defineProps<{
     | "half"
     | "target"
     | "bang"
-    | "dash";
+    | "dash"
+    | "alert"
+    | "reading"
+    | "unavailable";
 }>();
 </script>
 
@@ -54,6 +60,22 @@ defineProps<{
     </template>
     <path v-else-if="name === 'bang'" d="M8 3v6.5M8 12.5v.01" />
     <path v-else-if="name === 'dash'" d="M4 8h8" />
+    <template v-else-if="name === 'alert'">
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 5v3.5M8 11v.01" />
+    </template>
+    <circle
+      v-else-if="name === 'reading'"
+      cx="8"
+      cy="8"
+      r="5"
+      stroke-width="1.5"
+      stroke-dasharray="2 2"
+    />
+    <template v-else-if="name === 'unavailable'">
+      <circle cx="8" cy="8" r="5.5" stroke-width="1.5" />
+      <path d="M5.5 8h5" />
+    </template>
     <template v-else-if="name === 'target'">
       <circle cx="8" cy="8" r="4.5" />
       <circle cx="8" cy="8" r="1.75" fill="currentColor" stroke="none" />
