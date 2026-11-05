@@ -58,9 +58,18 @@ Maquettes : `docs/design/planche VI/`.
 - [y] Jalon 11 : gestion `docker compose` (up/down sur un dossier de projet)
 - [ ] Jalon 12 : édition de fichiers texte
 
+## v1.4 « Ressources »
+
+Maquettes : `docs/design/planche VII/`.
+
+- [ ] Jalon 13 : ressources du serveur
+  - [ ] Écran IV « Ressources » (Réglages passe en V) : CPU, mémoire et swap, charge par cœur, réseau, espace disque par point de montage, conteneurs (CPU, mémoire et limite). Lecture de `/proc` et `statvfs` par SFTP, rien d'installé ni de stocké sur le serveur
+  - [ ] Relevés : toutes les 5 s écran affiché, disque et mémoire chaque minute hors de l'écran ; historique de 30 minutes en mémoire, courbes en SVG
+  - [ ] Seuils d'alerte propres à chaque profil, avec hystérésis ; alertes dans l'application et repère sur l'entrée de navigation
+  - [ ] Cause probable d'un disque plein (point de montage de Docker) : répartition par catégorie, analyse des volumes à la demande
+
 ## v2
 
-- [ ] Monitoring
 - [ ] Glisser/Déposer de dossiers entier dans le gestionnaire
 - [ ] Gestion des droits pour MCP Claude (écriture, périmètre d'accès...)
 

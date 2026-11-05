@@ -51,7 +51,7 @@ Il s'agit de services utilisateur (`systemctl --user`), pas de services système
 - Création de conteneurs Docker : remplacée en v1.3 par une gestion `docker compose` (up/down sur un dossier de projet, jalon 11)
 - Édition de fichiers texte dans l'appli : v1.3 (jalon 12)
 - Terminal intégré
-- Monitoring CPU, RAM, disque
+- Monitoring CPU, RAM, disque : v1.4 (jalon 13, ressources du serveur)
 - Connexions simultanées à plusieurs VPS
 - Oublier l'empreinte ou la passphrase depuis les réglages (le remplacement d'empreinte passe par l'alerte de sécurité ; une passphrase erronée est simplement redemandée puis remplacée dans le trousseau)
 - Modification des droits des fichiers
