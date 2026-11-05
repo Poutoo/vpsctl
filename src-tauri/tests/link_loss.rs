@@ -259,6 +259,7 @@ impl Bench {
             Arc::new(move |event| {
                 let _ = events.send(event);
             }),
+            Arc::new(|_| {}),
         )
         .with_link_timing(timing);
         let profile = state

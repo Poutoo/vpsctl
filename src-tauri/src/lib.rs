@@ -9,6 +9,7 @@ pub mod editor;
 pub mod error;
 pub mod preferences;
 pub mod presence;
+pub mod resources;
 pub mod run_state;
 pub mod scripts;
 pub mod secrets;
@@ -38,7 +39,16 @@ pub fn run() {
             let on_link_lost: state::LinkLostSink = Arc::new(move |event| {
                 let _ = handle.emit(state::LINK_LOST_EVENT, event);
             });
-            let state = state::AppState::new(&config_dir, &app.config().identifier, on_link_lost);
+            let handle = app.handle().clone();
+            let on_resources: resources::UpdateSink = Arc::new(move |update| {
+                let _ = handle.emit(resources::UPDATE_EVENT, update);
+            });
+            let state = state::AppState::new(
+                &config_dir,
+                &app.config().identifier,
+                on_link_lost,
+                on_resources,
+            );
             let preferences = preferences::PreferenceStore::load(&config_dir);
 
             // Présence Discord : uniquement dans l'application installée
@@ -135,6 +145,13 @@ pub fn run() {
             commands::presence::presence_status,
             commands::presence::presence_set_enabled,
             commands::presence::presence_retry,
+            commands::resources::resources_watch,
+            commands::resources::resources_state,
+            commands::resources::resource_thresholds_get,
+            commands::resources::resource_thresholds_save,
+            commands::resources::resource_thresholds_reset,
+            commands::resources::docker_analyze,
+            commands::resources::docker_analyze_stop,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

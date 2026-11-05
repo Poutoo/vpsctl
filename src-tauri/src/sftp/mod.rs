@@ -119,6 +119,28 @@ pub async fn read_link(connection: &Connection, path: &str) -> Result<Option<Str
     }
 }
 
+/// Occupation du système de fichiers qui contient `path`
+/// (`statvfs@openssh.com`). Serveur sans l'extension : `Io`.
+pub async fn fs_stats(
+    connection: &Connection,
+    path: &str,
+) -> Result<crate::resources::proc::FsStats, AppError> {
+    let result = run(connection, path, |session| {
+        let path = path.to_owned();
+        async move { session.fs_info(path).await }
+    })
+    .await
+    .map_err(|failure| failure.into_error(path))?;
+    let info =
+        result.ok_or_else(|| AppError::io("le serveur SFTP ne propose pas statvfs@openssh.com"))?;
+    Ok(crate::resources::proc::FsStats {
+        blocks: info.blocks,
+        blocks_free: info.blocks_free,
+        blocks_avail: info.blocks_avail,
+        fragment_size: info.fragment_size,
+    })
+}
+
 /// Échec signalé par le serveur (réponse de statut).
 fn classify(path: &str, status: &Status) -> Failure {
     match status.status_code {

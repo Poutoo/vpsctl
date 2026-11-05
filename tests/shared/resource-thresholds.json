@@ -1,0 +1,124 @@
+{
+  "rule": "Seuils d'alerte d'un profil : disque et mémoire en nombres entiers de 1 à 100, charge par cœur de 0,1 à 64 au dixième, attention strictement inférieure à critique.",
+  "rust": "resources::settings::validate",
+  "ts": "resourceRules.thresholdProblems",
+  "cases": [
+    {
+      "input": {
+        "disk": { "attention": 80, "critical": 90 },
+        "memory": { "attention": 85, "critical": 95 },
+        "load": { "attention": 1, "critical": 2 }
+      },
+      "valid": true,
+      "why": "valeurs par défaut"
+    },
+    {
+      "input": {
+        "disk": { "attention": 1, "critical": 100 },
+        "memory": { "attention": 99, "critical": 100 },
+        "load": { "attention": 0.1, "critical": 64 }
+      },
+      "valid": true,
+      "why": "bornes incluses"
+    },
+    {
+      "input": {
+        "disk": { "attention": 80, "critical": 90 },
+        "memory": { "attention": 85, "critical": 95 },
+        "load": { "attention": 0.7, "critical": 1.3 }
+      },
+      "valid": true,
+      "why": "charge au dixième (0,7 et 1,3 ne tombent pas juste en binaire)"
+    },
+    {
+      "input": {
+        "disk": { "attention": 90, "critical": 90 },
+        "memory": { "attention": 85, "critical": 95 },
+        "load": { "attention": 1, "critical": 2 }
+      },
+      "valid": false,
+      "why": "attention égale à critique"
+    },
+    {
+      "input": {
+        "disk": { "attention": 80, "critical": 90 },
+        "memory": { "attention": 96, "critical": 95 },
+        "load": { "attention": 1, "critical": 2 }
+      },
+      "valid": false,
+      "why": "attention au-dessus de critique"
+    },
+    {
+      "input": {
+        "disk": { "attention": 0, "critical": 90 },
+        "memory": { "attention": 85, "critical": 95 },
+        "load": { "attention": 1, "critical": 2 }
+      },
+      "valid": false,
+      "why": "disque à 0 %"
+    },
+    {
+      "input": {
+        "disk": { "attention": 80, "critical": 101 },
+        "memory": { "attention": 85, "critical": 95 },
+        "load": { "attention": 1, "critical": 2 }
+      },
+      "valid": false,
+      "why": "disque au-delà de 100 %"
+    },
+    {
+      "input": {
+        "disk": { "attention": 80.5, "critical": 90 },
+        "memory": { "attention": 85, "critical": 95 },
+        "load": { "attention": 1, "critical": 2 }
+      },
+      "valid": false,
+      "why": "disque non entier"
+    },
+    {
+      "input": {
+        "disk": { "attention": 80, "critical": 90 },
+        "memory": { "attention": 85, "critical": 95.5 },
+        "load": { "attention": 1, "critical": 2 }
+      },
+      "valid": false,
+      "why": "mémoire non entière"
+    },
+    {
+      "input": {
+        "disk": { "attention": 80, "critical": 90 },
+        "memory": { "attention": 85, "critical": 95 },
+        "load": { "attention": 0, "critical": 2 }
+      },
+      "valid": false,
+      "why": "charge nulle"
+    },
+    {
+      "input": {
+        "disk": { "attention": 80, "critical": 90 },
+        "memory": { "attention": 85, "critical": 95 },
+        "load": { "attention": 1.05, "critical": 2 }
+      },
+      "valid": false,
+      "why": "charge au centième"
+    },
+    {
+      "input": {
+        "disk": { "attention": 80, "critical": 90 },
+        "memory": { "attention": 85, "critical": 95 },
+        "load": { "attention": 1, "critical": 64.1 }
+      },
+      "valid": false,
+      "why": "charge au-delà de 64 par cœur"
+    },
+    {
+      "input": {
+        "disk": { "attention": 80, "critical": 90 },
+        "memory": { "attention": 85, "critical": 95 },
+        "load": { "attention": 2, "critical": 2 }
+      },
+      "valid": false,
+      "why": "charge : attention égale à critique"
+    }
+  ]
+}

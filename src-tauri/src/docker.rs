@@ -344,7 +344,7 @@ pub fn interpret_done(output: &ExecOutput) -> Result<(), AppError> {
 
 /// Échec d'une commande `docker` : commande introuvable, accès au socket
 /// refusé, ou toute autre erreur (`Remote`, avec la sortie d'erreur).
-fn failure(output: &ExecOutput) -> AppError {
+pub(crate) fn failure(output: &ExecOutput) -> AppError {
     match output.exit_code {
         Some(127) => AppError::DockerNotInstalled,
         _ if is_permission_denied(&output.stderr_text()) => AppError::DockerPermissionDenied,

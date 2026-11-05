@@ -30,6 +30,10 @@ use crate::config::{Profile, ProfileStore};
 use crate::docker::ContainerList;
 use crate::error::AppError;
 use crate::presence::{LinkPhase, PhaseState};
+use crate::resources::analysis::{self, AnalysisKind, AnalysisSink};
+use crate::resources::monitor::{self, RemoteProbe};
+use crate::resources::settings::Thresholds;
+use crate::resources::{ResourceHub, ResourceUpdate, UpdateSink};
 use crate::scripts::{self, LastRunRecorder, Script, ScriptParser, ScriptStore};
 use crate::secrets::Keyring;
 use crate::sftp::fs::SftpFs;
@@ -97,6 +101,8 @@ struct Active {
     connected_at: u64,
     latency: Arc<Mutex<Option<u32>>>,
     latency_task: JoinHandle<()>,
+    /// Relevé des ressources du serveur.
+    resources_task: JoinHandle<()>,
     /// Numéro de la tentative qui a établi la liaison.
     generation: u64,
     watcher: JoinHandle<()>,
@@ -130,6 +136,8 @@ enum Link {
 pub enum StreamOwner {
     Script(String),
     Compose(String),
+    /// Analyse Docker (`docker_analyze`) : une seule à la fois.
+    DockerAnalysis,
 }
 
 /// Flux ou transfert en cours : son signal d'arrêt et sa tâche.
@@ -167,12 +175,19 @@ pub struct AppState {
     /// Phase de la liaison (« En liaison » ou « Au sol ») et son début,
     /// suivie par la présence Discord.
     phase: Arc<watch::Sender<PhaseState>>,
+    /// Ressources du serveur : mode, dernier relevé, alertes, seuils.
+    resources: Arc<ResourceHub>,
 }
 
 impl AppState {
     /// `keyring_service` : identifiant de l'application, différent pour le
     /// build des tests E2E.
-    pub fn new(config_dir: &Path, keyring_service: &str, on_link_lost: LinkLostSink) -> Self {
+    pub fn new(
+        config_dir: &Path,
+        keyring_service: &str,
+        on_link_lost: LinkLostSink,
+        on_resources: UpdateSink,
+    ) -> Self {
         Self {
             profiles: ProfileStore::new(config_dir),
             keyring: Keyring::new(keyring_service),
@@ -191,6 +206,7 @@ impl AppState {
                 phase: LinkPhase::Ground,
                 since: now_millis(),
             })),
+            resources: Arc::new(ResourceHub::new(config_dir, on_resources)),
         }
     }
 
@@ -238,6 +254,7 @@ impl AppState {
         // Profil déjà supprimé : un échec ici laisse seulement des projets
         // orphelins dans le fichier, jamais relus.
         let _ = self.compose_memory.forget_profile(id);
+        let _ = self.resources.forget_profile(id);
         if let Ok(mut presented) = self.presented.lock() {
             presented.remove(id);
         }
@@ -315,7 +332,9 @@ impl AppState {
         on_step: StepSink,
     ) -> Result<ConnectionInfo, AppError> {
         let profile = self.with_profiles(|store| store.get(profile_id))?;
-        self.disconnect().await;
+        // Rétablissement d'une liaison perdue : les ressources relevées du
+        // même profil sont gardées (`ResourceHub::begin`).
+        self.close_link().await;
 
         let passphrase = match passphrase {
             Some(passphrase) => Some(passphrase),
@@ -366,6 +385,7 @@ impl AppState {
 
         match result {
             Ok(connection) => {
+                self.resources.begin(&profile.id);
                 let active = self.start_active(profile.id.clone(), connection, attempt);
                 let info = active.info();
                 *link = Link::Connected(active);
@@ -391,8 +411,14 @@ impl AppState {
     /// surveillance de la perte est arrêtée en premier : une déconnexion
     /// volontaire n'émet jamais `link-lost`. Les flux et les transferts en
     /// cours sont ensuite arrêtés (les temporaires des transferts sont
-    /// supprimés tant que la liaison est ouverte).
+    /// supprimés tant que la liaison est ouverte). Les ressources relevées
+    /// sont oubliées.
     pub async fn disconnect(&self) {
+        self.close_link().await;
+        self.resources.end();
+    }
+
+    async fn close_link(&self) {
         if let Link::Connected(active) = &*self.link.lock().await {
             active.watcher.abort();
         }
@@ -533,6 +559,11 @@ impl AppState {
             generation,
         ));
         let connection = Arc::new(connection);
+        let resources_task = tokio::spawn(monitor::run(
+            self.resources.clone(),
+            RemoteProbe::new(connection.clone()),
+            profile_id.clone(),
+        ));
         let latency = Arc::new(Mutex::new(None));
         let latency_task = {
             let connection = connection.clone();
@@ -553,6 +584,7 @@ impl AppState {
             connected_at: now_millis(),
             latency,
             latency_task,
+            resources_task,
             generation,
             watcher,
         }
@@ -562,6 +594,60 @@ impl AppState {
     /// limité.
     pub async fn shutdown(&self) {
         let _ = tokio::time::timeout(SHUTDOWN_TIMEOUT, self.disconnect()).await;
+    }
+
+    // --- Ressources du serveur ---------------------------------------------
+
+    /// Écran Ressources affiché et fenêtre visible : relevé complet.
+    pub fn resources_watch(&self, foreground: bool) {
+        self.resources.set_foreground(foreground);
+    }
+
+    /// Dernier relevé de la session (rechargement de l'interface).
+    pub fn resources_state(&self) -> Option<ResourceUpdate> {
+        self.resources.last()
+    }
+
+    pub fn resource_thresholds(&self, profile_id: &str) -> Thresholds {
+        self.resources.thresholds(profile_id)
+    }
+
+    pub fn save_resource_thresholds(
+        &self,
+        profile_id: &str,
+        thresholds: Thresholds,
+    ) -> Result<Thresholds, AppError> {
+        self.resources.save_thresholds(profile_id, thresholds)
+    }
+
+    pub fn reset_resource_thresholds(&self, profile_id: &str) -> Result<Thresholds, AppError> {
+        self.resources.reset_thresholds(profile_id)
+    }
+
+    /// Analyse Docker à la demande, par le registre des flux. Renvoie
+    /// l'identifiant du flux.
+    pub async fn docker_analyze(
+        &self,
+        kind: AnalysisKind,
+        out: AnalysisSink,
+    ) -> Result<String, AppError> {
+        let connection = self.connection().await?;
+        let volume_users = move || {
+            let connection = connection.clone();
+            async move {
+                let output = connection
+                    .exec(crate::resources::containers::VOLUME_USERS_COMMAND)
+                    .await?;
+                Ok(output.stdout_text())
+            }
+        };
+        self.start_stream(
+            kind.command(),
+            analysis::WholeLines,
+            analysis::collector(kind, volume_users, out),
+            Some(StreamOwner::DockerAnalysis),
+        )
+        .await
     }
 
     // --- Flux ----------------------------------------------------------------
@@ -633,6 +719,9 @@ impl AppState {
                     StreamOwner::Compose(_) => {
                         "une commande compose est déjà en cours sur ce projet : attendez sa fin ou interrompez-la"
                     }
+                    StreamOwner::DockerAnalysis => {
+                        "une analyse Docker est déjà en cours : attendez sa fin ou annulez-la"
+                    }
                 }));
             }
         }
@@ -643,6 +732,9 @@ impl AppState {
                 ),
                 Some(StreamOwner::Compose(_)) => format!(
                     "{MAX_STREAMS} flux déjà ouverts : fermez un onglet de télémétrie pour lancer cette commande"
+                ),
+                Some(StreamOwner::DockerAnalysis) => format!(
+                    "{MAX_STREAMS} flux déjà ouverts : fermez un onglet de télémétrie pour lancer l'analyse"
                 ),
                 None => {
                     format!("{MAX_STREAMS} flux au maximum : fermez-en un avant d'en ouvrir un autre")
@@ -885,6 +977,7 @@ async fn watch_link(watch: LinkWatch, signal: LossSignal, generation: u64) {
         active
     };
     active.latency_task.abort();
+    active.resources_task.abort();
     set_phase(&watch.phase, LinkPhase::Ground);
     (watch.on_link_lost)(LinkLost {
         profile_id: active.profile_id.clone(),
@@ -917,7 +1010,11 @@ fn set_phase(sender: &watch::Sender<PhaseState>, phase: LinkPhase) {
 async fn close_active(active: Active) {
     active.watcher.abort();
     active.latency_task.abort();
+    active.resources_task.abort();
+    // Tâches abandonnées attendues : elles rendent leurs références à la
+    // liaison, qui peut alors être fermée proprement.
     let _ = active.latency_task.await;
+    let _ = active.resources_task.await;
     if let Ok(connection) = Arc::try_unwrap(active.connection) {
         connection.close().await;
     }
@@ -973,7 +1070,12 @@ mod tests {
     fn state() -> (AppState, PathBuf) {
         let dir = std::env::temp_dir().join(format!("vpsctl-state-{}", uuid::Uuid::new_v4()));
         (
-            AppState::new(&dir, "dev.poutoo.atlas.test", Arc::new(|_| {})),
+            AppState::new(
+                &dir,
+                "dev.poutoo.atlas.test",
+                Arc::new(|_| {}),
+                Arc::new(|_| {}),
+            ),
             dir,
         )
     }
