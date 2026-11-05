@@ -9,7 +9,7 @@ Frontend Vue
    │  invoke() et Channel
 commands/            adaptateurs Tauri, très fins
    │
-Modules métier       sftp, docker, systemd, scripts (sans dépendance à Tauri)
+Modules métier       sftp, docker, systemd, scripts, resources (sans dépendance à Tauri)
    │
 ssh                  connexion unique, canaux multiplexés
 secrets, config      keyring, profils et scripts en JSON local
@@ -63,6 +63,14 @@ src-tauri/src/
 │   ├── activity.rs   fonctions pures : contenu envoyé (phase et durée uniquement)
 │   ├── frame.rs      trames de l'IPC locale de Discord
 │   └── socket.rs     tube nommé (Windows) ou socket Unix (Linux, Flatpak, Snap)
+├── resources/
+│   ├── mod.rs        ResourceHub : mode d'avant-plan, dernier relevé, niveaux d'alerte, seuils ; constantes de cadence
+│   ├── monitor.rs    tâche de relevé d'une liaison (trait Probe) : cadences, échéance, répartition Docker automatique
+│   ├── proc.rs       fonctions pures : /proc/stat, meminfo, loadavg, net/dev, mounts, statvfs
+│   ├── containers.rs fonctions pures : docker stats, docker info, docker system df (avec et sans -v), tailles go-units
+│   ├── alerts.rs     fonctions pures : hystérésis (next_level) et niveaux d'un relevé
+│   ├── settings.rs   seuils par profil (resource-thresholds.json), validation, lecture tolérante
+│   └── analysis.rs   analyse Docker à la demande sur le registre des flux : collecte de la sortie, résultat
 ├── secrets.rs
 └── commands/
     ├── compose.rs
@@ -74,6 +82,7 @@ src-tauri/src/
     ├── logs.rs
     ├── preferences.rs
     ├── presence.rs
+    ├── resources.rs
     └── scripts.rs
 ```
 
@@ -204,6 +213,14 @@ Création et suppression (`manage.rs`) : séquences décrites dans `docs/04-cont
 
 **presence** : présence Discord (Rich Presence), implémentation maison du protocole IPC local plutôt qu'une crate : aucune dépendance ajoutée (tokio fournit le tube nommé et le socket Unix), tâche tokio arrêtée proprement, relances silencieuses et limite de fréquence maîtrisées. Écartées : `discord-rich-presence` 1.1.0 (E/S bloquantes, dépend d'`uuid` 0.8 en doublon) et `discord-presence` 3.2.0 (treize dépendances, son propre fil et ses propres relances). Une tâche unique (`Presence`, gérée à part d'`AppState`) suit l'interrupteur et la phase de la liaison publiée par `AppState` (`watch`), et publie son statut par une fonction de rappel que `lib.rs` relie à l'événement `presence-status`. La lecture des trames se fait dans une tâche séparée, pour qu'aucune trame lue à moitié ne soit perdue quand une autre branche de `select!` l'emporte. Testée avec un faux Discord (`tokio::io::duplex`) en temps virtuel (`tokio` `test-util`, dépendance de test) : poignée de main, phases, limite de fréquence, effacement, absence, relances, fermeture. Contrat : `docs/04-contrat-commandes.md`, « Présence Discord ».
 
+**resources** : ressources du serveur (planche VII), sans agent ni stockage sur le serveur. Contrat, sources et règles : `docs/04-contrat-commandes.md`, « Ressources du serveur ».
+
+- `ResourceHub` (géré par `AppState`) garde ce qui dure au-delà d'une liaison : le mode demandé par l'interface (`watch`), le profil de la session, le dernier relevé, les niveaux d'alerte (hystérésis), les seuils (`settings.rs`, sur le modèle de `compose/memory.rs`) et la fonction de rappel que `lib.rs` relie à l'événement `resources-update`. Niveaux et dernier relevé survivent à une perte de liaison et sont vidés à la déconnexion et au changement de profil.
+- `monitor.rs` : une tâche par liaison, lancée par `start_active` à côté de la mesure de latence et arrêtée avec elle (perte, déconnexion). Une seule boucle « relevé puis attente » : deux relevés ne se chevauchent jamais. Les accès passent par le trait `Probe` (lecture d'un fichier, `statvfs`, `stat`, `realpath` sur la session SFTP partagée, exécution d'une commande fixe) : cadences, changement de mode, échéance et espacement de la répartition sont testés avec une sonde simulée en temps virtuel (`tokio` `test-util`).
+- Calcul des alertes dans le backend : le relevé d'arrière-plan doit alimenter le repère de navigation même quand l'écran n'est pas affiché. Les bandeaux et le repère sont composés par l'interface à partir des niveaux.
+- Fonctions pures testées sur des sorties en dur : `proc.rs`, `containers.rs`, `alerts.rs` (hystérésis, pas de clignotement autour du seuil), `settings.rs` (validation, cas partagés).
+- `analysis.rs` : `docker_analyze` passe par `start_stream` (script de surveillance, limite de 4, propriétaire exclusif `StreamOwner::DockerAnalysis`) avec un analyseur de lignes sans la limite de 16 Kio ; une fonction de rappel collecte la sortie et produit le résultat à la fin (`ended` avec le code 0), puis rattache les volumes à leurs conteneurs par un `docker ps`. Annulation : `stop_stream` (TERM au groupe). `dockerd` peut finir son parcours des volumes après l'arrêt de la commande.
+
 **secrets** : surcouche de la crate `keyring` pour la passphrase de la clé SSH (Credential Manager sous Windows, Secret Service sous Linux). Le service du trousseau est l'identifiant de l'application, lu au démarrage : le build des tests E2E (`dev.poutoo.atlas.e2e`) a le sien.
 
 **commands** : fonctions `#[tauri::command]` sans logique propre. Streaming via `tauri::ipc::Channel`.
@@ -239,7 +256,7 @@ Mise en œuvre (store `services`) :
 
 ### Arrêt des flux
 
-Chaque flux (logs, exécution de script, commande compose) reçoit un identifiant et est enregistré dans `state.rs` (4 au maximum). Il est arrêté par `logs_stop`, `script_stop` ou `compose_stop`, à la déconnexion, à la fermeture de l'application, au chargement d'une page (rechargement de l'interface : les `Channel` de l'ancienne page sont morts, sans que leur envoi échoue forcément), et de lui-même si un envoi vers son `Channel` échoue.
+Chaque flux (logs, exécution de script, commande compose, analyse Docker) reçoit un identifiant et est enregistré dans `state.rs` (4 au maximum). Il est arrêté par `logs_stop`, `script_stop`, `compose_stop` ou `docker_analyze_stop`, à la déconnexion, à la fermeture de l'application, au chargement d'une page (rechargement de l'interface : les `Channel` de l'ancienne page sont morts, sans que leur envoi échoue forcément), et de lui-même si un envoi vers son `Channel` échoue.
 
 Fermer le canal ne suffit pas à terminer le processus distant. Dans OpenSSH (`session.c`), une session sans terminal n'est pas tuée à la fermeture de son canal : sshd ferme seulement ses tubes, et le processus ne meurt qu'à sa prochaine écriture (SIGPIPE). `docker logs -f` sur un conteneur silencieux ou `journalctl -f` sur un service calme survivraient indéfiniment. Un terminal (PTY) réglerait la question par SIGHUP, mais il fusionne stdout et stderr : exclu.
 
@@ -348,14 +365,14 @@ WantedBy=default.target
 src/
 ├── bindings/          types générés par ts-rs (jamais modifiés à la main)
 ├── api/               une fonction typée par commande Tauri, regroupées par domaine
-├── stores/            Pinia : connection, profiles, preferences, files, editor, transfers, services, scripts, telemetry
+├── stores/            Pinia : connection, profiles, preferences, files, editor, transfers, services, scripts, telemetry, resources
 ├── composables/       logSession, useDockedStream, useConfirm, useNotify, useVisiblePolling, useEditorActions
 ├── router/            routes + garde « connexion requise »
 ├── styles/            tokens.css, base.css
 ├── components/
 │   ├── ui/            design system (Button, Modal, Console, Toast…)
 │   └── features/      FileBrowser, ServiceList, ServiceForm, ScriptList…
-└── views/             ConnectView, DashboardView, FilesView, ScriptsView, SettingsView
+└── views/             ConnectView, DashboardView, FilesView, ScriptsView, ResourcesView, SettingsView
 ```
 
 ### Règles
@@ -392,6 +409,14 @@ src/
   - Ctrl+F (`findShortcut.ts`, écouteur en phase de capture, en développement comme en production) est toujours intercepté, pour que la barre de recherche de WebView2 ne s'ouvre jamais ; il place le curseur dans le filtre de l'écran affiché et sélectionne son texte, sauf si une fenêtre modale est ouverte ou pendant une saisie de nom dans l'explorateur. Échap dans le champ le vide, puis, une seconde fois, rend le focus à la liste.
   - Texte conservé dans les stores : celui du tableau de bord survit au changement d'écran ; celui de l'explorateur est vidé au changement de dossier. Les deux restent pendant un LOS (filtre utilisable sur les données figées) et sont vidés à la fin de la session. Une création vide le filtre, comme un renommage dont le nouveau nom n'y correspond plus : l'élément reste visible.
 - **Projets compose** (maquettes `docs/design/docker-compose/`) : la section Docker groupe les conteneurs par projet (`src/composeView.ts`, fonctions pures). L'en-tête d'un projet, repliable, porte son nom, son dossier, son état agrégé (`ProjectStateLabel` : forme, libellé, `n/N`), ses fichiers dans la colonne Détail (chemins complets en infobulle) et ses actions ; ses conteneurs gardent les leurs, reliés à l'en-tête par un trait. Les conteneurs sans étiquette de projet forment le dernier groupe, « Hors compose », jamais replié. Filtre : un projet dont le nom ou le dossier correspond montre tout son groupe, sinon seulement les conteneurs qui correspondent. Projet descendu : « Descendu · 0/N », une ligne d'explication et « Oublier ce projet » (GO / NO GO simple). Dossier et fichiers : store `compose`, `compose_check` toutes les 30 s (second `useVisiblePolling` du tableau de bord), dès qu'un projet non vérifié apparaît et sur « Actualiser » ; un dossier ou un fichier en défaut teinte l'en-tête et ajoute une ligne d'explication. Plugin absent (`serverInfo.compose`) : avis au-dessus du tableau, actions de projet masquées. En fenêtre étroite, la colonne Détail passe sous l'état (« État · Détail »). Les groupes repliés sont gardés dans le store `services` jusqu'à la fin de la session.
+- **Ressources du serveur** (planche VII, écran IV) : store `resources`, initialisé à l'ouverture de la session (`resources_state`, puis l'événement `resources-update`). `ResourcesView` appelle `resources_watch(true)` tant qu'elle est affichée et la fenêtre visible (`watchWindowVisibility`), `false` sinon : le relevé complet et `docker stats` ne tournent qu'à ces conditions.
+  - Historique : 30 minutes de séries datées et bornées (360 points par série) dans le store, alimentées par chaque relevé ; perdues à la déconnexion, au changement de profil et à la fermeture. Les mesures non relevées hors de l'écran (CPU, charge, réseau) laissent un trou : la ligne est interrompue. Les pertes de liaison sont gardées comme intervalles, hachurés « sans relevé ».
+  - Courbes en SVG maison (`ResourceChart`, tracés calculés par les fonctions pures de `src/resourceChart.ts`) : quelques centaines de points rafraîchis toutes les 5 s ne justifient pas de dépendance. Couleurs par classes CSS et tokens ; hachures par `<pattern>`, seuils par `stroke-dasharray`. Les attributs `d` et `points` sont posés par le DOM : rien n'est bloqué par la CSP. Écartées : uPlot et Chart.js (canevas, couleurs à relire dans les tokens et à redessiner au changement de thème, hachures à dessiner à la main).
+  - Bandeaux (`src/resourceText.ts`) par ordre de priorité : disque, mémoire, charge. L'alerte mémoire nomme le plus gros consommateur quand les conteneurs sont relevés ; « Voir <conteneur> » fait défiler jusqu'à sa ligne du tableau, surlignée quelques secondes.
+  - Repère de navigation (icônes SVG d'attention et de critique) sur l'entrée IV, visible depuis tous les écrans : pire niveau du disque et de la mémoire, plus la charge quand l'écran est affiché.
+  - Seuils : saisie contrôlée par `src/resourceRules.ts` (mêmes règles que le backend), enregistrée 300 ms après la dernière frappe.
+  - **Écart à la règle des sessions de flux** : l'analyse Docker (`docker_analyze`) passe par le registre des flux du backend (arrêt, limite de 4, vidage à la perte et à la déconnexion) mais n'est pas une session `createLogSession` du store `telemetry` : ce n'est ni un log ni un script, sa sortie est un résultat analysé à la fin et affiché dans l'écran Ressources. Son état est gardé dans le store `resources` : quitter l'écran ne l'interrompt pas.
+  - LOS : valeurs figées avec l'heure du dernier relevé, zone hachurée jusqu'à « maintenant », bandeaux complétés ; au rétablissement, l'historique est gardé et les relevés reprennent.
 - **Rafraîchissement des services** : toutes les 5 secondes uniquement quand le tableau de bord est affiché et la fenêtre visible : document visible (`document.visibilityState`) et fenêtre non réduite (`isMinimized` de Tauri, relu à chaque redimensionnement et changement de focus, car WebView2 ne masque pas le document quand la fenêtre est réduite), plus un bouton d'actualisation manuelle. Le rafraîchissement suivant est programmé 5 secondes après la fin du précédent, et un rafraîchissement manuel pendant qu'un autre est en cours réutilise celui-ci : deux rafraîchissements ne se chevauchent jamais. Docker et systemd sont appelés indépendamment : l'échec de l'un n'empêche pas l'affichage de l'autre.
 - **Sortie d'erreur ≠ erreur** : beaucoup de programmes écrivent tous leurs logs sur la sortie d'erreur (Caddy, le module `logging` de Python par défaut). Une ligne `stderr` est donc marquée de façon neutre (étiquette discrète, sans fond rouge). Le style d'erreur rouge est réservé aux messages systemd de priorité ≤ 3.
 - **Console** : un seul composant console, utilisé à l'identique dans l'écran Télémétrie (logs et sortie des scripts) et le panneau ancré du tableau de bord (défilement automatique, indicateur de nouvelles lignes, bannière LOS). Le panneau ancré réduit la zone du tableau au-dessus de lui, il ne la recouvre pas.
@@ -409,7 +434,7 @@ src/
 | Permission | Usage |
 |---|---|
 | `core:app:allow-version` | version dans la barre d'état (`getVersion`) |
-| `core:event:allow-listen`, `core:event:allow-unlisten` | `onResized`, `onFocusChanged`, `onCloseRequested`, événements `link-lost` et `presence-status` |
+| `core:event:allow-listen`, `core:event:allow-unlisten` | `onResized`, `onFocusChanged`, `onCloseRequested`, événements `link-lost`, `presence-status` et `resources-update` |
 | `core:path:allow-resolve-directory`, `core:path:allow-join` | dossier Téléchargements proposé à l'enregistrement (`downloadDir`, `join`) |
 | `core:window:allow-is-minimized`, `core:window:allow-is-maximized` | visibilité réelle de la fenêtre, état agrandi |
 | `core:window:allow-start-dragging`, `core:window:allow-internal-toggle-maximize` | `data-tauri-drag-region` : déplacement et double-clic |
@@ -449,6 +474,7 @@ Définie dans `tauri.conf.json` (`app.security.csp`) : tout vient de l'applicati
 | `/dashboard/new-service` | ServiceCreateView (création d'un service ; Tableau de bord surligné) | oui |
 | `/files/:path*` | FilesView (chemin absolu ; `/files` = racine ; avec `?edition`, le chemin est un fichier ouvert dans l'éditeur) | oui |
 | `/scripts` | ScriptsView | oui |
+| `/resources` | ResourcesView (écran IV, planche VII) | oui |
 | `/telemetry/:tab?` | TelemetryView (onglets des flux ; section d'origine surlignée : Scripts ou Tableau de bord) | oui |
 | `/settings` | SettingsView, onglet Profils | non |
 | `/settings/preferences` | SettingsView, onglet Préférences (planche VI) | non |
@@ -471,6 +497,7 @@ Définie dans `tauri.conf.json` (`app.security.csp`) : tout vient de l'applicati
 | `remote-join.json`, `remote-parent.json` | `sftp::path::join`, `split` | `remoteFiles.joinPath`, `parentPath` |
 | `script-fields.json` | `scripts::normalize` (nom requis et longueur, commande requise) | `scriptRules.scriptProblems` |
 | `profile-fields.json` | `config::normalize` (champs requis, port) | `profileRules.profileProblems` |
+| `resource-thresholds.json` | `resources::settings::validate` | `resourceRules.thresholdProblems` |
 
 - Espaces de bord et longueurs : `src/text.ts` reproduit `str::trim` (propriété Unicode White_Space, différente de `String.prototype.trim` pour U+0085 et U+FEFF) et `chars().count()` (points de code, pas unités UTF-16).
 - Règles présentes d'un seul côté, donc sans cas partagés :

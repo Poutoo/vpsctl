@@ -561,6 +561,154 @@ script_stop(runId: string): void
 - `script_stop` : comme `logs_stop` (rend la main une fois le processus distant arrêté, 3 s au plus ; identifiant inconnu ignoré).
 - `lastRun` est enregistré à la fin de chaque exécution : `at` est l'heure de **début** de l'exécution, `exitCode` le code de sortie de la fin naturelle, ou `null` pour une exécution interrompue (`script_stop`, déconnexion, liaison perdue, rechargement de l'interface, fermeture de l'application) ou tuée par un signal.
 
+## Ressources du serveur
+
+Maquettes : `docs/design/planche VII/`. Rien n'est installé ni stocké sur le serveur : les mesures viennent de fichiers du noyau lus par SFTP et de commandes `docker` fixes (aucune valeur de l'interface n'y entre).
+
+```ts
+resources_watch(foreground: boolean): void     // écran Ressources affiché et fenêtre visible
+resources_state(): ResourceUpdate | null       // dernier relevé de la session (rechargement de la page)
+resource_thresholds_get(profileId: string): Thresholds
+resource_thresholds_save(profileId: string, thresholds: Thresholds): Thresholds
+resource_thresholds_reset(profileId: string): Thresholds    // « Valeurs par défaut » : ce profil seulement
+docker_analyze(kind: AnalysisKind, onEvent: Channel<AnalysisEvent>): string   // runId
+docker_analyze_stop(runId: string): void
+// Événement `resources-update` : ResourceUpdate, à chaque relevé et à chaque changement de seuils.
+```
+
+### Mesures
+
+| Mesure | Source | Voie | Calcul |
+|---|---|---|---|
+| CPU | `/proc/stat`, ligne `cpu` | SFTP | Par différence entre deux relevés : `1 − Δ(idle + iowait) / Δtotal` (`steal` compris dans le total). Cœurs : lignes `cpuN`. |
+| Mémoire | `/proc/meminfo` | SFTP | Utilisée = `MemTotal − MemAvailable` (jamais `MemFree` : le cache est récupérable). Swap = `SwapTotal − SwapFree`. |
+| Charge | `/proc/loadavg` | SFTP | 1, 5 et 15 min, divisées par le nombre de cœurs. La moyenne sur 5 min par cœur sert pour la valeur, l'alerte, le seuil et la courbe. |
+| Disque | `/proc/mounts`, puis `statvfs` de chaque point de montage | SFTP (`statvfs@openssh.com`, `SftpSession::fs_info`) | Voir « Points de montage ». |
+| Réseau | `/proc/net/dev` | SFTP | Par différence : octets reçus et émis par seconde, sommés sur les interfaces comptées (toutes sauf `lo`, `docker0`, `veth*` et `br-*`). Pas de choix des interfaces. |
+| Conteneurs | `docker stats --no-stream --no-trunc --format '{{json .}}'` | exec, 25 s au plus | Voir « Conteneurs ». |
+| Racine Docker | `docker info --format '{{.DockerRootDir}}'` | exec, une fois par liaison | Chemin résolu par `realpath` SFTP. |
+| Répartition Docker | `docker system df --format '{{json .}}'` | exec (60 s au plus) ou flux, voir « Cause probable du disque » | |
+| Volumes | `docker system df -v --format '{{json .}}'` | flux | puis `docker ps -a --no-trunc --format '{{.Names}}\t{{.Mounts}}'` (exec) pour rattacher chaque volume à ses conteneurs. |
+
+- Fichiers de `/proc` : lus jusqu'à la fin (le serveur SFTP les lit malgré leur taille annoncée de 0), 1 Mio au plus. Une seule session SFTP, celle de la liaison : aucun canal ouvert pour ces lectures.
+- Mesure impossible (fichier illisible, champ manquant, commande en échec, délai dépassé) : `unavailable` avec sa raison ; les autres mesures du relevé ne sont pas touchées.
+- Mesures par différence (CPU, réseau) : `pending` au premier relevé, et quand le relevé précédent a plus de 40 s (retour sur l'écran ; un relevé lent dure 25 s au plus, suivi de 5 s d'attente) ou qu'un compteur a reculé (redémarrage du serveur). Elles ne sont pas relevées hors de l'écran.
+- Swap : `null` si `SwapTotal` ou `SwapFree` manque (« non mesurable ») ; `total` à 0 sans swap.
+
+#### Points de montage
+
+Fonctions pures `parse_mounts`, `keep_mounts` :
+
+- Échappements octaux de `/proc/mounts` décodés (`\040` pour une espace).
+- Exclus : types `tmpfs`, `devtmpfs`, `overlay`, `squashfs`, `proc`, `sysfs`, `cgroup`, `cgroup2`, `devpts`, `mqueue`, `debugfs`, `tracefs`, `securityfs`, `pstore`, `bpf`, `configfs`, `fusectl`, `hugetlbfs`, `autofs`, `binfmt_misc`, `rpc_pipefs`, `nsfs`, `ramfs`, `efivarfs`, `fuse.lxcfs`, `fuse.portal`, `nfsd`.
+- Doublons d'un même périphérique (montage lié, sous-volume) : le point de montage le plus court est gardé.
+- Un point de montage qui n'est pas un dossier (fichier monté par un montage lié, `/etc/hosts` dans un conteneur) est écarté, d'après un `stat` SFTP.
+- Occupation comme `df` : `utilisé = (blocks − bfree) × frsize`, `pourcentage = utilisé / (utilisé + bavail × frsize)` ; espace libre affiché `bavail × frsize` (ce qu'un compte non root peut écrire), taille `blocks × frsize`. `statvfs` refusé ou en échec : la ligne passe `unavailable`, les autres restent.
+
+#### Conteneurs
+
+- Uniquement quand l'écran est affiché (relevé d'avant-plan) : c'est la mesure la plus coûteuse. `--no-stream` attend deux échantillons du daemon (1 à 2 s) puis rend la main.
+- Ligne JSON par conteneur en marche : `ID` (64 caractères hexadécimaux, sinon ligne écartée), `Name`, `CPUPerc` (`"4.80%"`, en % d'un cœur), `MemUsage` (`"1.2GiB / 3GiB"`, unités binaires de `go-units`). Triés par mémoire décroissante.
+- Sans limite : Docker donne alors la mémoire du serveur comme limite. Une limite d'au moins 99 % de `MemTotal` est affichée « sans limite » (pas de `docker inspect` supplémentaire).
+- Erreurs : comme `docker_list` (`DockerNotInstalled`, `DockerPermissionDenied`), traduites en raison de `unavailable`.
+
+### Cadences
+
+Une tâche par liaison (`resources::monitor`), lancée à l'établissement, arrêtée à la perte et à la déconnexion :
+
+- **Avant-plan** (`resources_watch(true)` : écran affiché et fenêtre ni masquée ni réduite) : relevé complet, le suivant **5 s après la fin** du précédent.
+- **Arrière-plan** : mémoire et disque (`/proc/meminfo`, `/proc/mounts`, `statvfs`) toutes les 60 s, par SFTP uniquement : aucun canal, aucune commande `docker`.
+- **Jamais deux relevés à la fois** : une seule boucle, relevé puis attente. Passer en avant-plan pendant l'attente lance un relevé tout de suite ; pendant un relevé, le suivant part dès la fin. Chaque mesure a une échéance de 25 s : ce qui n'a pas répondu passe `unavailable` (« délai dépassé »). 25 s dépasse la détection d'une perte silencieuse (20 s au plus, voir « Perte de la liaison ») : sur une liaison coupée, la perte est constatée avant, la tâche est abandonnée et rien n'est publié ; l'interface garde les valeurs figées.
+- **Canaux** (OpenSSH : `MaxSessions` 10) : un relevé n'ouvre qu'un canal exec à la fois (`docker stats`), plus au plus un pour la répartition automatique. L'analyse Docker passe par le registre des flux et compte dans la limite de 4. En pointe : SFTP 1, SFTP brute 1 (éditeur), latence 1, flux 4, relevé 2 = 9 ; les listes du tableau de bord ne tournent pas quand l'écran Ressources est affiché.
+
+### Seuils
+
+```ts
+interface Thresholds { disk: ThresholdPair; memory: ThresholdPair; load: ThresholdPair }
+interface ThresholdPair { attention: number; critical: number }
+```
+
+- Par défaut : disque 80 / 90 %, mémoire 85 / 95 %, charge 1,0 / 2,0 par cœur.
+- Fichier `resource-thresholds.json` du dossier de configuration, une entrée par profil (`{ "version": 1, "profiles": { "<id>": Thresholds } }`). Lecture tolérante (fichier ou entrée invalide : valeurs par défaut), écriture atomique avant la mise à jour en mémoire, rien d'écrit si rien ne change. Entrée retirée à la suppression du profil et par `resource_thresholds_reset`.
+- Validation (`InvalidInput`, cas partagés `tests/shared/resource-thresholds.json`) : disque et mémoire entiers de 1 à 100 ; charge de 0,1 à 64 au dixième ; `attention < critical`.
+- Le profil est passé par l'interface : les seuils restent modifiables pendant un LOS. Ceux du profil de la liaison s'appliquent aussitôt : les niveaux sont recalculés sur le dernier relevé et `resources-update` est émis, sans nouveau relevé.
+
+### Alertes
+
+```ts
+type Level = "nominal" | "attention" | "critical"
+interface Levels { disks: MountLevel[]; memory: Level; load: Level }
+interface MountLevel { mountPoint: string; level: Level }
+```
+
+- Hystérésis (fonction pure `next_level`) : le niveau monte dès que la valeur atteint un seuil ; il ne redescend que lorsque la valeur passe à `seuil − marge` ou en dessous. Marge : 3 points pour le disque et la mémoire, 0,1 par cœur pour la charge. Les valeurs comparées sont arrondies comme à l'affichage (pourcentage entier, charge par cœur au centième) : une alerte à 80 % se lève quand l'écran affiche 80 %.
+- Un niveau par point de montage, un pour la mémoire, un pour la charge. Une mesure absente (`pending`, `unavailable`, `notRead`) garde le niveau précédent. Niveaux gardés pendant un LOS ; vidés à la déconnexion et au changement de profil.
+- Bandeaux par ordre de priorité : disque, mémoire, charge. Repère de navigation : le pire niveau du disque et de la mémoire, plus la charge quand l'écran est affiché (hors de l'écran, elle n'est pas relevée).
+- Uniquement dans l'application : aucune notification système.
+
+### Cause probable du disque
+
+- Seulement pour le point de montage qui contient la racine Docker (préfixe le plus long, composant par composant, après `realpath`) : `dockerMount`. Docker absent ou injoignable : aucune cause. L'alerte d'un autre point de montage n'affiche rien et ne renvoie jamais vers un conteneur.
+- `DOCKER_USAGE_AUTOMATIC` (`resources/mod.rs`) choisit le déclenchement de la répartition par catégorie (`docker system df`, sans `-v`) :
+  - `true` : lancée par le relevé d'avant-plan quand le point de montage de Docker est en attention ou critique, au plus une fois toutes les **5 minutes** (relancée en arrivant sur l'écran si elle a plus de 5 minutes), en parallèle du relevé, 60 s au plus. Résultat dans `ResourceUpdate.dockerUsage` ;
+  - `false` : rien d'automatique ; l'interface propose « Analyser l'espace Docker » (`docker_analyze("usage")`).
+
+  Règle de choix : si `docker system df` coûte presque autant que `docker system df -v` (mesure de `docs/tests-jalon-13.md`, section 0), `false`.
+- `docker_analyze(kind)` : `"volumes"` (`docker system df -v`) ou `"usage"` (`docker system df`), à la demande, sans délai fixe. Par le registre des flux (script de surveillance, limite de 4 flux, refus « 4 flux déjà ouverts : fermez un onglet de télémétrie pour lancer l'analyse »), une seule analyse à la fois (`InvalidInput`). La sortie JSON tient sur une ligne : elle est lue sans la limite de 16 Kio des consoles (32 Mio au plus) puis analysée à la fin.
+- `docker_analyze_stop` : comme `logs_stop` (TERM au groupe de processus, puis fermeture du canal, 3 s au plus). **Limite** : le processus `docker` s'arrête, mais `dockerd` peut finir son parcours des volumes après l'arrêt de la commande (la requête de l'API n'interrompt pas forcément le calcul des tailles).
+- Liaison perdue : aucun événement, `link-lost` en tient lieu ; l'analyse est à relancer.
+
+```ts
+type AnalysisKind = "usage" | "volumes"
+type AnalysisEvent =
+  | { type: "done"; result: AnalysisResult }
+  | { type: "failed"; message: string }
+type AnalysisResult =
+  | { kind: "usage"; usage: DockerUsage }
+  | { kind: "volumes"; volumes: VolumeAnalysis }
+interface DockerUsage { at: number; images: number; containers: number; volumes: number; buildCache: number }   // octets
+interface VolumeAnalysis { at: number; durationMs: number; volumes: VolumeSize[] }   // triés par taille décroissante
+interface VolumeSize { name: string; size: number | null; containers: string[] }
+```
+
+Tailles de `docker system df` : unités décimales de `go-units` (`"14.2GB"`, `"0B"`, `"1.5kB"`), converties en octets.
+
+### Relevé
+
+```ts
+type Measure<T> =
+  | { status: "ok"; value: T }
+  | { status: "pending" }                      // mesure par différence : premier relevé
+  | { status: "unavailable"; reason: string }
+  | { status: "notRead" }                      // non relevée hors de l'écran
+
+interface ResourceUpdate {
+  profileId: string
+  at: number               // fin du relevé (ms epoch)
+  foreground: boolean      // relevé complet
+  cores: number | null
+  cpu: Measure<number>     // % de 0 à 100
+  memory: Measure<MemoryUsage>
+  load: Measure<LoadAverage>
+  network: Measure<NetworkRates>
+  disks: Measure<DiskUsage[]>
+  containers: Measure<ContainerUsage[]>
+  dockerMount: string | null
+  dockerUsage: DockerUsage | null
+  automaticDockerUsage: boolean   // DOCKER_USAGE_AUTOMATIC
+  levels: Levels
+  thresholds: Thresholds   // du profil de la liaison
+}
+interface MemoryUsage { total: number; used: number; percent: number; swap: { total: number; used: number } | null }
+interface LoadAverage { raw: [number, number, number]; perCore: [number, number, number] }
+interface NetworkRates { interfaces: string[]; received: number; sent: number }   // octets par seconde
+interface DiskUsage { mountPoint: string; device: string; fsType: string; space: Measure<DiskSpace> }
+interface DiskSpace { total: number; free: number; percent: number }
+interface ContainerUsage { id: string; name: string; cpuPercent: number; memoryUsed: number; memoryLimit: number | null }
+```
+
+Historique : 30 minutes dans le store `resources` de l'interface, séries bornées, perdues à la fermeture, à la déconnexion et au changement de profil (voir `docs/03-architecture.md`).
+
 ## Préférences
 
 ```ts
