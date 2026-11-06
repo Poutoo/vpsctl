@@ -120,6 +120,16 @@ export function restoreComposePlugin(): void {
   );
 }
 
+/**
+ * Durée avant que `db` du projet `slow` soit sain (40 s après un semis).
+ * Prise en compte au prochain `up` qui recrée `db`.
+ */
+export function setSlowDelay(seconds: number): void {
+  sh(
+    `sed -i -E 's/sleep [0-9]+; touch/sleep ${seconds}; touch/' ${TARGET.tests}/slow/compose.yaml`,
+  );
+}
+
 /** Conteneurs d'un projet, d'après Docker (pas d'après l'interface). */
 export function projectContainers(project: string): string[] {
   return sh(

@@ -1,7 +1,7 @@
 /** docs/tests-jalon-11.md, section 5 : Démarrer, Récupérer, Redémarrer. */
 import { $, browser, expect } from "@wdio/globals";
 import { TARGET } from "../../support/env.ts";
-import { seed, sh } from "../../support/target.ts";
+import { seed, setSlowDelay, sh } from "../../support/target.ts";
 import {
   colorOf,
   connect,
@@ -264,7 +264,9 @@ describe("Jalon 11 · 5. Démarrer, Récupérer, Redémarrer", () => {
   });
 
   it("une commande à la fois par projet ; une autre part normalement", async () => {
-    // Recréé depuis l'état descendu : db repart pour 40 s avant d'être sain.
+    // Recréé depuis l'état descendu : db repart pour 15 s avant d'être sain,
+    // assez pour lancer une autre commande pendant ce temps.
+    setSlowDelay(15);
     sh("cd /tmp && docker compose -p slow down -t 0");
     await goDashboard();
     await refresh();

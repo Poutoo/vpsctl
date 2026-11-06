@@ -75,7 +75,10 @@ c'est le point de montage de la racine Docker.
 ## Écarts avec le test manuel
 
 - « Up long avec téléchargement » : projet `slow` (attente d'un healthcheck de
-  40 s, image `busybox:1.36` retirée avant) au lieu de `postgres:17`.
+  40 s, image `busybox:1.36` retirée avant) au lieu de `postgres:17`. Les
+  autres up longs (une commande à la fois, interruption, demi-disque du rendu)
+  ramènent cette attente à 15 s (`setSlowDelay`) ; la perte de liaison garde
+  40 s, l'up devant encore tourner à la relance qui suit le gel.
 - Perte de liaison : la cible est gelée (`docker pause`) au lieu de couper le
   réseau du poste.
 - Section 2 (tests automatisés) et rendu Linux : marqués `skip`.

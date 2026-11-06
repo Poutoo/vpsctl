@@ -3,6 +3,7 @@ import { $, browser, expect } from "@wdio/globals";
 import {
   freezeTarget,
   seed,
+  setSlowDelay,
   sh,
   shStatus,
   thawTarget,
@@ -30,8 +31,14 @@ import {
 const PARTIAL_START =
   "1 commande compose en cours sera interrompue : son projet peut rester à moitié démarré ou arrêté.";
 
-/** Lance un up de `slow` qui dure (db recréé : 40 s avant d'être sain). */
-async function startLongUp(): Promise<void> {
+/**
+ * Lance un up de `slow` qui dure : db recréé, sain après `seconds`. 15 s
+ * suffisent pour interrompre ou fermer pendant la commande ; la perte de
+ * liaison en demande 40, l'up devant encore tourner à la relance qui suit
+ * le gel de la cible (environ 25 s).
+ */
+async function startLongUp(seconds = 15): Promise<void> {
+  setSlowDelay(seconds);
   sh("cd /tmp && docker compose -p slow down -t 0");
   await goDashboard();
   await refresh();
@@ -116,7 +123,7 @@ describe("Jalon 11 · 10. Interruption, perte de liaison", () => {
   });
 
   it("perte de liaison pendant un up long : issue inconnue, rien relancé, Relancer après rétablissement", async () => {
-    await startLongUp();
+    await startLongUp(40);
     freezeTarget();
     try {
       await $("p*=Liaison perdue avec").waitForDisplayed({ timeout: 45_000 });
