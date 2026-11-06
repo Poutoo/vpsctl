@@ -12,6 +12,10 @@ Catégories : Ajouté, Modifié, Corrigé, Retiré, Sécurité.
 
 ## [Non publié]
 
+## [1.4.0] - 2026-11-06
+
+Ressources du serveur (jalon 13).
+
 ### Ajouté
 
 - Écran IV « Ressources » (les Réglages passent en V) : CPU, mémoire et swap, charge moyenne par cœur et réseau, avec leurs courbes des 30 dernières minutes ; espace disque par point de montage ; conteneurs triés par mémoire, avec leur CPU et leur limite. Rien n'est installé ni stocké sur le serveur. Une mesure impossible est marquée « Indisponible », avec sa raison, sans arrêter les autres.
@@ -93,7 +97,8 @@ Première version publiée, installable sous Windows et Linux.
 - Politique de sécurité du contenu stricte et permissions de l'application réduites à ce qui est utilisé.
 - Aucune commande avec `sudo` ; valeurs envoyées au serveur validées puis échappées ; opérations sur les fichiers uniquement par SFTP.
 
-[Non publié]: https://github.com/Poutoo/vpsctl/compare/v1.3.0...HEAD
+[Non publié]: https://github.com/Poutoo/vpsctl/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/Poutoo/vpsctl/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Poutoo/vpsctl/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Poutoo/vpsctl/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Poutoo/vpsctl/compare/v1.0.0...v1.1.0
