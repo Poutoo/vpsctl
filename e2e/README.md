@@ -39,6 +39,41 @@ part.
 rapides) ; `docker compose -f e2e/target/compose.yaml down -v` la supprime avec
 ses données. `E2E_SSH_PORT` change le port local (2222 par défaut).
 
+## Exécution sélective
+
+La suite complète dure environ 18 minutes. Avant un commit, il suffit de
+lancer :
+
+- les specs du jalon en cours ;
+- les specs des parties touchées : jalon 11 pour les projets compose, le
+  tableau de bord Docker et les commandes compose de la télémétrie
+  (`src-tauri/src/compose/`, `src-tauri/src/docker.rs`,
+  `src/stores/compose*.ts`), jalon 12 pour l'éditeur et l'explorateur
+  (`src-tauri/src/editor/`, `src-tauri/src/sftp/`, `src/stores/editor.ts`,
+  `src/stores/files.ts`), jalon 13 pour les ressources
+  (`src-tauri/src/resources/`, `src/stores/resources.ts`) ;
+- toute spec modifiée.
+
+La suite complète remplace cette sélection dès que change ce qui sert à
+toutes les specs : `e2e/support/`, `e2e/target/`, `e2e/scripts/`,
+`e2e/wdio.conf.ts`, `e2e/tauri.e2e.conf.json` ; la liaison et l'état partagé
+(`src-tauri/src/ssh/`, `state.rs`, `stream.rs`, `lib.rs`, `error.rs`,
+`config.rs`, `src/stores/connection.ts`, `src/stores/telemetry.ts`,
+`src/stores/profiles.ts`, `src/api/invoke.ts`, `src/api/errors.ts`) ; la
+navigation et les composants communs (`src/router/`,
+`src/components/layout/`, `src/components/ui/`, `src/styles/`) ; les
+dépendances (`package-lock.json`, `src-tauri/Cargo.lock`) et
+`src-tauri/tauri.conf.json`. En cas de doute : suite complète.
+
+```sh
+npm run e2e:build
+npm run e2e:run -- --spec "e2e/specs/jalon-13/*.e2e.ts"
+```
+
+La suite complète (`npm run test:e2e`) reste obligatoire avant un push et
+avant le commit qui clôt un jalon ou prépare une version (CLAUDE.md,
+« Commits »).
+
 ## Isolation
 
 - Build avec `e2e/tauri.e2e.conf.json` : identifiant `dev.poutoo.atlas.e2e`,

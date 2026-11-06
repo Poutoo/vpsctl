@@ -32,6 +32,7 @@ Lire le document concerné avant de travailler sur une partie :
 - Les opérations sur les fichiers passent par SFTP, jamais par des commandes shell (`rm`, `mv`, etc.).
 - Les secrets (passphrase de clé) vont dans le keyring système via la crate `keyring`, jamais dans un fichier.
 - Aucune commande ne doit utiliser `sudo`. Tout fonctionne avec les droits du compte SSH (voir `docs/02-preparation-vps.md`).
+- Aucune commande qui supprime ou modifie quelque chose hors du dépôt (docker prune, suppression de conteneurs, d'images ou de volumes hors des cibles de test, fichiers hors du dépôt, réglages du système) sans accord explicite. Cela vaut aussi pour les tâches d'analyse.
 
 ### Architecture
 
@@ -67,6 +68,7 @@ Lire le document concerné avant de travailler sur une partie :
 ### Commits
 
 - Ne jamais commiter avant que tous les critères de fin aient terminé et réussi. Un critère encore en cours compte comme un échec.
+- Pour les E2E, un commit demande les specs du jalon en cours et celles des parties touchées (règle détaillée dans `e2e/README.md`). La suite complète (`npm run test:e2e`) est obligatoire avant un push et avant le commit qui clôt un jalon ou prépare une version.
 
 ### Autres
 - Le code doit être auto commenté. Limiter le nombre de commentaire
