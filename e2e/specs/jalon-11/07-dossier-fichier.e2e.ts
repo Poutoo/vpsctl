@@ -52,8 +52,6 @@ describe("Jalon 11 · 7. Dossier supprimé, fichier illisible", () => {
     await connect();
   });
 
-  after(() => seed("nominal", "envfile"));
-
   it("dossier supprimé : en-tête teinté, chemin barré, explication, actions selon la raison", async () => {
     sh(`mv ${NOMINAL} ${NOMINAL}.bak`);
     await waitDetail("nominal", "dossier introuvable");

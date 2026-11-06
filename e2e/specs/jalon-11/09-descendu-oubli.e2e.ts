@@ -44,8 +44,6 @@ describe("Jalon 11 · 9. Projet descendu, oubli", () => {
     await connect();
   });
 
-  after(() => seed("nominal"));
-
   it("après un down : Descendu · 0/N, cercle vide, explication, actions et Oublier", async () => {
     await downOutside("nominal");
     expect(

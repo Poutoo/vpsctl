@@ -17,6 +17,7 @@ import {
   surveyTime,
   waitCpuValue,
 } from "../../support/resources.ts";
+import { seed } from "../../support/target.ts";
 import {
   connect,
   goDashboard,
@@ -31,6 +32,8 @@ const DF_V = "docker system df -v";
 
 describe("Jalon 13 · 12. Analyse des volumes", () => {
   before(async () => {
+    // nominal-web-1 et kuma servent à ouvrir quatre flux (dernier test).
+    seed();
     seedResources();
     await connect();
     await goResources();

@@ -34,8 +34,6 @@ describe("Jalon 11 · 8. Arrêter et supprimer", () => {
     await connect();
   });
 
-  after(() => seed("nominal", "anon", "multi"));
-
   it("GO / NO GO sans volume anonyme (nominal), focus sur NO GO, Échap = NO GO", async () => {
     await runProjectAction("nominal", "Arrêter et supprimer");
     await waitDialog();

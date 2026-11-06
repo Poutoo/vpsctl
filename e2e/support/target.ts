@@ -46,12 +46,21 @@ export function shStatus(command: string): { code: number; out: string } {
   }
 }
 
-/** Remet des projets (ou tous, avec le conteneur hors compose) à l'état de départ. */
+/**
+ * Remet à l'état de départ les projets dont l'empreinte a changé depuis leur
+ * dernier semis, et le conteneur hors compose ; avec des noms, ces projets
+ * sans vérification.
+ */
 export function seed(...projects: string[]): void {
   docker(
     ["exec", TARGET.container, "bash", "/e2e/seed.sh", ...projects],
     300_000,
   );
+}
+
+/** Tous les projets, sans vérification (lancement de la suite). */
+export function seedFull(): void {
+  docker(["exec", TARGET.container, "bash", "/e2e/seed.sh", "--full"], 300_000);
 }
 
 /** Clé de test, générée une fois (sans passphrase : jamais de trousseau). */

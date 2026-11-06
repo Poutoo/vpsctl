@@ -22,7 +22,7 @@ import { APP_BINARY, TAURI_DRIVER_PORT } from "./support/env.ts";
 import {
   ensureSshKey,
   hostFingerprint,
-  seed,
+  seedFull,
   startTarget,
   stopTarget,
 } from "./support/target.ts";
@@ -65,7 +65,7 @@ export const config: WebdriverIO.Config = {
     await ensureEdgeDriver();
     ensureSshKey();
     startTarget();
-    seed();
+    seedFull();
   },
 
   beforeSession: async () => {

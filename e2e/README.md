@@ -44,6 +44,18 @@ ses données. `E2E_SSH_PORT` change le port local (2222 par défaut).
   SSH de test n'a d'ailleurs pas de passphrase (`e2e/.cache/ssh/`) : rien n'est
   écrit dans le trousseau.
 
+## Projets compose (jalon 11)
+
+`e2e/target/seed.sh`, lancé en root par les specs (`seed()`), remet les
+projets de `e2e/target/projects/` dans l'état du tableau « Préparation » de
+`docs/tests-jalon-11.md`. Chaque projet semé laisse une empreinte (conteneurs
+et leur état, montages, réseaux, volumes, dossier du projet et sa copie
+`.bak` : chemins, droits, propriétaires, contenus) ; au semis suivant, seuls
+les projets dont l'empreinte a changé sont recréés. Le lancement de la suite
+sème tout (`seedFull()`), et `seed("nominal")` recrée un projet sans
+vérification. Les empreintes vivent dans le conteneur, hors du volume
+Docker : une cible recréée repart d'un semis complet.
+
 ## Fichiers de l'éditeur (jalon 12)
 
 `e2e/target/seed-editor.sh`, lancé en root par les specs (`seedEditor()`),
