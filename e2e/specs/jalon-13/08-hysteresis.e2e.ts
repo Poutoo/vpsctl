@@ -1,9 +1,11 @@
 /**
  * docs/tests-jalon-13.md, section 8 : hystérésis. Le disque de la cible
  * change peu : le seuil est déplacé autour de son occupation. La mémoire,
- * qui oscille, est observée pendant deux minutes ; la marge de la charge est
- * couverte par les tests Rust (`resources::alerts`), la charge de la cible
- * ne se pilotant pas au centième.
+ * qui oscille, est observée 30 s au lieu des deux minutes du test manuel :
+ * la règle est couverte par les tests Rust de `next_level`, l'E2E vérifie
+ * que l'écran y est branché. La marge de la charge est couverte par les
+ * tests Rust (`resources::alerts`), la charge de la cible ne se pilotant pas
+ * au centième.
  */
 import { $, browser, expect } from "@wdio/globals";
 import {
@@ -69,7 +71,7 @@ describe("Jalon 13 · 8. Hystérésis", () => {
     await setThreshold("memory", "critical", "100");
     await setThreshold("memory", "attention", String(Math.max(1, percent - 1)));
     await $(alert("memory")).waitForDisplayed();
-    const end = Date.now() + 120_000;
+    const end = Date.now() + 30_000;
     while (Date.now() < end) {
       expect(await alertShown("memory")).toBe(true);
       await browser.pause(2_000);

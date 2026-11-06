@@ -112,7 +112,9 @@ c'est le point de montage de la racine Docker.
   charge montée par des processus `yes` dans la cible ; mémoire montée hors de
   l'écran par un conteneur qui remplit un tmpfs ; disque indisponible par un
   système de fichiers monté en boucle sous un dossier fermé (test ignoré si
-  l'hôte Docker refuse le montage). Restent manuels, avec leur raison dans
+  l'hôte Docker refuse le montage) ; hystérésis de la mémoire observée 30 s
+  au lieu de 2 minutes (règle couverte par les tests Rust de `next_level`).
+  Restent manuels, avec leur raison dans
   `docs/tests-jalon-13.md` : CPU, mémoire, charge et réseau indisponibles (le
   noyau fournit toujours leurs fichiers), la fenêtre réduite et tout le rendu
   sous Linux.
