@@ -27,6 +27,14 @@ locale (`e2e/target/`), avec une configuration d'Atlas séparée.
 | `npm run e2e:run -- --spec e2e/specs/jalon-12/*.e2e.ts`    | un jalon                                 |
 | `npm run e2e:typecheck`                                    | typage des specs                         |
 
+Le build est sauté quand le binaire existe et qu'aucun fichier qui le compose
+n'a changé depuis le dernier build réussi : fichiers suivis et nouveaux
+fichiers non ignorés, hors `docs/`, `e2e/` (sauf `tauri.e2e.conf.json` et
+`scripts/build.ts`), `.github/`, `.vscode/` et les `.md` de la racine.
+`E2E_FORCE_BUILD=1` reconstruit quand même. Le frontend y est construit par
+`vite build` seul : le typage (`npm run typecheck`) reste un critère de fin à
+part.
+
 `E2E_KEEP_TARGET=1` garde la cible démarrée après les tests (relances plus
 rapides) ; `docker compose -f e2e/target/compose.yaml down -v` la supprime avec
 ses données. `E2E_SSH_PORT` change le port local (2222 par défaut).
