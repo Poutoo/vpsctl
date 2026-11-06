@@ -49,5 +49,14 @@ if [ $# -eq 0 ]; then
   as_atlas docker run -d --name kuma busybox:1.37 sleep 1d >/dev/null
 fi
 
-# Les conteneurs qui doivent sortir (job, hog, migrate) ont le temps de le faire.
-sleep 3
+# Conteneurs qui doivent sortir d'eux-mêmes (migrate, job, hog) : attendus
+# avant de rendre la main.
+exits=()
+for p in "${projects[@]}"; do
+  case "$p" in
+    partial) exits+=(partial-migrate-1) ;;
+    failed)  exits+=(failed-job-1) ;;
+    oom)     exits+=(oom-hog-1) ;;
+  esac
+done
+[ ${#exits[@]} -eq 0 ] || timeout 60 docker wait "${exits[@]}" >/dev/null
