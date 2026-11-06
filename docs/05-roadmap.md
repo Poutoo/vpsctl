@@ -56,7 +56,7 @@ Maquettes : `docs/design/planche VI/`.
 ## v1.3
 
 - [y] Jalon 11 : gestion `docker compose` (up/down sur un dossier de projet)
-- [ ] Jalon 12 : édition de fichiers texte
+- [y] Jalon 12 : édition de fichiers texte
 
 ## v1.4 « Ressources »
 
