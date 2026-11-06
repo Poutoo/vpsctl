@@ -56,6 +56,22 @@ conflits sont provoqués en modifiant les fichiers dans la cible (`sh`) pendant
 l'édition ; chaque test d'`authorized_keys` remet le fichier en place, pour que
 la clé de test reste autorisée.
 
+## Ressources du serveur (jalon 13)
+
+`e2e/target/seed-resources.sh`, lancé en root par les specs
+(`seedResources()`), prépare la section 1 de `docs/tests-jalon-13.md` : volume
+`atlas-gros` aux nombreux petits fichiers (rempli une fois, gardé entre deux
+lancements ; il allonge l'analyse des volumes), conteneurs `atlas-limite`
+(256 Mo) et `atlas-libre` (sans limite). Il rétablit aussi l'état normal
+après un test : accès au socket Docker, disque de test démonté, conteneur de
+mémoire et processus de charge arrêtés.
+
+Les projets de test sont copiés dans l'image de la cible (`COPY projects`)
+plutôt que montés depuis le poste : un dossier monté (9p) apparaîtrait comme
+un disque du serveur, avec l'occupation du disque de Windows. Le seul vrai
+disque de la cible est le volume `docker-data`, monté sur `/var/lib/docker` :
+c'est le point de montage de la racine Docker.
+
 ## Écarts avec le test manuel
 
 - « Up long avec téléchargement » : projet `slow` (attente d'un healthcheck de
@@ -69,3 +85,11 @@ la clé de test reste autorisée.
   clavier (WebDriver injecte les touches dans la page, sans passer par les
   raccourcis du moteur web), la fenêtre d'enregistrement de « Télécharger »,
   la saisie avec touches mortes et tout le rendu sous Linux.
+- Jalon 13 : alertes provoquées en abaissant les seuils depuis l'interface ;
+  charge montée par des processus `yes` dans la cible ; mémoire montée hors de
+  l'écran par un conteneur qui remplit un tmpfs ; disque indisponible par un
+  système de fichiers monté en boucle sous un dossier fermé (test ignoré si
+  l'hôte Docker refuse le montage). Restent manuels, avec leur raison dans
+  `docs/tests-jalon-13.md` : CPU, mémoire, charge et réseau indisponibles (le
+  noyau fournit toujours leurs fichiers), la fenêtre réduite et tout le rendu
+  sous Linux.

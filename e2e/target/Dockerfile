@@ -33,6 +33,11 @@ RUN useradd -m -s /bin/bash -G docker atlas \
 # l'éditeur ouvre en lecture seule (jalon 12).
 RUN useradd -M -s /usr/sbin/nologin autre
 
+# Projets de test copiés dans l'image plutôt que montés depuis le poste : un
+# dossier du poste monté (9p) apparaîtrait comme un disque du serveur dans
+# l'écran Ressources (jalon 13), avec l'occupation du disque de Windows.
+COPY projects /e2e/projects
+
 COPY sshd_config /etc/ssh/sshd_config
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh

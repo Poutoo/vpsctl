@@ -34,12 +34,17 @@ async function closeAllTabs(): Promise<void> {
   await dismissToasts();
   for (const name of await tabNames()) {
     await $(`button[aria-label="Fermer l'onglet ${name}"]`).click();
-    if (
-      await $(DIALOG)
+    // Commande en cours : le GO / NO GO peut s'ouvrir un instant après le
+    // clic. On attend la fenêtre ou la fermeture de l'onglet.
+    const dialogShown = () =>
+      $(DIALOG)
         .isDisplayed()
-        .catch(() => false)
-    )
-      await go();
+        .catch(() => false);
+    await browser.waitUntil(
+      async () => (await dialogShown()) || !(await tabNames()).includes(name),
+      { timeout: 5_000, timeoutMsg: `onglet ${name} ni fermé ni confirmé` },
+    );
+    if (await dialogShown()) await go();
   }
   await browser.waitUntil(async () => (await tabNames()).length === 0);
 }

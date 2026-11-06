@@ -40,7 +40,7 @@ Les tests E2E (`e2e/specs/jalon-13/`) automatisent ces cas sous Windows, contre 
   ```
 
   Attendu : un seul objet JSON avec un tableau `Volumes` dont chaque élément a `Name` et `Size`.
-- [ ] **Coût de la répartition** (après la préparation, volume `atlas-gros` en place) : `time docker system df >/dev/null` puis `time docker system df -v >/dev/null`, trois fois chacun. Noter les durées : `docker system df` ……… s ; `docker system df -v` ……… s. Si la première coûte presque autant que la seconde (80 % ou plus), la répartition ne doit plus partir d'elle-même : passer `DOCKER_USAGE_AUTOMATIC` à `false` (`src-tauri/src/resources/mod.rs`) ; l'alerte disque propose alors « Analyser l'espace Docker ». Les sections 11 et 12 indiquent ce qui change dans ce cas.
+- [ ] **Manuel** (la décision porte sur le VPS ; les tests E2E relèvent seulement les durées dans la cible) : **coût de la répartition** (après la préparation, volume `atlas-gros` en place) : `time docker system df >/dev/null` puis `time docker system df -v >/dev/null`, trois fois chacun. Noter les durées : `docker system df` ……… s ; `docker system df -v` ……… s. Si la première coûte presque autant que la seconde (80 % ou plus), la répartition ne doit plus partir d'elle-même : passer `DOCKER_USAGE_AUTOMATIC` à `false` (`src-tauri/src/resources/mod.rs`) ; l'alerte disque propose alors « Analyser l'espace Docker ». Les sections 11 et 12 indiquent ce qui change dans ce cas.
 
 ## 1. Préparation
 
@@ -153,9 +153,10 @@ Une mesure impossible passe en « Indisponible », avec sa raison, sans arrêter
 
 ## 14. Cadences
 
-- [ ] Sur le VPS, `watch -n 1 "pgrep -af 'docker stats'"` : présent par moments quand Ressources est affiché, **jamais** quand on est sur un autre écran ou que la fenêtre est réduite.
+- [ ] Sur le VPS, `watch -n 1 "pgrep -af 'docker stats'"` : présent par moments quand Ressources est affiché, **jamais** quand on est sur un autre écran.
+- [ ] **Manuel** (WebDriver ne réduit pas la fenêtre de WebView2) : fenêtre réduite pendant que Ressources est affiché : plus de `docker stats`, relevé de la minute seulement ; au retour de la fenêtre, relevé complet aussitôt.
 - [ ] Hors de l'écran, la mémoire et le disque continuent d'être relevés chaque minute (point ajouté à la courbe de mémoire au retour) ; aucune commande `docker` n'est lancée par Atlas hors de l'écran.
-- [ ] Deux relevés ne se chevauchent jamais : serveur ralenti (`stress`, ou liaison lente), l'heure du relevé avance par pas de 5 s **après** la fin du précédent, jamais deux `docker stats` à la fois.
+- [ ] **Manuel** (couvert par les tests Rust de `resources::monitor`, en temps virtuel) : deux relevés ne se chevauchent jamais : serveur ralenti (`stress`, ou liaison lente), l'heure du relevé avance par pas de 5 s **après** la fin du précédent, jamais deux `docker stats` à la fois.
 
 ## 15. Rendu
 

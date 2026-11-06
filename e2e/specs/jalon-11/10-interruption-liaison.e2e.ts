@@ -168,6 +168,12 @@ describe("Jalon 11 · 10. Interruption, perte de liaison", () => {
     await waitTelemetryTab("up · slow");
     expect(await button("Relancer").isEnabled()).toBe(true);
     await button("Relancer").click();
+    // La relance remplace l'onglet terminé : la ligne de fin de l'exécution
+    // interrompue peut rester affichée un instant après le clic.
+    await $('[data-testid="console-los"]').waitForDisplayed({
+      reverse: true,
+      timeout: 15_000,
+    });
     await button("Interrompre le flux").waitForDisplayed({ timeout: 15_000 });
     expect(await waitConsoleEnd(90_000)).toMatch(/exit 0/i);
   });

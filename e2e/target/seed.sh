@@ -43,6 +43,9 @@ if [ $# -eq 0 ]; then
   # section 0 attend seulement ceux du projet anon.
   as_atlas docker volume prune -f >/dev/null
   as_atlas docker rm -f kuma >/dev/null 2>&1 || :
+  # Conteneurs du jalon 13 (seed-resources.sh) : hors compose, ils
+  # fausseraient le décompte de la section 4 du jalon 11.
+  as_atlas docker rm -f atlas-limite atlas-libre atlas-memoire >/dev/null 2>&1 || :
   as_atlas docker run -d --name kuma busybox:1.37 sleep 1d >/dev/null
 fi
 
