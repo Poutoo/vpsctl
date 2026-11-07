@@ -6,6 +6,7 @@
 import { $, $$, browser } from "@wdio/globals";
 import { PROFILE } from "./appConfig.ts";
 import { TARGET } from "./env.ts";
+import { installJournal } from "./failures.ts";
 
 type ChainableElement = ReturnType<typeof $>;
 
@@ -63,6 +64,7 @@ export async function disconnect(): Promise<void> {
 export async function restartApp(): Promise<void> {
   await browser.reloadSession();
   await $("h1=Liaison au serveur").waitForDisplayed({ timeout: 60_000 });
+  await installJournal();
 }
 
 export async function statusSummary(): Promise<string> {

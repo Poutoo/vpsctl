@@ -5,6 +5,7 @@
 import { execFileSync } from "node:child_process";
 import { $, $$, browser } from "@wdio/globals";
 import { TARGET } from "./env.ts";
+import { noteFile } from "./failures.ts";
 import { sh } from "./target.ts";
 import { DIALOG, textOf } from "./ui.ts";
 
@@ -80,6 +81,7 @@ async function discardIfAsked(): Promise<void> {
  * des modifications en cours sont abandonnées.
  */
 export async function openEditor(file: string): Promise<void> {
+  noteFile(file);
   const dir = file.slice(0, file.lastIndexOf("/")) || "/";
   await goTo(`/files${dir}`);
   await discardIfAsked();

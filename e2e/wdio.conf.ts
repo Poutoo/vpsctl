@@ -20,6 +20,11 @@ import {
 } from "./support/driver.ts";
 import { APP_BINARY, TAURI_DRIVER_PORT } from "./support/env.ts";
 import {
+  captureFailure,
+  installJournal,
+  resetNotedFiles,
+} from "./support/failures.ts";
+import {
   ensureSshKey,
   hostFingerprint,
   seedFull,
@@ -77,9 +82,24 @@ export const config: WebdriverIO.Config = {
     assertProfilesAreLocal();
   },
 
-  // Une fenêtre GO / NO GO restée ouverte par un test en échec bloquerait
-  // tous les clics des suivants : Échap vaut NO GO.
-  afterTest: async () => {
+  // Journal de la page tenu dès le début de chaque test (et des hooks).
+  beforeHook: async () => {
+    await installJournal();
+  },
+
+  beforeTest: async () => {
+    resetNotedFiles();
+    await installJournal();
+  },
+
+  afterHook: async (test, _context, { error }) => {
+    if (error) await captureFailure(test.file ?? "", test.title, error);
+  },
+
+  // Capture d'un échec, puis : une fenêtre GO / NO GO restée ouverte par un
+  // test en échec bloquerait tous les clics des suivants, Échap vaut NO GO.
+  afterTest: async (test, _context, { passed, error }) => {
+    if (!passed) await captureFailure(test.file ?? "", test.title, error);
     const dialog = await $('[role="alertdialog"]');
     if (await dialog.isDisplayed().catch(() => false)) {
       await browser.keys("Escape");

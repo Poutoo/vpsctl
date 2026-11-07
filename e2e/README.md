@@ -66,13 +66,31 @@ dépendances (`package-lock.json`, `src-tauri/Cargo.lock`) et
 `src-tauri/tauri.conf.json`. En cas de doute : suite complète.
 
 ```sh
+# Motif sans guillemets : c'est le shell (bash) qui le développe.
 npm run e2e:build
-npm run e2e:run -- --spec "e2e/specs/jalon-13/*.e2e.ts"
+npm run e2e:run -- --spec e2e/specs/jalon-13/*.e2e.ts
 ```
 
 La suite complète (`npm run test:e2e`) reste obligatoire avant un push et
 avant le commit qui clôt un jalon ou prépare une version (CLAUDE.md,
 « Commits »).
+
+## Captures d'échec
+
+Chaque test ou hook en échec laisse un dossier
+`e2e/.cache/echecs/<date>-<spec>/<test>/`, gardé d'un lancement à l'autre
+(le chemin est affiché dans la sortie) :
+
+- `erreur.txt` : le message et la pile de l'échec ;
+- `fenetre.png` : la fenêtre de l'application ;
+- `ecran.json` : adresse, titre et surtitre, bandeau et barre de l'éditeur,
+  barre d'état, fenêtres ouvertes (GO / NO GO, conflit), notifications,
+  élément qui a le focus ;
+- `journal.json` : journal de l'application, tenu dans la page faute de
+  journal propre (`support/failures.ts`) : chaque appel au backend avec sa
+  réussite ou son erreur, les erreurs et avertissements de la console ;
+- `fichiers.txt` : les fichiers de la cible notés par le test (`noteFile`,
+  appelé par `openEditor`), avec leurs droits et leurs octets (`od -c`).
 
 ## Isolation
 
