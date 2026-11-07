@@ -383,6 +383,12 @@ impl Connection {
         self.handle.as_ref().is_none_or(|h| h.is_closed())
     }
 
+    /// Liaison perdue, ou session déjà fermée par russh sans que la perte
+    /// soit encore publiée : un échec d'opération vient alors d'elle.
+    pub fn is_down(&self) -> bool {
+        self.loss.is_lost() || self.is_closed()
+    }
+
     /// Exécute une commande fixe (jamais construite à partir d'une saisie non
     /// validée) et renvoie sa sortie complète.
     pub async fn exec(&self, command: &str) -> Result<ExecOutput, AppError> {

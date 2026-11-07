@@ -23,6 +23,10 @@ Ressources du serveur (jalon 13).
 - Seuils d'alerte propres à chaque profil (par défaut : disque 80 et 90 %, mémoire 85 et 95 %, charge 1,0 et 2,0 par cœur), modifiables en direct, avec « Valeurs par défaut ». Une alerte ne retombe que 3 points sous son seuil (0,1 par cœur pour la charge) : elle ne clignote pas autour du seuil. Bandeaux d'alerte dans l'écran et repère sur l'entrée Ressources, visible depuis tous les écrans.
 - Disque presque plein sur le point de montage de Docker : répartition de l'espace Docker (images, conteneurs, volumes, cache de build) et analyse des volumes à la demande, que l'on peut annuler. L'alerte mémoire nomme le conteneur qui consomme le plus, et « Voir » fait défiler jusqu'à sa ligne.
 
+### Corrigé
+
+- Perte de liaison pendant un relevé : les mesures de l'écran Ressources restent figées sur leur dernière valeur au lieu de passer « Indisponible · ouverture d'un canal impossible », et la barre d'état garde les versions du serveur au lieu de les perdre.
+
 ## [1.3.0] - 2026-11-03
 
 Projets docker compose (jalon 11) et édition de fichiers texte (jalon 12).

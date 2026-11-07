@@ -60,6 +60,8 @@ pub trait Probe: Send + Sync + 'static {
         command: &'static str,
         timeout: Duration,
     ) -> impl Future<Output = Result<ExecOutput, AppError>> + Send;
+    /// La liaison est tombée (perte constatée ou session fermée).
+    fn link_down(&self) -> bool;
 }
 
 enum DockerRoot {
@@ -93,6 +95,12 @@ pub async fn run<P: Probe>(hub: Arc<ResourceHub>, probe: Arc<P>, profile_id: Str
     loop {
         let surveyed_foreground = *foreground.borrow_and_update();
         let survey = survey(&probe, surveyed_foreground, &mut state).await;
+        // Liaison tombée pendant le relevé : ses échecs viennent de la perte
+        // (LinkLost), pas du serveur. Rien n'est publié, les valeurs restent
+        // figées ; la perte arrête la tâche.
+        if probe.link_down() {
+            return;
+        }
         let Some(update) = hub.publish(&profile_id, survey) else {
             return;
         };
@@ -413,6 +421,10 @@ impl Probe for RemoteProbe {
             .exec_until(command, Deadline::after(timeout))
             .await
     }
+
+    fn link_down(&self) -> bool {
+        self.connection.is_down()
+    }
 }
 
 #[cfg(test)]
@@ -422,7 +434,7 @@ mod tests {
     use crate::resources::settings::Thresholds;
     use crate::resources::ResourceUpdate;
     use std::collections::HashMap;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Mutex;
 
     const STATS_ID: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -439,6 +451,10 @@ mod tests {
         meminfo_running: AtomicUsize,
         max_meminfo_running: AtomicUsize,
         disk_percent_used: Mutex<u64>,
+        /// Chaque opération échoue comme un canal qui ne s'ouvre plus.
+        transport_broken: AtomicBool,
+        /// Liaison tombée, telle que la voit `link_down`.
+        down: AtomicBool,
     }
 
     impl FakeProbe {
@@ -456,7 +472,19 @@ mod tests {
                 meminfo_running: AtomicUsize::new(0),
                 max_meminfo_running: AtomicUsize::new(0),
                 disk_percent_used: Mutex::new(50),
+                transport_broken: AtomicBool::new(false),
+                down: AtomicBool::new(false),
             })
+        }
+
+        fn transport(&self) -> Result<(), AppError> {
+            if self.transport_broken.load(Ordering::SeqCst) {
+                Err(AppError::network(
+                    "ouverture d'un canal impossible : Channel send error",
+                ))
+            } else {
+                Ok(())
+            }
         }
 
         fn commands(&self, command: &str) -> usize {
@@ -479,6 +507,7 @@ mod tests {
                 // Lecture de /proc/stat : marque un relevé complet.
                 let tick = self.stat_ticks.fetch_add(1, Ordering::SeqCst) as u64 + 1;
                 self.operation().await;
+                self.transport()?;
                 return Ok(format!(
                     "cpu {} 0 0 {} 0 0 0 0 0 0\ncpu0 1 0 0 1 0 0 0 0 0 0\ncpu1 1 0 0 1 0 0 0 0 0 0\n",
                     tick * 25,
@@ -486,6 +515,7 @@ mod tests {
                 ));
             }
             if path == "/proc/net/dev" {
+                self.transport()?;
                 let tick = self.stat_ticks.load(Ordering::SeqCst) as u64;
                 return Ok(format!(
                     "h\nh\n  eth0: {} 0 0 0 0 0 0 0 {} 0 0 0 0 0 0 0\n",
@@ -503,6 +533,7 @@ mod tests {
             if meminfo {
                 self.meminfo_running.fetch_sub(1, Ordering::SeqCst);
             }
+            self.transport()?;
             self.files
                 .lock()
                 .unwrap()
@@ -512,6 +543,7 @@ mod tests {
         }
 
         async fn fs_stats(&self, path: &str) -> Result<FsStats, AppError> {
+            self.transport()?;
             let used = if path == "/var/lib/docker" {
                 *self.disk_percent_used.lock().unwrap()
             } else {
@@ -526,16 +558,23 @@ mod tests {
         }
 
         async fn is_dir(&self, path: &str) -> Result<bool, AppError> {
+            self.transport()?;
             Ok(path != "/etc/hosts")
         }
 
         async fn real_path(&self, path: &str) -> Result<String, AppError> {
+            self.transport()?;
             Ok(path.to_owned())
+        }
+
+        fn link_down(&self) -> bool {
+            self.down.load(Ordering::SeqCst)
         }
 
         async fn exec(&self, command: &'static str, _: Duration) -> Result<ExecOutput, AppError> {
             self.commands.lock().unwrap().push(command);
             self.operation().await;
+            self.transport()?;
             let stdout = match command {
                 containers::ROOT_DIR_COMMAND => "/var/lib/docker\n".to_owned(),
                 containers::STATS_COMMAND => format!(
@@ -794,5 +833,53 @@ mod tests {
         advance(Duration::from_secs(61)).await;
         assert!(harness.task.is_finished());
         let _ = std::fs::remove_dir_all(&harness.dir);
+    }
+
+    fn any_unavailable(update: &ResourceUpdate) -> bool {
+        [
+            matches!(update.cpu, Measure::Unavailable { .. }),
+            matches!(update.memory, Measure::Unavailable { .. }),
+            matches!(update.load, Measure::Unavailable { .. }),
+            matches!(update.network, Measure::Unavailable { .. }),
+            matches!(update.disks, Measure::Unavailable { .. }),
+            matches!(update.containers, Measure::Unavailable { .. }),
+        ]
+        .contains(&true)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn link_lost_during_a_survey_publishes_nothing() {
+        // Relevés de 2 s : à 2, 9 puis 16 s. Celui de 14 à 16 s voit la
+        // liaison tomber : ses opérations échouent, puis `link_down`.
+        let harness = Harness::start(Duration::from_secs(2));
+        harness.hub.set_foreground(true);
+        advance(Duration::from_secs(15)).await;
+        let before = harness.updates.lock().unwrap().len();
+        assert!(before >= 2);
+        harness.probe.transport_broken.store(true, Ordering::SeqCst);
+        harness.probe.down.store(true, Ordering::SeqCst);
+        advance(Duration::from_secs(30)).await;
+
+        let updates = harness.updates.lock().unwrap();
+        assert_eq!(updates.len(), before, "aucun relevé publié après la perte");
+        assert!(updates.iter().all(|(_, u)| !any_unavailable(u)));
+        drop(updates);
+        assert!(harness.task.is_finished());
+        let _ = std::fs::remove_dir_all(&harness.dir);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn transport_error_on_a_live_link_is_published_unavailable() {
+        // Même erreur, liaison toujours là : c'est l'état de la liaison qui
+        // décide, pas le texte de l'erreur.
+        let harness = Harness::start(Duration::from_secs(2));
+        harness.hub.set_foreground(true);
+        advance(Duration::from_secs(15)).await;
+        harness.probe.transport_broken.store(true, Ordering::SeqCst);
+        advance(Duration::from_secs(2)).await;
+        let last = harness.last();
+        assert!(matches!(last.cpu, Measure::Unavailable { .. }));
+        assert!(!harness.task.is_finished());
+        harness.stop();
     }
 }

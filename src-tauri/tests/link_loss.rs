@@ -355,6 +355,21 @@ async fn silent_cut_is_detected_by_keepalive_once() {
     bench.assert_no_loss_for(Duration::from_secs(2)).await;
 }
 
+/// Ses commandes échouées ne donnent pas des versions « inconnues » : relevé
+/// pendant la chute de la liaison, il vaut `LinkLost`.
+#[tokio::test]
+async fn server_info_during_a_silent_cut_is_link_lost() {
+    let mut bench = Bench::new(FAST).await;
+    bench.connect().await;
+    bench.relay.cut(Cut::Silent);
+
+    let info = tokio::time::timeout(MARGIN, bench.state.server_info())
+        .await
+        .expect("server_info doit finir avec la perte");
+    assert!(matches!(info, Err(AppError::LinkLost)), "{info:?}");
+    bench.next_loss().await;
+}
+
 #[tokio::test]
 async fn closed_connection_is_reported_as_closed() {
     let mut bench = Bench::new(FAST).await;

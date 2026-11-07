@@ -467,6 +467,26 @@ impl AppState {
             .map_err(|error| probe.map(error))
     }
 
+    /// Relevé de fond dont le résultat garde ses parties illisibles sans
+    /// échouer (fichiers compose, versions du serveur). Terminé alors que la
+    /// liaison est tombée, il vaut `LinkLost` : ses manques viennent de la
+    /// perte, pas du serveur.
+    async fn reading<T, Fut>(
+        &self,
+        operation: impl FnOnce(Arc<Connection>) -> Fut,
+    ) -> Result<T, AppError>
+    where
+        Fut: Future<Output = Result<T, AppError>>,
+    {
+        let connection = self.connection().await?;
+        let probe = LinkProbe::new(&connection);
+        let result = operation(connection).await;
+        if probe.is_down() {
+            return Err(AppError::LinkLost);
+        }
+        result
+    }
+
     /// Profil de la liaison établie.
     async fn connected_profile(&self) -> Result<String, AppError> {
         match &*self.link.lock().await {
@@ -488,8 +508,10 @@ impl AppState {
     pub async fn compose_check(&self) -> Result<Vec<compose::ProjectCheck>, AppError> {
         let profile = self.connected_profile().await?;
         let memory = self.compose_memory.clone();
-        self.remote(|connection| async move { compose::check(connection, &memory, &profile).await })
-            .await
+        self.reading(
+            |connection| async move { compose::check(connection, &memory, &profile).await },
+        )
+        .await
     }
 
     /// Lance une commande compose sur un projet relu sur le serveur. Elle
@@ -540,7 +562,7 @@ impl AppState {
     }
 
     pub async fn server_info(&self) -> Result<ServerInfo, AppError> {
-        self.remote(|connection| async move { Ok(ssh::server_info(&connection).await) })
+        self.reading(|connection| async move { Ok(ssh::server_info(&connection).await) })
             .await
     }
 
@@ -920,12 +942,16 @@ impl LinkProbe {
         }
     }
 
-    fn map(&self, error: AppError) -> AppError {
+    fn is_down(&self) -> bool {
         let closed = self
             .connection
             .upgrade()
             .is_none_or(|connection| connection.is_closed());
-        if self.signal.is_lost() || closed {
+        self.signal.is_lost() || closed
+    }
+
+    fn map(&self, error: AppError) -> AppError {
+        if self.is_down() {
             AppError::LinkLost
         } else {
             error
