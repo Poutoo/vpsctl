@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import { CACHE_DIR } from "../../support/env.ts";
-import { seed, sh } from "../../support/target.ts";
+import { seed, setSlowDelay, sh } from "../../support/target.ts";
 import {
   colorOf,
   connect,
@@ -75,6 +75,7 @@ describe("Jalon 11 · 12. Rendu", () => {
   });
 
   it("demi-disque d'une commande en cours en SVG (navigation, en-tête du projet)", async () => {
+    setSlowDelay(15);
     sh("cd /tmp && docker compose -p slow down -t 0");
     await refresh();
     await waitProjectState("slow", /^DESCENDU/i);

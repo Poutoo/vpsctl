@@ -27,9 +27,52 @@ locale (`e2e/target/`), avec une configuration d'Atlas séparée.
 | `npm run e2e:run -- --spec e2e/specs/jalon-12/*.e2e.ts`    | un jalon                                 |
 | `npm run e2e:typecheck`                                    | typage des specs                         |
 
+Le build est sauté quand le binaire existe et qu'aucun fichier qui le compose
+n'a changé depuis le dernier build réussi : fichiers suivis et nouveaux
+fichiers non ignorés, hors `docs/`, `e2e/` (sauf `tauri.e2e.conf.json` et
+`scripts/build.ts`), `.github/`, `.vscode/` et les `.md` de la racine.
+`E2E_FORCE_BUILD=1` reconstruit quand même. Le frontend y est construit par
+`vite build` seul : le typage (`npm run typecheck`) reste un critère de fin à
+part.
+
 `E2E_KEEP_TARGET=1` garde la cible démarrée après les tests (relances plus
 rapides) ; `docker compose -f e2e/target/compose.yaml down -v` la supprime avec
 ses données. `E2E_SSH_PORT` change le port local (2222 par défaut).
+
+## Exécution sélective
+
+La suite complète dure environ 18 minutes. Avant un commit, il suffit de
+lancer :
+
+- les specs du jalon en cours ;
+- les specs des parties touchées : jalon 11 pour les projets compose, le
+  tableau de bord Docker et les commandes compose de la télémétrie
+  (`src-tauri/src/compose/`, `src-tauri/src/docker.rs`,
+  `src/stores/compose*.ts`), jalon 12 pour l'éditeur et l'explorateur
+  (`src-tauri/src/editor/`, `src-tauri/src/sftp/`, `src/stores/editor.ts`,
+  `src/stores/files.ts`), jalon 13 pour les ressources
+  (`src-tauri/src/resources/`, `src/stores/resources.ts`) ;
+- toute spec modifiée.
+
+La suite complète remplace cette sélection dès que change ce qui sert à
+toutes les specs : `e2e/support/`, `e2e/target/`, `e2e/scripts/`,
+`e2e/wdio.conf.ts`, `e2e/tauri.e2e.conf.json` ; la liaison et l'état partagé
+(`src-tauri/src/ssh/`, `state.rs`, `stream.rs`, `lib.rs`, `error.rs`,
+`config.rs`, `src/stores/connection.ts`, `src/stores/telemetry.ts`,
+`src/stores/profiles.ts`, `src/api/invoke.ts`, `src/api/errors.ts`) ; la
+navigation et les composants communs (`src/router/`,
+`src/components/layout/`, `src/components/ui/`, `src/styles/`) ; les
+dépendances (`package-lock.json`, `src-tauri/Cargo.lock`) et
+`src-tauri/tauri.conf.json`. En cas de doute : suite complète.
+
+```sh
+npm run e2e:build
+npm run e2e:run -- --spec "e2e/specs/jalon-13/*.e2e.ts"
+```
+
+La suite complète (`npm run test:e2e`) reste obligatoire avant un push et
+avant le commit qui clôt un jalon ou prépare une version (CLAUDE.md,
+« Commits »).
 
 ## Isolation
 
@@ -43,6 +86,18 @@ ses données. `E2E_SSH_PORT` change le port local (2222 par défaut).
   `dev.poutoo.atlas.e2e` ; les passphrases d'Atlas ne sont jamais lues. La clé
   SSH de test n'a d'ailleurs pas de passphrase (`e2e/.cache/ssh/`) : rien n'est
   écrit dans le trousseau.
+
+## Projets compose (jalon 11)
+
+`e2e/target/seed.sh`, lancé en root par les specs (`seed()`), remet les
+projets de `e2e/target/projects/` dans l'état du tableau « Préparation » de
+`docs/tests-jalon-11.md`. Chaque projet semé laisse une empreinte (conteneurs
+et leur état, montages, réseaux, volumes, dossier du projet et sa copie
+`.bak` : chemins, droits, propriétaires, contenus) ; au semis suivant, seuls
+les projets dont l'empreinte a changé sont recréés. Le lancement de la suite
+sème tout (`seedFull()`), et `seed("nominal")` recrée un projet sans
+vérification. Les empreintes vivent dans le conteneur, hors du volume
+Docker : une cible recréée repart d'un semis complet.
 
 ## Fichiers de l'éditeur (jalon 12)
 
@@ -75,7 +130,10 @@ c'est le point de montage de la racine Docker.
 ## Écarts avec le test manuel
 
 - « Up long avec téléchargement » : projet `slow` (attente d'un healthcheck de
-  40 s, image `busybox:1.36` retirée avant) au lieu de `postgres:17`.
+  40 s, image `busybox:1.36` retirée avant) au lieu de `postgres:17`. Les
+  autres up longs (une commande à la fois, interruption, demi-disque du rendu)
+  ramènent cette attente à 15 s (`setSlowDelay`) ; la perte de liaison garde
+  40 s, l'up devant encore tourner à la relance qui suit le gel.
 - Perte de liaison : la cible est gelée (`docker pause`) au lieu de couper le
   réseau du poste.
 - Section 2 (tests automatisés) et rendu Linux : marqués `skip`.
@@ -89,7 +147,9 @@ c'est le point de montage de la racine Docker.
   charge montée par des processus `yes` dans la cible ; mémoire montée hors de
   l'écran par un conteneur qui remplit un tmpfs ; disque indisponible par un
   système de fichiers monté en boucle sous un dossier fermé (test ignoré si
-  l'hôte Docker refuse le montage). Restent manuels, avec leur raison dans
+  l'hôte Docker refuse le montage) ; hystérésis de la mémoire observée 30 s
+  au lieu de 2 minutes (règle couverte par les tests Rust de `next_level`).
+  Restent manuels, avec leur raison dans
   `docs/tests-jalon-13.md` : CPU, mémoire, charge et réseau indisponibles (le
   noyau fournit toujours leurs fichiers), la fenêtre réduite et tout le rendu
   sous Linux.

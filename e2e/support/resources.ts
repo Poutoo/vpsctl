@@ -3,10 +3,25 @@
  * seuils, et ce que le test manuel fait « sur le VPS » (`docker exec` dans
  * la cible).
  */
+import fs from "node:fs";
+import path from "node:path";
 import { $, browser } from "@wdio/globals";
-import { TARGET } from "./env.ts";
+import { OTHER_PROFILE, PROFILE } from "./appConfig.ts";
+import { APP_CONFIG_DIR, TARGET } from "./env.ts";
 import { sh, shStatus } from "./target.ts";
 import { textOf } from "./ui.ts";
+
+type Resource = "disk" | "memory" | "load";
+type Level = "attention" | "critical";
+type Thresholds = Record<Resource, Record<Level, number>>;
+
+const DEFAULT_THRESHOLDS: Thresholds = {
+  disk: { attention: 80, critical: 90 },
+  memory: { attention: 85, critical: 95 },
+  load: { attention: 1, critical: 2 },
+};
+/** Valeurs par défaut telles que les champs les affichent, dans leur ordre. */
+const DEFAULT_FIELDS = ["80", "90", "85", "95", "1,0", "2,0"];
 
 export const SURVEY = '[data-testid="survey-status"]';
 export const DOCKER_MOUNT = "/var/lib/docker";
@@ -81,28 +96,91 @@ export async function waitCpuValue(timeout = 30_000): Promise<number> {
   return Number(await value.getText());
 }
 
-/** Saisit un seuil puis attend son enregistrement (300 ms après la frappe). */
+/** Profil dont les seuils sont affichés, d'après son nom. */
+async function shownProfileId(): Promise<string> {
+  const name = await textOf('[data-testid="thresholds-profile"]');
+  const profile = [PROFILE, OTHER_PROFILE].find((p) => p.name === name);
+  if (!profile) throw new Error(`profil des seuils inconnu : « ${name} »`);
+  return profile.id;
+}
+
+/**
+ * Seuils enregistrés d'un profil dans `resource-thresholds.json` : `null`
+ * sans entrée (valeurs par défaut), `undefined` si le fichier n'a pas pu
+ * être lu à cet instant (remplacement en cours).
+ */
+function savedThresholds(profileId: string): Thresholds | null | undefined {
+  const file = path.join(APP_CONFIG_DIR, "resource-thresholds.json");
+  if (!fs.existsSync(file)) return null;
+  try {
+    const content = JSON.parse(fs.readFileSync(file, "utf8")) as {
+      profiles?: Record<string, Thresholds>;
+    };
+    return content.profiles?.[profileId] ?? null;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Saisit un seuil puis attend son sort : enregistré dans le fichier des
+ * seuils (300 ms après la frappe), ou refusé avec sa raison affichée.
+ */
 export async function setThreshold(
-  resource: "disk" | "memory" | "load",
-  level: "attention" | "critical",
+  resource: Resource,
+  level: Level,
   value: string,
 ): Promise<void> {
   const input = $(`[data-testid="threshold-${resource}-${level}"]`);
+  const error = $(`[data-testid="threshold-error-${resource}-${level}"]`);
   await input.scrollIntoView({ block: "center" });
+  const profileId = await shownProfileId();
   await input.setValue(value);
-  await browser.pause(900);
+  const expected = Number(value.replace(",", "."));
+  await browser.waitUntil(
+    async () => {
+      const saved = savedThresholds(profileId);
+      if (
+        saved !== undefined &&
+        (saved ?? DEFAULT_THRESHOLDS)[resource][level] === expected
+      )
+        return true;
+      return error.isDisplayed().catch(() => false);
+    },
+    {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: `seuil ${resource}.${level} à ${value} ni enregistré ni refusé`,
+    },
+  );
 }
 
 export async function thresholdValue(
-  resource: "disk" | "memory" | "load",
-  level: "attention" | "critical",
+  resource: Resource,
+  level: Level,
 ): Promise<string> {
   return $(`[data-testid="threshold-${resource}-${level}"]`).getValue();
 }
 
+/** « Valeurs par défaut » : entrée du profil retirée, champs remplis. */
 export async function resetThresholds(): Promise<void> {
+  const profileId = await shownProfileId();
   await $('[data-testid="thresholds-reset"]').click();
-  await browser.pause(500);
+  await browser.waitUntil(
+    async () => {
+      if (savedThresholds(profileId) !== null) return false;
+      const fields: string[] = [];
+      for (const resource of ["disk", "memory", "load"] as const)
+        for (const level of ["attention", "critical"] as const)
+          fields.push(await thresholdValue(resource, level));
+      return fields.join() === DEFAULT_FIELDS.join();
+    },
+    {
+      timeout: 5_000,
+      interval: 100,
+      timeoutMsg: "valeurs par défaut jamais rétablies",
+    },
+  );
 }
 
 /** Pourcentage affiché d'un point de montage (« 4 % » → 4). */
